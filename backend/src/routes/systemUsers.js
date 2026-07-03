@@ -57,6 +57,12 @@ async function validateAccessScope(divisionIds, gateIds, departmentIds) {
 }
 
 function serializeUser(user) {
+  const role = user.systemRoleId;
+  const permissions =
+    role?.permissions instanceof Map
+      ? Object.fromEntries(role.permissions.entries())
+      : role?.permissions;
+
   return {
     _id: user._id,
     username: user.username,
@@ -67,7 +73,15 @@ function serializeUser(user) {
     divisionIds: user.divisionIds,
     gateIds: user.gateIds,
     departmentIds: user.departmentIds,
-    systemRoleId: user.systemRoleId,
+    systemRoleId: role
+      ? {
+          _id: role._id,
+          name: role.name,
+          slug: role.slug,
+          isActive: role.isActive,
+          permissions,
+        }
+      : null,
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -203,7 +217,7 @@ router.put(
       new: true,
       runValidators: true,
     })
-      .populate('systemRoleId', 'name slug')
+      .populate('systemRoleId', 'name slug permissions')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType')
       .populate('departmentIds', 'name slug');

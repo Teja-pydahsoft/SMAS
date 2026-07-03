@@ -6,6 +6,16 @@ import { api } from '@/lib/api/client';
 import { formatDate } from '@/lib/formatDate';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
+import SystemUserDetailsModal from '@/components/SystemUserDetailsModal';
+
+function DetailsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4M12 8h.01" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 export default function ManageSystemUsersPage() {
   const { can } = useAuth();
@@ -13,6 +23,8 @@ export default function ManageSystemUsersPage() {
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [loadingUser, setLoadingUser] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -47,6 +59,24 @@ export default function ManageSystemUsersPage() {
     } catch (e) {
       setError(e.message);
     }
+  }
+
+  async function handleOpenUser(user) {
+    setLoadingUser(true);
+    setError('');
+    try {
+      const full = await api.systemUsers.get(user._id);
+      setSelectedUser(full);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoadingUser(false);
+    }
+  }
+
+  function handleUserSaved(updated) {
+    setSelectedUser(updated);
+    loadUsers();
   }
 
   if (loading && users.length === 0) {
@@ -98,7 +128,7 @@ export default function ManageSystemUsersPage() {
                   <th>Access Scope</th>
                   <th>Status</th>
                   <th>Last Login</th>
-                  {canWrite && <th>Actions</th>}
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -136,30 +166,47 @@ export default function ManageSystemUsersPage() {
                       </span>
                     </td>
                     <td>{user.lastLoginAt ? formatDate(user.lastLoginAt) : '—'}</td>
-                    {canWrite && (
-                      <td className="actions-cell">
-                        {!user.isSuperAdmin && (
-                          <>
-                            <button type="button" className="btn-secondary" onClick={() => handleToggleActive(user)}>
-                              {user.isActive ? 'Deactivate' : 'Activate'}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-danger"
-                              onClick={() => handleDelete(user._id, user.displayName)}
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    )}
+                    <td className="actions-cell">
+                      <button
+                        type="button"
+                        className="icon-btn details"
+                        onClick={() => handleOpenUser(user)}
+                        title="View or edit user details"
+                        aria-label="View or edit user details"
+                        disabled={loadingUser}
+                      >
+                        <DetailsIcon />
+                      </button>
+                      {canWrite && !user.isSuperAdmin && (
+                        <>
+                          <button type="button" className="btn-secondary" onClick={() => handleToggleActive(user)}>
+                            {user.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-danger"
+                            onClick={() => handleDelete(user._id, user.displayName)}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
+      )}
+
+      {selectedUser && (
+        <SystemUserDetailsModal
+          user={selectedUser}
+          canWrite={canWrite}
+          onClose={() => setSelectedUser(null)}
+          onSaved={handleUserSaved}
+        />
       )}
     </div>
   );

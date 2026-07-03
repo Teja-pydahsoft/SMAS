@@ -1789,6 +1789,123 @@ body {
 
 .details-modal-footer {
   padding: 0 1.5rem 1.5rem;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.system-user-modal {
+  max-width: 920px;
+}
+
+.system-user-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.system-user-modal-panel {
+  padding: 1rem;
+  height: 100%;
+}
+
+.system-user-modal-panel__title {
+  font-size: var(--text-md);
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.system-user-scope-block + .system-user-scope-block {
+  margin-top: 1rem;
+}
+
+.system-user-scope-block__title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.system-user-scope-block__empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.system-user-scope-unrestricted {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.system-user-gate-meta {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.system-user-gate-meta li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.system-user-gate-meta__type {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.system-user-permission-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.system-user-permission-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--bg-inset);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.system-user-permission-list__label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.system-user-permission-list__access {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .system-user-modal {
+    max-width: 100%;
+  }
+
+  .system-user-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .details-modal-footer {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .details-modal-footer button {
+    flex: 1 1 auto;
+  }
 }
 
 .details-photo {

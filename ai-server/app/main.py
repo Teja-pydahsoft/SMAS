@@ -19,6 +19,16 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+async def root():
+    return {
+        "service": "smas-ai-server",
+        "status": "ok",
+        "health": "/health",
+        "docs": "/docs",
+    }
+
+
 @app.get("/health")
 async def health():
     stats = vector_index.stats()

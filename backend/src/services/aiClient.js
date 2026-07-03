@@ -1,6 +1,15 @@
 import path from 'path';
 
 const AI_SERVER_URL = process.env.AI_SERVER_URL || 'http://localhost:8000';
+const HF_TOKEN = process.env.HF_TOKEN || '';
+
+function aiHeaders(extra = {}) {
+  const headers = { ...extra };
+  if (HF_TOKEN) {
+    headers.Authorization = `Bearer ${HF_TOKEN}`;
+  }
+  return headers;
+}
 
 function mimeFromFilename(filename = '') {
   const ext = path.extname(filename).toLowerCase();
@@ -15,7 +24,10 @@ function mimeFromFilename(filename = '') {
 }
 
 async function aiFetch(pathname, options = {}) {
-  const response = await fetch(`${AI_SERVER_URL}${pathname}`, options);
+  const response = await fetch(`${AI_SERVER_URL}${pathname}`, {
+    ...options,
+    headers: aiHeaders(options.headers),
+  });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.detail || error.message || `AI server error: ${response.status}`);
@@ -83,7 +95,9 @@ export async function getFaceIndexStats() {
 
 export async function checkAiServerHealth() {
   try {
-    const response = await fetch(`${AI_SERVER_URL}/health`);
+    const response = await fetch(`${AI_SERVER_URL}/health`, {
+      headers: aiHeaders(),
+    });
     return response.ok;
   } catch {
     return false;

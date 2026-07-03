@@ -21,8 +21,16 @@ function endOfDay(date = new Date()) {
   return d;
 }
 
-export async function buildQrDataUrl(payload) {
-  return QRCode.toDataURL(JSON.stringify(payload), {
+export function buildPassVerifyUrl(passCode) {
+  const base = (process.env.FRONTEND_URL || 'http://localhost:3000')
+    .split(',')[0]
+    .trim()
+    .replace(/\/$/, '');
+  return `${base}/pass/verify/${encodeURIComponent(passCode)}`;
+}
+
+export async function buildQrDataUrl(passCode) {
+  return QRCode.toDataURL(buildPassVerifyUrl(passCode), {
     errorCorrectionLevel: 'M',
     margin: 2,
     width: 280,
@@ -56,7 +64,7 @@ export { loadRegistrationContext };
 
 export async function formatPassResponse(passDoc, qrDataUrl = null) {
   const pass = passDoc.toObject ? passDoc.toObject() : passDoc;
-  const qr = qrDataUrl || (pass.qrPayload ? await buildQrDataUrl(pass.qrPayload) : null);
+  const qr = qrDataUrl || (pass.passCode ? await buildQrDataUrl(pass.passCode) : null);
 
   return {
     ...pass,
@@ -99,7 +107,7 @@ export async function createRegistrationPass(registrationId) {
     isActive: true,
   });
 
-  return formatPassResponse(pass, await buildQrDataUrl(qrPayload));
+  return formatPassResponse(pass, await buildQrDataUrl(passCode));
 }
 
 export async function createDayPass(registrationId, gateLogId) {
@@ -139,7 +147,7 @@ export async function createDayPass(registrationId, gateLogId) {
     isActive: true,
   });
 
-  return formatPassResponse(pass, await buildQrDataUrl(qrPayload));
+  return formatPassResponse(pass, await buildQrDataUrl(passCode));
 }
 
 export async function getRegistrationPass(registrationId) {

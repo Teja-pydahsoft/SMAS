@@ -19,11 +19,14 @@ async function request(path, options = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/login')) {
-      localStorage.removeItem('smas_token');
-      localStorage.removeItem('smas_user');
-      document.cookie = 'smas_token=; path=/; max-age=0';
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+      const isPublicVerify = path.startsWith('/passes/verify/');
+      if (!isPublicVerify) {
+        localStorage.removeItem('smas_token');
+        localStorage.removeItem('smas_user');
+        document.cookie = 'smas_token=; path=/; max-age=0';
+        if (!window.location.pathname.startsWith('/login')) {
+          window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+        }
       }
     }
     const err = new Error(data.message || data.error || data.detail || `Request failed: ${res.status}`);

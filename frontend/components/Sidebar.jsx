@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { getGateSession } from '@/lib/gateSession';
 import { buildEntryExitUrl } from '@/lib/entryExit';
+import { hasAssignedEntryExitScope } from '@/lib/auth/routing';
 
 const STORAGE_WIDTH = 'smas-sidebar-width';
 const STORAGE_COLLAPSED = 'smas-sidebar-collapsed';
@@ -153,8 +154,13 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [gateSessionUrl, setGateSessionUrl] = useState(null);
   const widthRef = useRef(DEFAULT_WIDTH);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const syncGateSession = () => {
@@ -228,12 +234,16 @@ export default function Sidebar() {
   const visibleNavItems = useMemo(() => {
     return navItems.filter((item) => {
       if (item.path === '/entry-exit') return Boolean(gateSessionUrl);
+      if (item.path === '/access-scope') {
+        if (user?.isSuperAdmin) return can('gate', 'read');
+        return hasAssignedEntryExitScope(user);
+      }
       if (!item.module) return true;
       if (can(item.module, 'read')) return true;
       if (item.altModule && can(item.altModule, 'read')) return true;
       return false;
     });
-  }, [can, gateSessionUrl]);
+  }, [can, gateSessionUrl, user]);
 
   function startResize(event) {
     if (collapsed || isMobile) return;
@@ -259,13 +269,46 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''} ${isResizing ? 'sidebar-resizing' : ''}`}>
-      <div className="brand">
-        <span className="brand-icon">S</span>
-        <div className="brand-text">
-          <h1>SMAS</h1>
-          <p>Access System</p>
+    <aside
+      className={[
+        'sidebar',
+        collapsed ? 'sidebar-collapsed' : '',
+        isResizing ? 'sidebar-resizing' : '',
+        isMobile && mobileMenuOpen ? 'sidebar-mobile-open' : '',
+      ].filter(Boolean).join(' ')}
+    >
+      <div className="sidebar-mobile-bar">
+        <div className="brand">
+          <span className="brand-icon">S</span>
+          <div className="brand-text">
+            <h1>SMAS</h1>
+            <p>Access System</p>
+          </div>
         </div>
+        {isMobile && (
+          <button
+            type="button"
+            className="sidebar-mobile-toggle"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            aria-expanded={mobileMenuOpen}
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              {mobileMenuOpen ? (
+                <>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </>
+              ) : (
+                <>
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </>
+              )}
+            </svg>
+          </button>
+        )}
       </div>
 
       <nav>
@@ -286,14 +329,14 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-user">
-        {!collapsed && user && (
+        {(!collapsed || isMobile) && user && (
           <div className="sidebar-user-info">
             <strong>{user.displayName}</strong>
             <span>{user.isSuperAdmin ? 'Super Admin' : user.systemRoleId?.name || 'System User'}</span>
           </div>
         )}
         <button type="button" className="btn-secondary sidebar-logout" onClick={logout} title="Sign out">
-          {collapsed ? '⎋' : 'Sign Out'}
+          {collapsed && !isMobile ? '⎋' : 'Sign Out'}
         </button>
       </div>
 

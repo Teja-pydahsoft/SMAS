@@ -100,7 +100,7 @@ export default function PassCard({ pass, onPrint }) {
           ) : (
             <div className="pass-qr-placeholder">QR</div>
           )}
-          <p className="pass-qr-hint">Scan to verify</p>
+          <p className="pass-qr-hint">Scan to view details &amp; entry history</p>
         </div>
       </div>
 

@@ -7,7 +7,7 @@ import PageShell from '@/components/PageShell';
 import UserDashboardProfile from '@/components/UserDashboardProfile';
 import WriteAccess from '@/components/WriteAccess';
 import { useAuth } from '@/components/AuthProvider';
-import { getAccessibleModules } from '@/lib/auth/routing';
+import { getAccessibleModules, hasAssignedEntryExitScope } from '@/lib/auth/routing';
 
 export default function DashboardPage() {
   const { user, can, loading: authLoading } = useAuth();
@@ -59,7 +59,7 @@ export default function DashboardPage() {
           {canReadRegistrations && (
             <div className="card stat-card">
               <h3 style={{ marginBottom: '1rem' }}>Registration Stats</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="stat-inner-grid">
                 {canReadRoles && (
                   <div>
                     <div className="stat-value">{roles.length}</div>
@@ -101,11 +101,13 @@ export default function DashboardPage() {
                 <button type="button" className="btn-primary">Register Users</button>
               </Link>
             </WriteAccess>
-            <WriteAccess module="gate">
-              <Link href="/access-scope">
-                <button type="button" className="btn-secondary">Gate Access</button>
-              </Link>
-            </WriteAccess>
+            {(user.isSuperAdmin || hasAssignedEntryExitScope(user)) && (
+              <WriteAccess module="gate">
+                <Link href="/access-scope">
+                  <button type="button" className="btn-secondary">Gate Access</button>
+                </Link>
+              </WriteAccess>
+            )}
             {modules.map((m) => (
               <Link key={m.path} href={m.path}>
                 <button type="button" className="btn-secondary">Open {m.label}</button>

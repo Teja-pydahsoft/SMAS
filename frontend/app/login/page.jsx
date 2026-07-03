@@ -16,7 +16,7 @@ function LoginForm() {
 
   useEffect(() => {
     if (!authLoading && (user || getToken())) {
-      router.replace(getPostLoginRoute());
+      router.replace(getPostLoginRoute(user));
     }
   }, [user, authLoading, router]);
 
@@ -25,8 +25,8 @@ function LoginForm() {
     setSubmitting(true);
     setError('');
     try {
-      await login(username.trim(), password);
-      router.replace(getPostLoginRoute());
+      const loggedInUser = await login(username.trim(), password);
+      router.replace(getPostLoginRoute(loggedInUser));
     } catch (err) {
       setError(err.message);
     } finally {

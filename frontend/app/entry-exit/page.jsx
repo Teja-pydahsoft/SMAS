@@ -370,7 +370,7 @@ function EntryExitContent() {
             {dayPass ? (
               <>
                 <p className="gate-pass-panel__desc">
-                  QR includes division gate status and all department visits for today.
+                  Scan the QR to open pass details, today&apos;s active entries, and date-wise history.
                 </p>
                 <PassCard pass={dayPass} />
               </>

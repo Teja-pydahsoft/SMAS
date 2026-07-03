@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { getToken } from '@/lib/auth/session';
 
-const PUBLIC_PATHS = ['/login', '/registrations/register', '/register'];
+const PUBLIC_PATHS = ['/login', '/registrations/register', '/register', '/pass/verify'];
 
 export default function AuthGuard({ children }) {
   const { loading, user, refreshUser } = useAuth();

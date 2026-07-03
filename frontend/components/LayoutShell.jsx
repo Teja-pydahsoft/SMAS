@@ -8,9 +8,14 @@ export default function LayoutShell({ children }) {
   const pathname = usePathname();
   const isLogin = pathname === '/login';
   const isGateLanding = pathname === '/access-scope';
+  const isPassVerify = pathname.startsWith('/pass/verify');
 
   if (isLogin) {
     return <div className="login-shell">{children}</div>;
+  }
+
+  if (isPassVerify) {
+    return <div className="pass-verify-shell">{children}</div>;
   }
 
   if (isGateLanding) {

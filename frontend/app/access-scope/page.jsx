@@ -6,6 +6,7 @@ import { api } from '@/lib/api/client';
 import { useAuth } from '@/components/AuthProvider';
 import { buildEntryExitUrl, makeEntryButtonLabel } from '@/lib/entryExit';
 import { clearGateFlowState, setGateSession } from '@/lib/gateSession';
+import { getDashboardRoute, hasAssignedEntryExitScope } from '@/lib/auth/routing';
 
 export default function AccessScopePage() {
   const router = useRouter();
@@ -18,13 +19,17 @@ export default function AccessScopePage() {
 
   useEffect(() => {
     if (authLoading || !user) return;
+    if (!hasAssignedEntryExitScope(user) && !user.isSuperAdmin) {
+      router.replace(getDashboardRoute());
+      return;
+    }
     clearGateFlowState();
     api.auth
       .accessScope()
       .then(setScope)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [authLoading, user]);
+  }, [authLoading, user, router]);
 
   if (authLoading || !user) {
     return (

@@ -10,6 +10,7 @@ import {
   getPassByCode,
   formatPassResponse,
 } from '../services/passService.js';
+import { getPassVerifyInfo } from '../services/passVerifyService.js';
 import Pass from '../models/Pass.js';
 import { PASS_TYPES } from '../constants/index.js';
 
@@ -18,17 +19,9 @@ const router = Router();
 router.get(
   '/verify/:passCode',
   asyncHandler(async (req, res) => {
-    const pass = await getPassByCode(req.params.passCode);
-    if (!pass) return res.status(404).json({ error: 'Pass not found or inactive' });
-
-    const now = new Date();
-    const expired = pass.validUntil && new Date(pass.validUntil) < now;
-
-    res.json({
-      valid: !expired,
-      expired,
-      pass,
-    });
+    const info = await getPassVerifyInfo(req.params.passCode);
+    if (!info) return res.status(404).json({ error: 'Pass not found' });
+    res.json(info);
   })
 );
 

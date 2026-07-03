@@ -7,6 +7,12 @@ export const metadata = {
   description: 'Dynamic role-based registration with face verification and gate access',
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+};
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en" data-theme="light" suppressHydrationWarning>

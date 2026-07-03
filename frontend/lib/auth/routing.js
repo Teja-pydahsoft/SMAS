@@ -1,4 +1,3 @@
-import { PERMISSION_MODULES } from '@/lib/auth/permissions';
 import { hasPermission } from '@/lib/auth/session';
 
 export const MODULE_ROUTES = [
@@ -14,17 +13,40 @@ export const MODULE_ROUTES = [
 ];
 
 export function getAccessibleModules(user) {
-  return MODULE_ROUTES.filter(({ module }) => hasPermission(user, module, 'read'));
-}
-
-export function getHomeRoute() {
-  return '/access-scope';
-}
-
-export function getPostLoginRoute() {
-  return '/access-scope';
+  return MODULE_ROUTES.filter(({ module, path }) => {
+    if (module === 'gate') {
+      if (path === '/entry-exit') return false;
+      if (user?.isSuperAdmin) return hasPermission(user, module, 'read');
+      return hasAssignedEntryExitScope(user);
+    }
+    return hasPermission(user, module, 'read');
+  });
 }
 
 export function getDashboardRoute() {
   return '/';
+}
+
+/**
+ * Gate landing is only for non–super-admin users who were assigned
+ * specific gates or departments in System User management.
+ */
+export function hasAssignedEntryExitScope(user) {
+  if (!user || user.isSuperAdmin) return false;
+  if (!hasPermission(user, 'gate', 'read')) return false;
+
+  const gateIds = user.gateIds || [];
+  const departmentIds = user.departmentIds || [];
+  return gateIds.length > 0 || departmentIds.length > 0;
+}
+
+export function getPostLoginRoute(user) {
+  if (!user) return '/login';
+  if (user.isSuperAdmin) return getDashboardRoute();
+  if (hasAssignedEntryExitScope(user)) return '/access-scope';
+  return getDashboardRoute();
+}
+
+export function getHomeRoute(user) {
+  return getPostLoginRoute(user);
 }

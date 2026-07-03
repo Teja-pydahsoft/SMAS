@@ -263,7 +263,7 @@ export async function createOrRefreshDayPass({
     isActive: true,
   });
 
-  return formatPassResponse(pass, await buildQrDataUrl(qrPayload));
+  return formatPassResponse(pass, await buildQrDataUrl(passCode));
 }
 
 export async function updateDayPassAfterDepartmentScan(pass, department, eventType) {
@@ -299,7 +299,7 @@ export async function updateDayPassAfterDepartmentScan(pass, department, eventTy
   pass.markModified('qrPayload');
   await pass.save();
 
-  return formatPassResponse(pass, await buildQrDataUrl(payload));
+  return formatPassResponse(pass, await buildQrDataUrl(pass.passCode));
 }
 
 export async function updateDayPassAfterGateExit(pass) {
@@ -316,7 +316,7 @@ export async function updateDayPassAfterGateExit(pass) {
   pass.markModified('qrPayload');
   await pass.save();
 
-  return formatPassResponse(pass, await buildQrDataUrl(payload));
+  return formatPassResponse(pass, await buildQrDataUrl(pass.passCode));
 }
 
 export async function loadDivisionAndDepartment(divisionId, departmentId) {

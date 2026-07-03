@@ -2,8 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api/client';
-import { PERMISSION_MODULES } from '@/lib/auth/permissions';
+import { PERMISSION_MODULES, emptyPermissions } from '@/lib/auth/permissions';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
+import PermissionMatrix from '@/components/PermissionMatrix';
+
+function normalizePermissions(source) {
+  const base = emptyPermissions();
+  if (!source) return base;
+  for (const { key } of PERMISSION_MODULES) {
+    const value = source[key];
+    if (value) base[key] = { read: Boolean(value.read), write: Boolean(value.write) };
+  }
+  return base;
+}
 
 function ScopeList({ title, items, emptyText, badgeClass = 'badge-info' }) {
   return (
@@ -52,7 +63,7 @@ function PermissionSummary({ permissions }) {
   );
 }
 
-export default function SystemUserDetailsModal({ user, canWrite, onClose, onSaved }) {
+export default function SystemUserDetailsModal({ user, canWrite, canEditRole = false, onClose, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [roles, setRoles] = useState([]);
   const [divisions, setDivisions] = useState([]);
@@ -70,7 +81,15 @@ export default function SystemUserDetailsModal({ user, canWrite, onClose, onSave
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const [editingPerms, setEditingPerms] = useState(false);
+  const [rolePerms, setRolePerms] = useState(emptyPermissions());
+  const [savingPerms, setSavingPerms] = useState(false);
+  const [permsError, setPermsError] = useState('');
+  const [permsSuccess, setPermsSuccess] = useState('');
+
   const editable = canWrite && !user?.isSuperAdmin;
+  const roleId = user?.systemRoleId?._id || null;
+  const canEditPrivileges = canEditRole && !user?.isSuperAdmin && Boolean(roleId);
 
   useEffect(() => {
     if (!user) return;
@@ -85,6 +104,10 @@ export default function SystemUserDetailsModal({ user, canWrite, onClose, onSave
     setDivisionIds((user.divisionIds || []).map((d) => d._id));
     setGateIds((user.gateIds || []).map((g) => g._id));
     setDepartmentIds((user.departmentIds || []).map((d) => d._id));
+    setEditingPerms(false);
+    setPermsError('');
+    setPermsSuccess('');
+    setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
   }, [user]);
 
   useEffect(() => {
@@ -182,7 +205,29 @@ export default function SystemUserDetailsModal({ user, canWrite, onClose, onSave
     }
   }
 
-  const rolePermissions = user.systemRoleId?.permissions;
+  async function handleSavePermissions() {
+    if (!canEditPrivileges || !roleId) return;
+    setSavingPerms(true);
+    setPermsError('');
+    setPermsSuccess('');
+    try {
+      await api.systemRoles.updatePermissions(roleId, rolePerms);
+      setPermsSuccess('Role privileges updated.');
+      setEditingPerms(false);
+      const full = await api.systemUsers.get(user._id);
+      onSaved?.(full);
+    } catch (err) {
+      setPermsError(err.message);
+    } finally {
+      setSavingPerms(false);
+    }
+  }
+
+  function cancelPermsEdit() {
+    setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
+    setEditingPerms(false);
+    setPermsError('');
+  }
 
   return (
     <div className="pass-modal-overlay" onClick={onClose}>
@@ -399,10 +444,52 @@ export default function SystemUserDetailsModal({ user, canWrite, onClose, onSave
                       emptyText="No departments assigned"
                       badgeClass="badge-warning"
                     />
-                    <div className="system-user-scope-block" style={{ marginTop: '1rem' }}>
-                      <p className="system-user-scope-block__title">Role Privileges</p>
-                      <PermissionSummary permissions={rolePermissions} />
-                    </div>
+                  </>
+                )}
+              </section>
+
+              <section className="system-user-modal-panel card">
+                <div className="system-user-panel-head">
+                  <h4 className="system-user-modal-panel__title">Role Privileges</h4>
+                  {canEditPrivileges && !editingPerms && (
+                    <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingPerms(true)}>
+                      Edit
+                    </button>
+                  )}
+                </div>
+
+                {user.isSuperAdmin ? (
+                  <div className="system-user-scope-unrestricted">
+                    <span className="badge badge-success">Full access</span>
+                    <p className="field-hint">Super admin accounts have all privileges.</p>
+                  </div>
+                ) : !roleId ? (
+                  <p className="system-user-scope-block__empty">No role assigned to this user.</p>
+                ) : (
+                  <>
+                    <p className="field-hint" style={{ marginBottom: '0.75rem' }}>
+                      Privileges for role <strong>{user.systemRoleId?.name}</strong>.
+                      {editingPerms && ' Changes apply to everyone with this role.'}
+                    </p>
+                    {editingPerms ? (
+                      <PermissionMatrix permissions={rolePerms} onChange={setRolePerms} />
+                    ) : (
+                      <PermissionSummary permissions={user.systemRoleId?.permissions} />
+                    )}
+
+                    {permsError && <p className="error-msg">{permsError}</p>}
+                    {permsSuccess && <p className="success-msg">{permsSuccess}</p>}
+
+                    {editingPerms && (
+                      <div className="system-user-perms-actions">
+                        <button type="button" className="btn-secondary" onClick={cancelPermsEdit} disabled={savingPerms}>
+                          Cancel
+                        </button>
+                        <button type="button" className="btn-primary" onClick={handleSavePermissions} disabled={savingPerms}>
+                          {savingPerms ? 'Saving...' : 'Save Privileges'}
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </section>

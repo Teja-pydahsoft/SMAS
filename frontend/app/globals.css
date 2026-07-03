@@ -1796,14 +1796,39 @@ body {
 }
 
 .system-user-modal {
-  max-width: 920px;
+  max-width: 1140px;
 }
 
 .system-user-modal-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
   align-items: start;
+}
+
+.system-user-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.system-user-panel-head .system-user-modal-panel__title {
+  margin-bottom: 0;
+}
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: var(--text-xs);
+}
+
+.system-user-perms-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+  flex-wrap: wrap;
 }
 
 .system-user-modal-panel {
@@ -1887,6 +1912,12 @@ body {
 .system-user-permission-list__access {
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+@media (max-width: 1024px) {
+  .system-user-modal-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {

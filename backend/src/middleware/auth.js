@@ -101,22 +101,31 @@ export function requirePermission(module, action) {
   };
 }
 
+function toIdString(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object' && value._id) return value._id.toString();
+  return value.toString();
+}
+
 export function hasDivisionScope(user, divisionId) {
   if (user.isSuperAdmin) return true;
   if (!divisionId) return true;
-  return (user.divisionIds || []).some((id) => id.toString() === divisionId.toString());
+  const target = toIdString(divisionId);
+  return (user.divisionIds || []).some((id) => toIdString(id) === target);
 }
 
 export function hasDepartmentScope(user, departmentId) {
   if (user.isSuperAdmin) return true;
   if (!departmentId) return true;
-  return (user.departmentIds || []).some((id) => id.toString() === departmentId.toString());
+  const target = toIdString(departmentId);
+  return (user.departmentIds || []).some((id) => toIdString(id) === target);
 }
 
 export function hasGateScope(user, gateId) {
   if (user.isSuperAdmin) return true;
   if (!gateId) return true;
-  return (user.gateIds || []).some((id) => id.toString() === gateId.toString());
+  const target = toIdString(gateId);
+  return (user.gateIds || []).some((id) => toIdString(id) === target);
 }
 
 export function applyDivisionScopeFilter(user, filter = {}) {

@@ -20,6 +20,7 @@ function DetailsIcon() {
 export default function ManageSystemUsersPage() {
   const { can } = useAuth();
   const canWrite = can('system_users', 'write');
+  const canEditRole = can('system_roles', 'write');
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -204,6 +205,7 @@ export default function ManageSystemUsersPage() {
         <SystemUserDetailsModal
           user={selectedUser}
           canWrite={canWrite}
+          canEditRole={canEditRole}
           onClose={() => setSelectedUser(null)}
           onSaved={handleUserSaved}
         />

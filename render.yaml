@@ -1,0 +1,44 @@
+# Render Blueprint — SMAS Backend
+# https://render.com/docs/blueprint-spec
+#
+# Deploy: connect this GitHub repo in Render → New Blueprint → select render.yaml
+# Set MONGODB_URI, AI_SERVER_URL, and FRONTEND_URL in the Render dashboard after deploy.
+
+services:
+  - type: web
+    name: smas-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: MONGODB_URI
+        sync: false
+      - key: AI_SERVER_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: SUPER_ADMIN_USERNAME
+        value: superadmin
+      - key: SUPER_ADMIN_PASSWORD
+        generateValue: true
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: FACE_MATCH_THRESHOLD
+        value: "0.42"
+      - key: MIN_MATCH_MARGIN
+        value: "0.05"
+      - key: SEARCH_TOP_K
+        value: "5"
+      - key: FACE_EMBEDDING_SIZE
+        value: "512"

@@ -1,0 +1,19 @@
+{
+  "name": "smas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Smart Management Access System - dynamic roles, registration, and gate access",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:ai\"",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:ai": "cd ai-server && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "clean:frontend": "npm run clean --prefix frontend",
+    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend",
+    "db:up": "docker compose up -d mongodb",
+    "db:down": "docker compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -5,6 +5,7 @@ import SystemUser from '../models/SystemUser.js';
 import SystemRole from '../models/SystemRole.js';
 import Division from '../models/Division.js';
 import Department from '../models/Department.js';
+import Gate from '../models/Gate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { requirePermission } from '../middleware/auth.js';
 
@@ -15,11 +16,26 @@ function normalizeIdList(values) {
   return [...new Set(values.map(String).filter((id) => mongoose.Types.ObjectId.isValid(id)))];
 }
 
-async function validateAccessScope(divisionIds, departmentIds) {
+async function validateAccessScope(divisionIds, gateIds, departmentIds) {
   if (divisionIds.length > 0) {
     const found = await Division.countDocuments({ _id: { $in: divisionIds } });
     if (found !== divisionIds.length) {
       return { error: 'One or more divisions were not found' };
+    }
+  }
+  if (gateIds.length > 0) {
+    const gates = await Gate.find({ _id: { $in: gateIds } });
+    if (gates.length !== gateIds.length) {
+      return { error: 'One or more gates were not found' };
+    }
+    if (divisionIds.length > 0) {
+      const divisionSet = new Set(divisionIds);
+      const invalidGate = gates.find(
+        (gate) => !divisionSet.has(gate.divisionId?.toString())
+      );
+      if (invalidGate) {
+        return { error: 'Selected gates must belong to the selected divisions' };
+      }
     }
   }
   if (departmentIds.length > 0) {
@@ -49,6 +65,7 @@ function serializeUser(user) {
     isSuperAdmin: user.isSuperAdmin,
     isActive: user.isActive,
     divisionIds: user.divisionIds,
+    gateIds: user.gateIds,
     departmentIds: user.departmentIds,
     systemRoleId: user.systemRoleId,
     lastLoginAt: user.lastLoginAt,
@@ -64,6 +81,7 @@ router.get(
     const users = await SystemUser.find()
       .populate('systemRoleId', 'name slug isActive')
       .populate('divisionIds', 'name slug')
+      .populate('gateIds', 'name slug gateType')
       .populate('departmentIds', 'name slug')
       .sort({ createdAt: -1 });
     res.json(users.map(serializeUser));
@@ -77,6 +95,7 @@ router.get(
     const user = await SystemUser.findById(req.params.id)
       .populate('systemRoleId', 'name slug isActive permissions')
       .populate('divisionIds', 'name slug')
+      .populate('gateIds', 'name slug gateType')
       .populate('departmentIds', 'name slug');
     if (!user) return res.status(404).json({ error: 'System user not found' });
     res.json(serializeUser(user));
@@ -102,8 +121,9 @@ router.post(
     }
 
     const divisionIds = normalizeIdList(req.body.divisionIds);
+    const gateIds = normalizeIdList(req.body.gateIds);
     const departmentIds = normalizeIdList(req.body.departmentIds);
-    const scopeCheck = await validateAccessScope(divisionIds, departmentIds);
+    const scopeCheck = await validateAccessScope(divisionIds, gateIds, departmentIds);
     if (scopeCheck.error) return res.status(400).json({ error: scopeCheck.error });
 
     const existing = await SystemUser.findOne({ username: username.toLowerCase().trim() });
@@ -118,12 +138,14 @@ router.post(
       systemRoleId,
       isSuperAdmin: false,
       divisionIds,
+      gateIds,
       departmentIds,
     });
 
     const populated = await SystemUser.findById(user._id)
       .populate('systemRoleId', 'name slug')
       .populate('divisionIds', 'name slug')
+      .populate('gateIds', 'name slug gateType')
       .populate('departmentIds', 'name slug');
 
     res.status(201).json(serializeUser(populated));
@@ -153,16 +175,20 @@ router.put(
       updates.systemRoleId = req.body.systemRoleId;
     }
 
-    if (req.body.divisionIds !== undefined || req.body.departmentIds !== undefined) {
+    if (req.body.divisionIds !== undefined || req.body.gateIds !== undefined || req.body.departmentIds !== undefined) {
       const divisionIds = normalizeIdList(
         req.body.divisionIds !== undefined ? req.body.divisionIds : user.divisionIds
+      );
+      const gateIds = normalizeIdList(
+        req.body.gateIds !== undefined ? req.body.gateIds : user.gateIds
       );
       const departmentIds = normalizeIdList(
         req.body.departmentIds !== undefined ? req.body.departmentIds : user.departmentIds
       );
-      const scopeCheck = await validateAccessScope(divisionIds, departmentIds);
+      const scopeCheck = await validateAccessScope(divisionIds, gateIds, departmentIds);
       if (scopeCheck.error) return res.status(400).json({ error: scopeCheck.error });
       updates.divisionIds = divisionIds;
+      updates.gateIds = gateIds;
       updates.departmentIds = departmentIds;
     }
 
@@ -179,6 +205,7 @@ router.put(
     })
       .populate('systemRoleId', 'name slug')
       .populate('divisionIds', 'name slug')
+      .populate('gateIds', 'name slug gateType')
       .populate('departmentIds', 'name slug');
 
     res.json(serializeUser(updated));

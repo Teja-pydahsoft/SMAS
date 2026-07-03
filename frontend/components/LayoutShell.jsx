@@ -7,9 +7,18 @@ import AuthGuard from '@/components/AuthGuard';
 export default function LayoutShell({ children }) {
   const pathname = usePathname();
   const isLogin = pathname === '/login';
+  const isGateLanding = pathname === '/access-scope';
 
   if (isLogin) {
     return <div className="login-shell">{children}</div>;
+  }
+
+  if (isGateLanding) {
+    return (
+      <AuthGuard>
+        <div className="gate-landing-shell">{children}</div>
+      </AuthGuard>
+    );
   }
 
   return (

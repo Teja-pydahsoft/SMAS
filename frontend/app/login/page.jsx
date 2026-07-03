@@ -1,14 +1,13 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { getHomeRoute } from '@/lib/auth/routing';
+import { getPostLoginRoute } from '@/lib/auth/routing';
 import { getToken } from '@/lib/auth/session';
 
 function LoginForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { login, user, loading: authLoading } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -17,9 +16,9 @@ function LoginForm() {
 
   useEffect(() => {
     if (!authLoading && (user || getToken())) {
-      router.replace(searchParams.get('next') || getHomeRoute());
+      router.replace(getPostLoginRoute());
     }
-  }, [user, authLoading, router, searchParams]);
+  }, [user, authLoading, router]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -27,7 +26,7 @@ function LoginForm() {
     setError('');
     try {
       await login(username.trim(), password);
-      router.replace(searchParams.get('next') || getHomeRoute());
+      router.replace(getPostLoginRoute());
     } catch (err) {
       setError(err.message);
     } finally {

@@ -68,7 +68,7 @@ export default function UserDashboardProfile() {
       <div className="card dashboard-profile-card">
         <h3 className="section-title">Access Scope</h3>
         {user.isSuperAdmin ? (
-          <p className="section-desc">Full access to all divisions and departments.</p>
+          <p className="section-desc">Full access to all divisions, gates, and departments.</p>
         ) : (
           <>
             <p className="field-hint">Divisions you can access</p>
@@ -80,6 +80,16 @@ export default function UserDashboardProfile() {
                     </span>
                   ))
                 : <span className="scope-empty">No division scope assigned</span>}
+            </div>
+            <p className="field-hint">Gates you can access</p>
+            <div className="scope-badges" style={{ marginBottom: '1rem' }}>
+              {(user.gateIds || []).length > 0
+                ? user.gateIds.map((gate) => (
+                    <span key={gate._id || gate} className="badge badge-success">
+                      {gate.name || gate}
+                    </span>
+                  ))
+                : <span className="scope-empty">No gate scope assigned</span>}
             </div>
             <p className="field-hint">Departments you can access</p>
             <div className="scope-badges">
@@ -138,7 +148,7 @@ export default function UserDashboardProfile() {
           <p className="section-desc">Shortcuts to areas you can access</p>
           <div className="dashboard-link-grid">
             {quickLinks.map((link) => (
-              <Link key={link.module} href={link.path} className="dashboard-module-link">
+              <Link key={link.path} href={link.path} className="dashboard-module-link">
                 <span>{link.label}</span>
                 <span className="dashboard-module-access">
                   {can(link.module, 'write') ? 'Read & write' : 'View only'}

@@ -808,6 +808,147 @@ body {
   line-height: 1.45;
 }
 
+.gate-matched-person {
+  margin-top: 0.75rem;
+}
+
+.gate-matched-person__header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.gate-matched-person__photo {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.gate-matched-person__photo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.gate-matched-person__name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.gate-matched-person__role,
+.gate-matched-person__code,
+.gate-matched-person__score {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.gate-matched-person__status {
+  margin-top: 0.85rem;
+  font-size: 0.875rem;
+}
+
+.gate-matched-person__status p + p {
+  margin-top: 0.35rem;
+}
+
+.gate-matched-person__active-dept {
+  color: var(--danger-strong, #b42318);
+}
+
+.gate-matched-person__details {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.text-success {
+  color: var(--success);
+}
+
+.text-danger {
+  color: var(--danger);
+}
+
+.access-scope-toolbar,
+.entry-exit-toolbar {
+  margin-bottom: 1rem;
+}
+
+.access-scope-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.access-scope-division {
+  padding: 1.25rem;
+}
+
+.access-scope-section + .access-scope-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.access-scope-section__title {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.access-scope-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.access-scope-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  background: var(--bg-inset);
+  border-radius: var(--radius-sm);
+}
+
+.access-scope-item__name {
+  font-weight: 600;
+}
+
+.access-scope-item__meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.access-scope-item__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.entry-exit-context__label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.entry-exit-context__title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  margin-top: 0.25rem;
+}
+
 .gate-layout {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
@@ -1671,6 +1812,163 @@ body {
   margin: 0;
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+.login-hint {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ─── Post-login gate landing (security) ─── */
+.gate-landing-shell {
+  min-height: 100vh;
+  padding: 1.5rem 1rem 2.5rem;
+}
+
+.gate-landing {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.gate-landing-loading {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 2rem;
+}
+
+.gate-landing__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.gate-landing__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.gate-landing__brand h1 {
+  font-size: 1.35rem;
+  margin: 0;
+}
+
+.gate-landing__brand p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.gate-landing__signout {
+  font-size: 0.85rem;
+  padding: 0.45rem 0.85rem;
+}
+
+.gate-landing__welcome {
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.gate-landing__greeting {
+  font-size: 1.05rem;
+}
+
+.gate-landing__hint {
+  margin-top: 0.4rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.gate-landing__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.gate-landing__division {
+  padding: 1.1rem 1.25rem;
+}
+
+.gate-landing__division-name {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.85rem;
+  color: var(--text);
+}
+
+.gate-landing__gates {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.gate-landing__gate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  background: var(--bg-inset);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pressed-sm);
+}
+
+.gate-landing__gate-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.gate-landing__gate-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.gate-landing__gate-type {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.gate-landing__gate-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.gate-landing__empty {
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.gate-landing__footer {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+}
+
+.gate-landing__dashboard-link {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+}
+
+.gate-landing__dashboard-link:hover {
+  color: var(--primary);
 }
 
 .login-submit {

@@ -15,6 +15,7 @@ export async function ensureSuperAdmin() {
       displayName: 'Super Admin',
       isSuperAdmin: true,
       divisionIds: [],
+      gateIds: [],
       departmentIds: [],
     });
     console.log(`Super admin created (username: ${username})`);
@@ -26,6 +27,7 @@ export async function ensureSuperAdmin() {
     isActive: true,
     systemRoleId: null,
     divisionIds: [],
+    gateIds: [],
     departmentIds: [],
   };
 

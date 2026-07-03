@@ -57,6 +57,7 @@ export async function authenticate(req, res, next) {
     const user = await SystemUser.findById(payload.sub)
       .populate('systemRoleId', 'name slug permissions isActive')
       .populate('divisionIds', 'name slug')
+      .populate('gateIds', 'name slug gateType divisionId')
       .populate('departmentIds', 'name slug')
       .select('-passwordHash');
 
@@ -110,6 +111,12 @@ export function hasDepartmentScope(user, departmentId) {
   if (user.isSuperAdmin) return true;
   if (!departmentId) return true;
   return (user.departmentIds || []).some((id) => id.toString() === departmentId.toString());
+}
+
+export function hasGateScope(user, gateId) {
+  if (user.isSuperAdmin) return true;
+  if (!gateId) return true;
+  return (user.gateIds || []).some((id) => id.toString() === gateId.toString());
 }
 
 export function applyDivisionScopeFilter(user, filter = {}) {

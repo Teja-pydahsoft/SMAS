@@ -102,12 +102,12 @@ export default function DashboardPage() {
               </Link>
             </WriteAccess>
             <WriteAccess module="gate">
-              <Link href="/gate">
-                <button type="button" className="btn-secondary">Gate Entry/Exit</button>
+              <Link href="/access-scope">
+                <button type="button" className="btn-secondary">Gate Access</button>
               </Link>
             </WriteAccess>
             {modules.map((m) => (
-              <Link key={m.module} href={m.path}>
+              <Link key={m.path} href={m.path}>
                 <button type="button" className="btn-secondary">Open {m.label}</button>
               </Link>
             ))}

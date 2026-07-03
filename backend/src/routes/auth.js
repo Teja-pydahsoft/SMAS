@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import SystemUser from '../models/SystemUser.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate, signToken } from '../middleware/auth.js';
+import { getUserAccessScope } from '../services/accessScopeService.js';
 
 const router = Router();
 
@@ -23,6 +24,7 @@ function serializeUser(user) {
     isSuperAdmin: user.isSuperAdmin,
     isActive: user.isActive,
     divisionIds: user.divisionIds,
+    gateIds: user.gateIds,
     departmentIds: user.departmentIds,
     systemRoleId: role
       ? {
@@ -50,6 +52,7 @@ router.post(
       .select('+passwordHash')
       .populate('systemRoleId', 'name slug permissions isActive')
       .populate('divisionIds', 'name slug')
+      .populate('gateIds', 'name slug gateType divisionId')
       .populate('departmentIds', 'name slug');
 
     if (!user || !user.isActive) {
@@ -70,6 +73,15 @@ router.post(
 
     const token = signToken(user);
     res.json({ token, user: serializeUser(user) });
+  })
+);
+
+router.get(
+  '/access-scope',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const scope = await getUserAccessScope(req.user);
+    res.json(scope);
   })
 );
 

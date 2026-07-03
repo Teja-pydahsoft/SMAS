@@ -1,4 +1,5 @@
 import Pass from '../models/Pass.js';
+import GateLog from '../models/GateLog.js';
 import Division from '../models/Division.js';
 import Department from '../models/Department.js';
 import { PASS_TYPES, GATE_EVENT_TYPES, SCAN_TYPES } from '../constants/index.js';
@@ -25,6 +26,14 @@ export async function getActiveDayPass(registrationId, divisionId) {
     isActive: true,
   }).sort({ createdAt: -1 });
 }
+
+export const DEPARTMENT_DENIAL_REASONS = {
+  NO_GATE_ENTRY: 'no_gate_entry',
+  ACTIVE_IN_OTHER_DEPARTMENT: 'active_in_other_department',
+  ALREADY_IN_DEPARTMENT: 'already_in_department',
+  NOT_IN_DEPARTMENT: 'not_in_department',
+  NOT_CHECKED_IN: 'not_checked_in',
+};
 
 export function getPassSessionState(pass) {
   if (!pass?.qrPayload) {
@@ -72,40 +81,114 @@ export async function validateGateScan(pass, eventType) {
   return { ok: false, error: 'Invalid event type' };
 }
 
-export async function validateDepartmentScan(pass, department, eventType) {
-  const state = getPassSessionState(pass);
+function activeDepartmentFromState(state) {
+  if (!state.currentDepartmentId) return null;
+  return {
+    departmentId: state.currentDepartmentId,
+    departmentName: state.currentDepartmentName,
+  };
+}
 
-  if (!state.divisionInside) {
-    return { ok: false, error: 'Division gate entry required before department check-in.' };
+export async function hasTodayGateEntry(registrationId, divisionId) {
+  const pass = await getActiveDayPass(registrationId, divisionId);
+  const state = getPassSessionState(pass);
+  if (state.divisionInside) {
+    return { ok: true, gateEntryAt: state.gateEntryAt || null };
+  }
+
+  const validDate = todayDateString();
+  const startOfDay = new Date(`${validDate}T00:00:00.000Z`);
+  const endOfDayDate = endOfDay();
+
+  const lastGateEntry = await GateLog.findOne({
+    registrationId,
+    divisionId,
+    scanType: SCAN_TYPES.GATE,
+    eventType: GATE_EVENT_TYPES.ENTRY,
+    matched: true,
+    createdAt: { $gte: startOfDay, $lte: endOfDayDate },
+  }).sort({ createdAt: -1 });
+
+  if (!lastGateEntry) {
+    return { ok: false, gateEntryAt: null };
+  }
+
+  const lastGateExit = await GateLog.findOne({
+    registrationId,
+    divisionId,
+    scanType: SCAN_TYPES.GATE,
+    eventType: GATE_EVENT_TYPES.EXIT,
+    matched: true,
+    createdAt: { $gt: lastGateEntry.createdAt, $lte: endOfDayDate },
+  }).sort({ createdAt: -1 });
+
+  return {
+    ok: !lastGateExit,
+    gateEntryAt: lastGateEntry.createdAt?.toISOString?.() || lastGateEntry.createdAt,
+  };
+}
+
+export async function validateDepartmentScan(pass, department, eventType, registrationId, divisionId) {
+  const state = getPassSessionState(pass);
+  const gateEntry = await hasTodayGateEntry(registrationId, divisionId);
+  const hasGateEntry = gateEntry.ok;
+  const activeDepartment = activeDepartmentFromState(state);
+
+  if (!hasGateEntry) {
+    return {
+      ok: false,
+      reason: DEPARTMENT_DENIAL_REASONS.NO_GATE_ENTRY,
+      error: 'No division gate entry today. Complete gate entry before department check-in or check-out.',
+      hasGateEntry: false,
+      activeDepartment,
+    };
   }
 
   if (eventType === GATE_EVENT_TYPES.ENTRY) {
     if (state.currentDepartmentId) {
       if (state.currentDepartmentId === department._id.toString()) {
-        return { ok: false, error: 'Already checked into this department. Check out first.' };
+        return {
+          ok: false,
+          reason: DEPARTMENT_DENIAL_REASONS.ALREADY_IN_DEPARTMENT,
+          error: 'Already checked into this department. Check out first.',
+          hasGateEntry: true,
+          activeDepartment,
+        };
       }
       return {
         ok: false,
+        reason: DEPARTMENT_DENIAL_REASONS.ACTIVE_IN_OTHER_DEPARTMENT,
         error: `Still checked into "${state.currentDepartmentName}". Check out before entering another department.`,
+        hasGateEntry: true,
+        activeDepartment,
       };
     }
-    return { ok: true };
+    return { ok: true, hasGateEntry: true, activeDepartment: null };
   }
 
   if (eventType === GATE_EVENT_TYPES.EXIT) {
     if (!state.currentDepartmentId) {
-      return { ok: false, error: 'Not checked into any department.' };
+      return {
+        ok: false,
+        reason: DEPARTMENT_DENIAL_REASONS.NOT_CHECKED_IN,
+        error: 'Not checked into any department.',
+        hasGateEntry: true,
+        activeDepartment: null,
+      };
     }
     if (state.currentDepartmentId !== department._id.toString()) {
       return {
         ok: false,
+        reason: DEPARTMENT_DENIAL_REASONS.ACTIVE_IN_OTHER_DEPARTMENT,
         error: `Currently checked into "${state.currentDepartmentName}", not this department.`,
+        hasGateEntry: true,
+        activeDepartment,
       };
     }
-    return { ok: true };
+    return { ok: true, hasGateEntry: true, activeDepartment };
   }
 
-  return { ok: false, error: 'Invalid event type' };
+  return { ok: false, error: 'Invalid event type', hasGateEntry };
 }
 
 export async function createOrRefreshDayPass({

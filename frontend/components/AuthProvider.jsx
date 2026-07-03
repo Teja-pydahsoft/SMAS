@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { clearSession, getStoredUser, getToken, setSession, hasPermission } from '@/lib/auth/session';
+import { clearGateFlowState } from '@/lib/gateSession';
 
 const AuthContext = createContext(null);
 
@@ -43,6 +44,7 @@ export function AuthProvider({ children }) {
   const login = useCallback(
     async (username, password) => {
       const result = await api.auth.login(username, password);
+      clearGateFlowState();
       setSession(result.token, result.user);
       setUser(result.user);
       return result.user;
@@ -51,6 +53,7 @@ export function AuthProvider({ children }) {
   );
 
   const logout = useCallback(() => {
+    clearGateFlowState();
     clearSession();
     setUser(null);
     router.push('/login');

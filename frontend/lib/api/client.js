@@ -41,6 +41,7 @@ export const api = {
     login: (username, password) =>
       request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
     me: () => request('/auth/me'),
+    accessScope: () => request('/auth/access-scope'),
   },
 
   systemRoles: {

@@ -2,7 +2,8 @@ import { PERMISSION_MODULES } from '@/lib/auth/permissions';
 import { hasPermission } from '@/lib/auth/session';
 
 export const MODULE_ROUTES = [
-  { module: 'gate', path: '/gate', label: 'Gate Entry / Exit' },
+  { module: 'gate', path: '/access-scope', label: 'Gate Access' },
+  { module: 'gate', path: '/entry-exit', label: 'Entry & Exit' },
   { module: 'divisions', path: '/divisions/manage', label: 'Divisions' },
   { module: 'departments', path: '/departments/manage', label: 'Departments' },
   { module: 'registrations', path: '/registrations/manage', label: 'Registrations' },
@@ -17,5 +18,13 @@ export function getAccessibleModules(user) {
 }
 
 export function getHomeRoute() {
+  return '/access-scope';
+}
+
+export function getPostLoginRoute() {
+  return '/access-scope';
+}
+
+export function getDashboardRoute() {
   return '/';
 }

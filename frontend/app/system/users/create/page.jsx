@@ -10,6 +10,7 @@ export default function CreateSystemUserPage() {
   const { allowed, loading: permLoading } = useRequireWrite('system_users', '/system/users/manage');
   const [roles, setRoles] = useState([]);
   const [divisions, setDivisions] = useState([]);
+  const [gates, setGates] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -17,6 +18,7 @@ export default function CreateSystemUserPage() {
   const [password, setPassword] = useState('');
   const [systemRoleId, setSystemRoleId] = useState('');
   const [divisionIds, setDivisionIds] = useState([]);
+  const [gateIds, setGateIds] = useState([]);
   const [departmentIds, setDepartmentIds] = useState([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -26,17 +28,25 @@ export default function CreateSystemUserPage() {
     Promise.all([
       api.systemRoles.list(),
       api.divisions.list({ isActive: 'true' }),
+      api.gates.list({ isActive: 'true' }),
       api.departments.list({ isActive: 'true' }),
     ])
-      .then(([roleList, divisionList, departmentList]) => {
+      .then(([roleList, divisionList, gateList, departmentList]) => {
         const activeRoles = roleList.filter((r) => r.isActive);
         setRoles(activeRoles);
         setDivisions(divisionList);
+        setGates(gateList);
         setDepartments(departmentList);
         if (activeRoles.length > 0) setSystemRoleId(activeRoles[0]._id);
       })
       .catch((e) => setError(e.message));
   }, []);
+
+  const scopedGates = useMemo(() => {
+    if (divisionIds.length === 0) return gates;
+    const selected = new Set(divisionIds);
+    return gates.filter((gate) => selected.has(gate.divisionId?._id || gate.divisionId));
+  }, [gates, divisionIds]);
 
   const scopedDepartments = useMemo(() => {
     if (divisionIds.length === 0) return departments;
@@ -50,6 +60,12 @@ export default function CreateSystemUserPage() {
     setDivisionIds((prev) => {
       const next = prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id];
       if (!next.includes(id)) {
+        const allowedGateIds = new Set(
+          gates
+            .filter((gate) => next.includes(gate.divisionId?._id || gate.divisionId))
+            .map((gate) => gate._id)
+        );
+        setGateIds((gatePrev) => gatePrev.filter((gateId) => allowedGateIds.has(gateId)));
         const allowedDeptIds = new Set(
           departments
             .filter((dept) => (dept.divisionIds || []).some((div) => next.includes(div._id)))
@@ -59,6 +75,12 @@ export default function CreateSystemUserPage() {
       }
       return next;
     });
+  }
+
+  function toggleGate(id) {
+    setGateIds((prev) =>
+      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]
+    );
   }
 
   function toggleDepartment(id) {
@@ -86,6 +108,7 @@ export default function CreateSystemUserPage() {
         password,
         systemRoleId,
         divisionIds,
+        gateIds,
         departmentIds,
       });
       setSuccess(`User "${user.displayName}" created successfully.`);
@@ -94,6 +117,7 @@ export default function CreateSystemUserPage() {
       setUsername('');
       setPassword('');
       setDivisionIds([]);
+      setGateIds([]);
       setDepartmentIds([]);
       setTimeout(() => router.push('/system/users/manage'), 1500);
     } catch (err) {
@@ -112,7 +136,7 @@ export default function CreateSystemUserPage() {
       <div className="card">
         <h3 className="section-title">System User Details</h3>
         <p className="section-desc">
-          Create a system user, assign a role, then limit access by divisions and departments below.
+          Create a system user, assign a role, then limit access by divisions, gates, and departments below.
         </p>
 
         <div className="form-group">
@@ -183,6 +207,38 @@ export default function CreateSystemUserPage() {
                     onChange={() => toggleDivision(division._id)}
                   />
                   <span>{division.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="form-group">
+          <label>Access Scope — Gates</label>
+          <p className="field-hint">
+            Select specific division gates this user can operate. Gates are filtered by selected divisions.
+          </p>
+          {scopedGates.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+              {divisionIds.length === 0
+                ? 'Select divisions first to filter gates.'
+                : 'No gates in the selected divisions.'}
+            </p>
+          ) : (
+            <div className="checkbox-group">
+              {scopedGates.map((gate) => (
+                <label key={gate._id} className="checkbox-option">
+                  <input
+                    type="checkbox"
+                    checked={gateIds.includes(gate._id)}
+                    onChange={() => toggleGate(gate._id)}
+                  />
+                  <span>
+                    {gate.name}
+                    <span style={{ color: 'var(--text-muted)', marginLeft: '0.35rem' }}>
+                      ({gate.divisionId?.name || 'Division'})
+                    </span>
+                  </span>
                 </label>
               ))}
             </div>

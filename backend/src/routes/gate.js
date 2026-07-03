@@ -14,6 +14,7 @@ import {
   searchFaceEmbeddings,
 } from '../services/aiClient.js';
 import { loadRegistrationContext, formatPassResponse } from '../services/passService.js';
+import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import {
   getActiveDayPass,
   getPassSessionState,
@@ -25,6 +26,7 @@ import {
 } from '../services/attendanceService.js';
 import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
 import { uploadDir } from '../utils/storage.js';
+import { hasDivisionScope, hasDepartmentScope, hasGateScope } from '../middleware/auth.js';
 
 const router = Router();
 const MATCH_THRESHOLD = parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.42');
@@ -112,6 +114,50 @@ router.post(
     });
   })
 );
+
+async function formatRegistrationForScan(registrationDoc) {
+  const registration = await Registration.findById(registrationDoc._id)
+    .populate('roleId', 'name slug')
+    .populate('formId', 'fields');
+  if (!registration) return null;
+  const obj = registration.toObject();
+  const display = buildDisplayInfo(obj.formData, obj.formId?.fields || []);
+  return {
+    ...obj,
+    displayName: display.displayName,
+    displayPhone: display.displayPhone,
+    formDetails: display.details,
+    photoUrl: photoUrlFromPath(obj.photoPath),
+  };
+}
+
+function buildScanDenialResponse({
+  scanType,
+  matchScore,
+  registration,
+  log,
+  error,
+  reason,
+  sessionState,
+  dayPass,
+  hasGateEntry,
+  activeDepartment,
+}) {
+  return {
+    matched: true,
+    denied: true,
+    scanType,
+    matchScore,
+    registration,
+    log,
+    error,
+    reason,
+    hasGateEntry,
+    activeDepartment,
+    sessionState,
+    dayPass,
+  };
+}
 
 async function identifyFromPhoto(filePath, registrationId) {
   const imageBuffer = fs.readFileSync(filePath);
@@ -262,6 +308,18 @@ router.post(
       logFields.gateId = 'department';
     }
 
+    if (req.user && !req.user.isSuperAdmin) {
+      if (!hasDivisionScope(req.user, divisionId)) {
+        return res.status(403).json({ error: 'You do not have access to this division' });
+      }
+      if (scanType === SCAN_TYPES.GATE && !hasGateScope(req.user, gateRecord._id)) {
+        return res.status(403).json({ error: 'You do not have access to this gate' });
+      }
+      if (scanType === SCAN_TYPES.DEPARTMENT && !hasDepartmentScope(req.user, department._id)) {
+        return res.status(403).json({ error: 'You do not have access to this department' });
+      }
+    }
+
     const identify = await identifyFromPhoto(req.file.path, registrationId || null);
     if (identify.error) {
       return res.status(identify.status || 400).json({ error: identify.error });
@@ -328,7 +386,7 @@ router.post(
       });
     }
 
-    const populated = await Registration.findById(matchedRegistration._id).populate('roleId', 'name slug');
+    const populated = await formatRegistrationForScan(matchedRegistration);
     const activePass = await getActiveDayPass(matchedRegistration._id, divisionId);
     let dayPass = activePass ? await formatPassResponse(activePass) : null;
     let sessionState = getPassSessionState(activePass);
@@ -336,16 +394,17 @@ router.post(
     if (scanType === SCAN_TYPES.GATE) {
       const gateCheck = await validateGateScan(activePass, eventType);
       if (!gateCheck.ok) {
-        return res.status(400).json({
-          matched: true,
-          scanType,
-          matchScore,
-          registration: populated,
-          log,
-          error: gateCheck.error,
-          sessionState,
-          dayPass,
-        });
+        return res.status(400).json(
+          buildScanDenialResponse({
+            scanType,
+            matchScore,
+            registration: populated,
+            log,
+            error: gateCheck.error,
+            sessionState,
+            dayPass,
+          })
+        );
       }
 
       if (eventType === GATE_EVENT_TYPES.ENTRY) {
@@ -364,18 +423,28 @@ router.post(
         sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
       }
     } else {
-      const deptCheck = await validateDepartmentScan(activePass, department, eventType);
+      const deptCheck = await validateDepartmentScan(
+        activePass,
+        department,
+        eventType,
+        matchedRegistration._id,
+        divisionId
+      );
       if (!deptCheck.ok) {
-        return res.status(400).json({
-          matched: true,
-          scanType,
-          matchScore,
-          registration: populated,
-          log,
-          error: deptCheck.error,
-          sessionState,
-          dayPass,
-        });
+        return res.status(400).json(
+          buildScanDenialResponse({
+            scanType,
+            matchScore,
+            registration: populated,
+            log,
+            error: deptCheck.error,
+            reason: deptCheck.reason,
+            hasGateEntry: deptCheck.hasGateEntry,
+            activeDepartment: deptCheck.activeDepartment,
+            sessionState,
+            dayPass,
+          })
+        );
       }
 
       dayPass = await updateDayPassAfterDepartmentScan(activePass, department, eventType);
@@ -384,6 +453,7 @@ router.post(
 
     res.json({
       matched: true,
+      denied: false,
       scanType,
       matchScore,
       registration: populated,

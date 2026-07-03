@@ -59,7 +59,7 @@ export default function ManageSystemUsersPage() {
         <div>
           <h3 className="section-title">System Users</h3>
           <p className="section-desc">
-            Users with assigned roles and optional division/department access scope. Super admin has no restrictions.
+            Users with assigned roles and optional division, gate, and department access scope. Super admin has no restrictions.
           </p>
         </div>
         <WriteAccess module="system_users">
@@ -114,16 +114,19 @@ export default function ManageSystemUsersPage() {
                     <td>{user.isSuperAdmin ? 'Unrestricted' : user.systemRoleId?.name || '—'}</td>
                     <td>
                       {user.isSuperAdmin ? (
-                        <span className="badge badge-success">All divisions & departments</span>
+                        <span className="badge badge-success">All divisions, gates & departments</span>
                       ) : (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
                           {(user.divisionIds || []).map((div) => (
                             <span key={div._id} className="badge badge-info">{div.name}</span>
                           ))}
+                          {(user.gateIds || []).map((gate) => (
+                            <span key={gate._id} className="badge badge-success">{gate.name}</span>
+                          ))}
                           {(user.departmentIds || []).map((dept) => (
                             <span key={dept._id} className="badge badge-warning">{dept.name}</span>
                           ))}
-                          {!user.divisionIds?.length && !user.departmentIds?.length && '—'}
+                          {!user.divisionIds?.length && !user.gateIds?.length && !user.departmentIds?.length && '—'}
                         </div>
                       )}
                     </td>

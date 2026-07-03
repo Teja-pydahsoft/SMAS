@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
+import { getGateSession } from '@/lib/gateSession';
+import { buildEntryExitUrl } from '@/lib/entryExit';
 
 const STORAGE_WIDTH = 'smas-sidebar-width';
 const STORAGE_COLLAPSED = 'smas-sidebar-collapsed';
@@ -23,6 +25,30 @@ const navItems = [
         <rect x="14" y="3" width="7" height="7" rx="1" />
         <rect x="3" y="14" width="7" height="7" rx="1" />
         <rect x="14" y="14" width="7" height="7" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    path: '/access-scope',
+    label: 'Gate Access',
+    module: 'gate',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 8v8" />
+        <path d="M8 12h8" />
+      </svg>
+    ),
+  },
+  {
+    path: '/entry-exit',
+    label: 'Entry & Exit',
+    module: 'gate',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+        <polyline points="10 17 15 12 10 7" />
+        <line x1="15" y1="12" x2="3" y2="12" />
       </svg>
     ),
   },
@@ -82,18 +108,6 @@ const navItems = [
     ),
   },
   {
-    path: '/gate',
-    label: 'Gate Entry/Exit',
-    module: 'gate',
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-        <polyline points="10 17 15 12 10 7" />
-        <line x1="15" y1="12" x2="3" y2="12" />
-      </svg>
-    ),
-  },
-  {
     path: '/reports',
     label: 'Reports',
     module: 'reports',
@@ -139,7 +153,18 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [gateSessionUrl, setGateSessionUrl] = useState(null);
   const widthRef = useRef(DEFAULT_WIDTH);
+
+  useEffect(() => {
+    const syncGateSession = () => {
+      const session = getGateSession();
+      setGateSessionUrl(session ? buildEntryExitUrl(session) : null);
+    };
+    syncGateSession();
+    window.addEventListener('smas-gate-session', syncGateSession);
+    return () => window.removeEventListener('smas-gate-session', syncGateSession);
+  }, [pathname]);
 
   useEffect(() => {
     const savedWidth = Number(localStorage.getItem(STORAGE_WIDTH));
@@ -202,12 +227,13 @@ export default function Sidebar() {
 
   const visibleNavItems = useMemo(() => {
     return navItems.filter((item) => {
+      if (item.path === '/entry-exit') return Boolean(gateSessionUrl);
       if (!item.module) return true;
       if (can(item.module, 'read')) return true;
       if (item.altModule && can(item.altModule, 'read')) return true;
       return false;
     });
-  }, [can]);
+  }, [can, gateSessionUrl]);
 
   function startResize(event) {
     if (collapsed || isMobile) return;
@@ -243,17 +269,20 @@ export default function Sidebar() {
       </div>
 
       <nav>
-        {visibleNavItems.map((item) => (
-          <Link
-            key={item.path}
-            href={item.path}
-            className={isActive(item.path) ? 'active' : ''}
-            title={collapsed ? item.label : undefined}
-          >
-            <span className="nav-icon">{item.icon}</span>
-            <span className="nav-label">{item.label}</span>
-          </Link>
-        ))}
+        {visibleNavItems.map((item) => {
+          const href = item.path === '/entry-exit' && gateSessionUrl ? gateSessionUrl : item.path;
+          return (
+            <Link
+              key={item.path}
+              href={href}
+              className={isActive(item.path) ? 'active' : ''}
+              title={collapsed ? item.label : undefined}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-label">{item.label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="sidebar-user">

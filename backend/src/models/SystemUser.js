@@ -9,6 +9,7 @@ const systemUserSchema = new mongoose.Schema(
     systemRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'SystemRole', default: null },
     isSuperAdmin: { type: Boolean, default: false },
     divisionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Division' }],
+    gateIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Gate' }],
     departmentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Department' }],
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },

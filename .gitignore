@@ -33,3 +33,6 @@ Thumbs.db
 
 # MongoDB data (local)
 data/
+
+# Hugging Face Space push temp clone (never commit)
+_hf-space-temp/

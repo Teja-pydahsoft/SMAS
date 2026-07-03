@@ -1,7 +1,8 @@
 # Fly.io config for SMAS AI server
 # Deploy from ai-server/: fly launch / fly deploy
 
-app = "smas-ai-server"
+# Use the SAME name here as in the Fly dashboard "App name" field
+app = "teja-smas-ai"
 primary_region = "bom"
 
 [build]
@@ -34,6 +35,8 @@ primary_region = "bom"
   cpu_kind = "shared"
   cpus = 1
 
-[mounts]
-  source = "smas_ai_data"
-  destination = "/data"
+# Uncomment after creating the volume (Fly dashboard → Storage → Create volume,
+# name: smas_ai_data, region: bom, size: 1 GB). Required for persistent face index.
+# [mounts]
+#   source = "smas_ai_data"
+#   destination = "/data"

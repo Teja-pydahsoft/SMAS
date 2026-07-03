@@ -35,25 +35,35 @@ Browser → Vercel (Next.js)
 
 ---
 
-## Step 2 — Fly.io (AI server)
+## Step 2 — AI server (pick one — no Fly.io card required)
 
-Requires [flyctl](https://fly.io/docs/hands-on/install-flyctl/) and a Fly account.
+Fly.io often requires a debit card. **Use one of these instead** — full guide: **[deploy/AI-HOSTING.md](deploy/AI-HOSTING.md)**
+
+### Recommended: Hugging Face Spaces (free, no card, 16 GB RAM)
+
+1. [huggingface.co](https://huggingface.co) → **New Space** → **Docker**
+2. Connect GitHub repo `Teja-pydahsoft/SMAS`
+3. Settings → Dockerfile path: `ai-server/Dockerfile`, App port: `8000`
+4. Test: `https://YOUR-SPACE.hf.space/health`
+
+### Alternative: Render Docker (included in `render.yaml`)
+
+Deploys as `smas-ai-server` with the backend blueprint. Free tier has only 512 MB — may be too small for InsightFace.
+
+### Skip Fly.io unless you add a card
+
+<details>
+<summary>Fly.io (requires card)</summary>
 
 ```bash
 cd ai-server
 fly auth login
 fly launch --no-deploy
-# Accept app name or set smas-ai-server; pick region bom (Mumbai) or nearest
 fly volumes create smas_ai_data --region bom --size 1
 fly deploy
-fly status
 ```
 
-Note the app URL, e.g. `https://smas-ai-server.fly.dev`.
-
-**First deploy** downloads the InsightFace model (~100–500 MB) and can take several minutes. The health check has a 60s grace period.
-
-**Free tier note:** `fly.toml` uses `buffalo_s` and 1 GB RAM to fit free allowances. For better accuracy on a paid plan, switch to `buffalo_l` and `DET_SIZE=640,640`.
+</details>
 
 ---
 

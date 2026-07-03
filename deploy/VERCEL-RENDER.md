@@ -1,6 +1,6 @@
 # Vercel + Render setup (AI already on Hugging Face)
 
-You have: **Hugging Face** `https://teja-smas-ai.hf.space`  
+You have: **Hugging Face** `https://tejaPydahSoft-teja-smas-ai.hf.space`  
 You need: **MongoDB Atlas** + **Render** (backend) + **Vercel** (frontend)
 
 ```
@@ -46,7 +46,7 @@ Open **smas-backend** → **Environment** → add or confirm:
 | Key | Value |
 |-----|-------|
 | `MONGODB_URI` | Your Atlas connection string from Step 1 |
-| `AI_SERVER_URL` | `https://teja-smas-ai.hf.space` |
+| `AI_SERVER_URL` | `https://tejaPydahSoft-teja-smas-ai.hf.space` |
 | `HF_TOKEN` | Hugging Face **Read** token (only if Space is **Private**) |
 | `FRONTEND_URL` | Leave empty for now — set after Vercel (Step 3) |
 
@@ -63,7 +63,7 @@ Copy **SUPER_ADMIN_PASSWORD** from Environment — you need it to log in.
    ```
 
 If `"ai": "offline"`:
-- Check `AI_SERVER_URL` is exactly `https://teja-smas-ai.hf.space`
+- Check `AI_SERVER_URL` is exactly `https://tejaPydahSoft-teja-smas-ai.hf.space`
 - If HF Space is Private, set `HF_TOKEN` with a Read token
 - Or make HF Space **Public** (Settings → Visibility)
 
@@ -143,7 +143,7 @@ https://YOUR-VERCEL-URL.vercel.app/api/health
 
 | Service | URL |
 |---------|-----|
-| AI (done) | `https://teja-smas-ai.hf.space` |
+| AI (done) | `https://tejaPydahSoft-teja-smas-ai.hf.space` |
 | Backend | `https://smas-backend.onrender.com` |
 | Frontend | `https://________.vercel.app` |
 | Database | MongoDB Atlas (no public URL) |

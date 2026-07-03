@@ -24,7 +24,7 @@ https://huggingface.co/spaces/tejaPydahSoft/teja-smas-ai
 Your live URL will be:
 
 ```
-https://teja-smas-ai.hf.space
+https://tejaPydahSoft-teja-smas-ai.hf.space
 ```
 
 ### A. Create the Space (you already did this)
@@ -97,11 +97,11 @@ teja-smas-ai/
 ### F. Test and connect to Render
 
 1. Wait for build (first time **10–20 min**).
-2. Open: `https://teja-smas-ai.hf.space/health`
+2. Open: `https://tejaPydahSoft-teja-smas-ai.hf.space/health`
 3. On **Render** → backend → Environment:
 
    ```
-   AI_SERVER_URL=https://teja-smas-ai.hf.space
+   AI_SERVER_URL=https://tejaPydahSoft-teja-smas-ai.hf.space
    ```
 
 **Private Space:** still works — Render calls your API over the public HTTPS URL. Only the Space *source code* is private.

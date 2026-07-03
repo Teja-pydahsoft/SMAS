@@ -1,5 +1,5 @@
 # Render Blueprint — SMAS Backend only
-# AI server is on Hugging Face: https://teja-smas-ai.hf.space
+# AI server is on Hugging Face: https://tejaPydahSoft-teja-smas-ai.hf.space
 #
 # Deploy: Render → New Blueprint → connect Teja-pydahsoft/SMAS
 # Then set MONGODB_URI, AI_SERVER_URL, FRONTEND_URL in the dashboard.

@@ -1,33 +1,10 @@
-# Render Blueprint — SMAS Backend + AI Server
-# https://render.com/docs/blueprint-spec
+# Render Blueprint — SMAS Backend only
+# AI server is on Hugging Face: https://teja-smas-ai.hf.space
 #
-# Deploy: connect this GitHub repo in Render → New Blueprint → select render.yaml
-# Set MONGODB_URI, AI_SERVER_URL, and FRONTEND_URL in the Render dashboard after deploy.
-#
-# AI server on Render free tier (512 MB) may OOM with InsightFace — if so, use
-# Hugging Face Spaces instead: see deploy/AI-HOSTING.md
+# Deploy: Render → New Blueprint → connect Teja-pydahsoft/SMAS
+# Then set MONGODB_URI, AI_SERVER_URL, FRONTEND_URL in the dashboard.
 
 services:
-  - type: web
-    name: smas-ai-server
-    runtime: docker
-    plan: free
-    rootDir: ai-server
-    healthCheckPath: /health
-    envVars:
-      - key: HOST
-        value: 0.0.0.0
-      - key: PORT
-        value: 8000
-      - key: INDEX_DIR
-        value: /tmp/data
-      - key: INSIGHTFACE_MODEL
-        value: buffalo_s
-      - key: DET_SIZE
-        value: 320,320
-      - key: CPU_THREADS
-        value: "2"
-
   - type: web
     name: smas-backend
     runtime: node
@@ -45,9 +22,8 @@ services:
         sync: false
       - key: AI_SERVER_URL
         sync: false
-        # If using Render AI service from this blueprint, set to:
-        # https://smas-ai-server.onrender.com
-        # Or use Hugging Face: https://YOUR-SPACE.hf.space (see deploy/AI-HOSTING.md)
+      - key: HF_TOKEN
+        sync: false
       - key: FRONTEND_URL
         sync: false
       - key: JWT_SECRET

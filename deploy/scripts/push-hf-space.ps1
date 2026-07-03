@@ -12,7 +12,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path "$PSScriptRoot\..\.."
-$WorkDir = Join-Path $Root "_hf-space-temp"
+$WorkDir = Join-Path $env:TEMP "smas-hf-space-push"
 $AiServer = Join-Path $Root "ai-server"
 $CloneUrl = "https://tejaPydahSoft:$Token@huggingface.co/spaces/$Space"
 
@@ -29,6 +29,9 @@ $Dest = $WorkDir
 Copy-Item (Join-Path $AiServer "Dockerfile") $Dest -Force
 Copy-Item (Join-Path $AiServer "requirements.txt") $Dest -Force
 Copy-Item (Join-Path $AiServer ".dockerignore") $Dest -Force
+if (Test-Path (Join-Path $Dest "app")) {
+    Remove-Item (Join-Path $Dest "app") -Recurse -Force
+}
 Copy-Item (Join-Path $AiServer "app") (Join-Path $Dest "app") -Recurse -Force
 Get-ChildItem (Join-Path $Dest "app") -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
 Copy-Item (Join-Path $Root "deploy\huggingface-space\README.md") (Join-Path $Dest "README.md") -Force

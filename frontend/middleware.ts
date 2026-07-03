@@ -5,6 +5,11 @@ const PUBLIC_PATHS = ['/login', '/registrations/register', '/register'];
 export function middleware(request) {
   const { pathname } = request.nextUrl;
 
+  // Proxy routes — must not require login (rewritten to Render backend)
+  if (pathname.startsWith('/api/') || pathname.startsWith('/uploads/')) {
+    return NextResponse.next();
+  }
+
   if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
     return NextResponse.next();
   }
@@ -20,5 +25,5 @@ export function middleware(request) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api|uploads).*)'],
 };

@@ -28,13 +28,10 @@ git clone $CloneUrl $WorkDir
 $Dest = $WorkDir
 Copy-Item (Join-Path $AiServer "Dockerfile") $Dest -Force
 Copy-Item (Join-Path $AiServer "requirements.txt") $Dest -Force
+Copy-Item (Join-Path $AiServer ".dockerignore") $Dest -Force
 Copy-Item (Join-Path $AiServer "app") (Join-Path $Dest "app") -Recurse -Force
+Get-ChildItem (Join-Path $Dest "app") -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
 Copy-Item (Join-Path $Root "deploy\huggingface-space\README.md") (Join-Path $Dest "README.md") -Force
-
-# HF ephemeral disk — use /tmp for face index
-$dockerfile = Get-Content (Join-Path $Dest "Dockerfile") -Raw
-$dockerfile = $dockerfile -replace 'INDEX_DIR=/data', 'INDEX_DIR=/tmp/data'
-Set-Content (Join-Path $Dest "Dockerfile") $dockerfile -NoNewline
 
 Push-Location $Dest
 git add .

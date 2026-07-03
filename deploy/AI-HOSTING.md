@@ -14,36 +14,99 @@ After deploy, set `AI_SERVER_URL` on Render to your AI server URL.
 
 ## Option 1 — Hugging Face Spaces (recommended)
 
-Free CPU spaces get **2 vCPU and 16 GB RAM** — enough for InsightFace.
+Hugging Face Spaces are **their own Git repo** — there is no “connect GitHub” button on create.
+You push code to:
 
-### Steps
+```
+https://huggingface.co/spaces/tejaPydahSoft/teja-smas-ai
+```
 
-1. Sign up at [huggingface.co](https://huggingface.co) (GitHub login is fine — **no card**).
-2. **New Space** → **Docker** → name it e.g. `teja-smas-ai`.
-3. **Connect GitHub** → select `Teja-pydahsoft/SMAS`.
-4. In Space **Settings** → **Repository**:
-   - **Dockerfile path:** `ai-server/Dockerfile`
-   - **App port:** `8000`
-5. Add Space **Variables** (Settings → Variables):
+Your live URL will be:
 
-   | Name | Value |
-   |------|-------|
-   | `HOST` | `0.0.0.0` |
-   | `PORT` | `8000` |
-   | `INSIGHTFACE_MODEL` | `buffalo_s` |
-   | `DET_SIZE` | `320,320` |
-   | `CPU_THREADS` | `2` |
-   | `INDEX_DIR` | `/tmp/data` |
+```
+https://teja-smas-ai.hf.space
+```
 
-6. Wait for build (first time **10–20 min** — downloads models).
-7. Your URL: `https://teja-smas-ai.hf.space` (or your space name).
-8. Test: `https://YOUR-SPACE.hf.space/health`
-9. On **Render** → backend env → set:
+### A. Create the Space (you already did this)
+
+- Owner: `tejaPydahSoft`
+- Name: `teja-smas-ai`
+- SDK: **Docker**
+- Template: **Blank**
+- Hardware: **CPU basic (free)**
+- Private is fine (Render backend can still call it over HTTPS)
+
+### B. Get a Hugging Face write token
+
+1. [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+2. **New token** → type **Write**
+3. Copy the token (`hf_...`)
+
+### C. Push code from your PC (easiest — use our script)
+
+From the SMAS project folder in PowerShell:
+
+```powershell
+cd e:\SMAS
+.\deploy\scripts\push-hf-space.ps1 -Token "hf_YOUR_TOKEN_HERE"
+```
+
+This copies `ai-server/` into your Space and pushes. HF rebuilds automatically.
+
+### D. Push code manually (if you prefer)
+
+```powershell
+cd e:\SMAS
+git clone https://tejaPydahSoft:hf_YOUR_TOKEN@huggingface.co/spaces/tejaPydahSoft/teja-smas-ai
+cd teja-smas-ai
+
+# Copy ai-server files into this folder (root of Space repo)
+copy ..\ai-server\Dockerfile .
+copy ..\ai-server\requirements.txt .
+xcopy /E /I ..\ai-server\app app
+copy ..\deploy\huggingface-space\README.md README.md
+
+git add .
+git commit -m "Deploy SMAS ai-server"
+git push
+```
+
+Your Space repo root must look like:
+
+```
+teja-smas-ai/
+├── README.md        ← must include sdk: docker and app_port: 8000
+├── Dockerfile
+├── requirements.txt
+└── app/
+    ├── main.py
+    └── ...
+```
+
+### E. Space variables (Settings → Variables)
+
+| Name | Value |
+|------|-------|
+| `HOST` | `0.0.0.0` |
+| `PORT` | `8000` |
+| `INSIGHTFACE_MODEL` | `buffalo_s` |
+| `DET_SIZE` | `320,320` |
+| `CPU_THREADS` | `2` |
+| `INDEX_DIR` | `/tmp/data` |
+
+### F. Test and connect to Render
+
+1. Wait for build (first time **10–20 min**).
+2. Open: `https://teja-smas-ai.hf.space/health`
+3. On **Render** → backend → Environment:
+
    ```
-   AI_SERVER_URL=https://YOUR-SPACE.hf.space
+   AI_SERVER_URL=https://teja-smas-ai.hf.space
    ```
 
-**Note:** HF Spaces sleep when idle; first request after sleep can take 30–60s.
+**Private Space:** still works — Render calls your API over the public HTTPS URL. Only the Space *source code* is private.
+
+**Note:** Spaces sleep when idle; first request after sleep can take 30–60s.
 
 ---
 
@@ -54,6 +117,7 @@ Free CPU spaces get **2 vCPU and 16 GB RAM** — enough for InsightFace.
 **Caveat:** Render free tier has **512 MB RAM**. InsightFace may fail or be slow. If build crashes with OOM, use Hugging Face instead.
 
 After deploy, set on backend:
+
 ```
 AI_SERVER_URL=https://smas-ai-server.onrender.com
 ```
@@ -76,9 +140,11 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 1. Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
 2. Run:
+
    ```bash
    cloudflared tunnel --url http://localhost:8000
    ```
+
 3. Copy the `https://xxxx.trycloudflare.com` URL.
 4. Set `AI_SERVER_URL` on Render to that URL.
 

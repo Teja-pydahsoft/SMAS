@@ -43,8 +43,13 @@
 
 .admin-content {
   flex: 1;
-  padding: 1.5rem 1.75rem 2rem;
-  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+  padding: 0;
 }
 
 .glass-panel {
@@ -1019,7 +1024,15 @@
   }
 
   .admin-content {
-    padding: 3.5rem 0.75rem 1.5rem;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-content .page-shell {
+    display: block;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
   }
 
   .admin-dashboard__hero {
@@ -1032,4 +1045,83 @@
   .admin-metrics-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Shared app pages inside admin layout */
+.admin-content .page-shell {
+  width: 100%;
+  max-width: none;
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-content > :not(.page-shell) {
+  width: 100%;
+}
+
+.admin-content .page-header h2 {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.admin-content .card {
+  background: var(--glass-bg, rgba(255, 255, 255, 0.72));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: var(--glass-shadow, var(--shadow-raised-sm));
+}
+
+/* Entry & exit — security review for combined gates */
+.gate-security-review {
+  margin-top: 1rem;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.95), rgba(255, 255, 255, 0.92));
+}
+
+.gate-security-review__banner {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.gate-security-review__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--warning-strong);
+  background: var(--warning-light);
+}
+
+.gate-security-review__title {
+  font-weight: 800;
+  color: var(--warning-strong);
+  margin-bottom: 0.25rem;
+}
+
+.gate-security-review__subtitle,
+.gate-security-review__facts,
+.gate-security-review__message {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.gate-security-review__facts {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.85rem;
+}
+
+.gate-security-review__facts strong {
+  color: var(--text);
+}
+
+.gate-security-review__message {
+  color: var(--danger-strong);
+  margin-bottom: 0.85rem;
+  font-weight: 600;
 }

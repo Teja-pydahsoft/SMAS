@@ -41,16 +41,15 @@ export function AuthProvider({ children }) {
     refreshUser();
   }, [refreshUser]);
 
-  const login = useCallback(
-    async (username, password) => {
-      const result = await api.auth.login(username, password);
+  const login = useCallback(async (username, password, options = {}) => {
+    const result = await api.auth.login(username, password);
+    if (!options.keepGateSession) {
       clearGateFlowState();
-      setSession(result.token, result.user);
-      setUser(result.user);
-      return result.user;
-    },
-    []
-  );
+    }
+    setSession(result.token, result.user);
+    setUser(result.user);
+    return result.user;
+  }, []);
 
   const logout = useCallback(() => {
     clearGateFlowState();

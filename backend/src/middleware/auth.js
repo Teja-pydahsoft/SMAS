@@ -7,6 +7,7 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 const PUBLIC_API_ROUTES = [
   { method: 'POST', path: '/api/auth/login' },
+  { method: 'POST', path: '/api/auth/precheck' },
   { method: 'GET', path: '/api/health' },
   { method: 'GET', prefix: '/api/passes/verify/' },
   { method: 'GET', path: '/api/roles' },

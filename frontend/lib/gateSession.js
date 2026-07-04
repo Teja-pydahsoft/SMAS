@@ -2,6 +2,43 @@ import { buildEntryExitUrl } from '@/lib/entryExit';
 
 const STORAGE_KEY = 'smas_gate_session';
 
+function normalizeId(value) {
+  if (value === null || value === undefined || value === '') return undefined;
+  if (typeof value === 'object' && value._id) return String(value._id);
+  return String(value);
+}
+
+export function normalizeGateSession(session) {
+  if (!session) return null;
+  const eventType =
+    session.eventType === 'exit'
+      ? 'exit'
+      : session.eventType === 'auto'
+        ? 'auto'
+        : 'entry';
+  return {
+    scanType: session.scanType,
+    divisionId: normalizeId(session.divisionId),
+    gateId: normalizeId(session.gateId),
+    departmentId: normalizeId(session.departmentId),
+    eventType,
+  };
+}
+
+export function gateSessionsEqual(a, b) {
+  const left = normalizeGateSession(a);
+  const right = normalizeGateSession(b);
+  if (!left || !right) return false;
+  if (left.scanType !== right.scanType) return false;
+  if (left.divisionId !== right.divisionId) return false;
+  if (left.scanType === 'gate') {
+    if (left.gateId !== right.gateId) return false;
+    if (left.eventType === 'auto' || right.eventType === 'auto') return true;
+    return left.eventType === right.eventType;
+  }
+  return left.departmentId === right.departmentId && left.eventType === right.eventType;
+}
+
 function notifySessionChange() {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new Event('smas-gate-session'));
@@ -13,7 +50,9 @@ export function clearGateFlowState() {
 
 export function setGateSession(session) {
   if (typeof window === 'undefined') return;
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  const normalized = normalizeGateSession(session);
+  if (!normalized) return;
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   notifySessionChange();
 }
 

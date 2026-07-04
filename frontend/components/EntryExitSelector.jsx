@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { eventActionLabel } from '@/lib/entryExit';
+import { eventActionLabel, isAutoGateEvent } from '@/lib/entryExit';
 
 function emptySelection() {
   return {
@@ -63,7 +63,8 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
       }
 
       if (patch.gateId !== undefined && patch.gateId !== prev.gateId) {
-        next.eventType = 'entry';
+        const gate = gateOptions.find((g) => g._id === patch.gateId);
+        next.eventType = gate?.gateType === 'both' ? 'auto' : 'entry';
       }
 
       return next;
@@ -194,21 +195,30 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
           </div>
         )}
 
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label htmlFor="entry-exit-event">Action</label>
-          <select
-            id="entry-exit-event"
-            value={draft.eventType}
-            disabled={disabled || !draft.divisionId}
-            onChange={(e) => updateDraft({ eventType: e.target.value })}
-          >
-            {eventOptions.map((eventType) => (
-              <option key={eventType} value={eventType}>
-                {eventActionLabel(draft.scanType, eventType)}
-              </option>
-            ))}
-          </select>
-        </div>
+        {draft.scanType === 'gate' && isAutoGateEvent(draft.eventType) ? (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Action</label>
+            <p className="entry-exit-selector__auto-hint field-hint" style={{ marginTop: '0.35rem' }}>
+              Entry or exit is chosen automatically from each person&apos;s current division status.
+            </p>
+          </div>
+        ) : (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label htmlFor="entry-exit-event">Action</label>
+            <select
+              id="entry-exit-event"
+              value={draft.eventType}
+              disabled={disabled || !draft.divisionId}
+              onChange={(e) => updateDraft({ eventType: e.target.value })}
+            >
+              {eventOptions.map((eventType) => (
+                <option key={eventType} value={eventType}>
+                  {eventActionLabel(draft.scanType, eventType)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {divisionOptions.length === 0 && (
@@ -217,7 +227,11 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
 
       {selectionReady && (
         <p className="entry-exit-selector__ready">
-          Ready to scan — {eventActionLabel(draft.scanType, draft.eventType)} at{' '}
+          Ready to scan —{' '}
+          {isAutoGateEvent(draft.eventType) && draft.scanType === 'gate'
+            ? 'auto entry / exit'
+            : eventActionLabel(draft.scanType, draft.eventType)}{' '}
+          at{' '}
           <strong>
             {draft.scanType === 'gate'
               ? selectedGate?.name

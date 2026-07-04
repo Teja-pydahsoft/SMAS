@@ -1,27 +1,8 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/components/AuthProvider';
-import AdminLayoutShell from '@/components/admin/AdminLayoutShell';
-import Sidebar from '@/components/Sidebar';
+import AppLayoutShell from '@/components/AppLayoutShell';
 import AuthGuard from '@/components/AuthGuard';
-
-function AppLayout({ children }) {
-  const { user, loading } = useAuth();
-
-  if (!loading && user?.isSuperAdmin) {
-    return <AdminLayoutShell>{children}</AdminLayoutShell>;
-  }
-
-  return (
-    <div className="layout">
-      <Sidebar />
-      <div className="main-area">
-        <main className="content">{children}</main>
-      </div>
-    </div>
-  );
-}
 
 export default function LayoutShell({ children }) {
   const pathname = usePathname();
@@ -47,7 +28,7 @@ export default function LayoutShell({ children }) {
 
   return (
     <AuthGuard>
-      <AppLayout>{children}</AppLayout>
+      <AppLayoutShell>{children}</AppLayoutShell>
     </AuthGuard>
   );
 }

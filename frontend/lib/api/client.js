@@ -41,8 +41,12 @@ export const api = {
   health: () => request('/health'),
 
   auth: {
+    precheck: (username) =>
+      request('/auth/precheck', { method: 'POST', body: JSON.stringify({ username }) }),
     login: (username, password) =>
       request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+    verifyPassword: (password) =>
+      request('/auth/verify-password', { method: 'POST', body: JSON.stringify({ password }) }),
     me: () => request('/auth/me'),
     accessScope: () => request('/auth/access-scope'),
   },

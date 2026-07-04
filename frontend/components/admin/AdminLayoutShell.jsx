@@ -1,19 +1,8 @@
 'use client';
 
-import { useAuth } from '@/components/AuthProvider';
-import AdminSidebar from '@/components/admin/AdminSidebar';
+import AppLayoutShell from '@/components/AppLayoutShell';
 
+/** @deprecated Use AppLayoutShell — kept for imports that still reference AdminLayoutShell */
 export default function AdminLayoutShell({ children }) {
-  const { user } = useAuth();
-
-  if (!user?.isSuperAdmin) return children;
-
-  return (
-    <div className="admin-layout">
-      <AdminSidebar />
-      <div className="admin-main">
-        <main className="admin-content">{children}</main>
-      </div>
-    </div>
-  );
+  return <AppLayoutShell>{children}</AppLayoutShell>;
 }

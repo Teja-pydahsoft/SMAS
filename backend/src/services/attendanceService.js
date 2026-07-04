@@ -72,6 +72,27 @@ function activeDivisionFromSession(session) {
   };
 }
 
+export async function isPersonInsideTargetDivision(registrationId, targetDivisionId) {
+  const targetId = targetDivisionId?.toString();
+  const activeSession = registrationId ? await getActiveDivisionSession(registrationId) : null;
+  if (activeSession && activeSession.divisionId === targetId) {
+    return Boolean(activeSession.sessionState?.divisionInside);
+  }
+  const pass = registrationId ? await getActiveDayPass(registrationId, targetId) : null;
+  return Boolean(getPassSessionState(pass).divisionInside);
+}
+
+export async function resolveAutoGateEventType(registrationId, targetDivisionId) {
+  const inside = await isPersonInsideTargetDivision(registrationId, targetDivisionId);
+  return inside ? GATE_EVENT_TYPES.EXIT : GATE_EVENT_TYPES.ENTRY;
+}
+
+export function isOppositeGateEvent(personInside, eventType) {
+  if (eventType === GATE_EVENT_TYPES.ENTRY) return personInside;
+  if (eventType === GATE_EVENT_TYPES.EXIT) return !personInside;
+  return false;
+}
+
 export async function getActiveDivisionSession(registrationId) {
   const validDate = todayDateString();
   const startOfDay = new Date(`${validDate}T00:00:00.000Z`);

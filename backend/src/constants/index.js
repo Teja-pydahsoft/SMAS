@@ -18,6 +18,7 @@ export const REGISTRATION_STATUS = {
 export const GATE_EVENT_TYPES = {
   ENTRY: 'entry',
   EXIT: 'exit',
+  AUTO: 'auto',
 };
 
 export const SCAN_TYPES = {

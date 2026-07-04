@@ -1,6 +1,6 @@
 export default function PageShell({ title, description, toolbar, children }) {
   return (
-    <div className="page-shell">
+    <div className="page-shell admin-fade-in">
       {(title || description) && (
         <header className="page-header">
           {title && <h2>{title}</h2>}

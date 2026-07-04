@@ -24,7 +24,12 @@ import {
   updateDayPassAfterDepartmentScan,
   updateDayPassAfterGateExit,
   madeGateEntryToday,
+  isPersonInsideTargetDivision,
+  resolveAutoGateEventType,
+  isOppositeGateEvent,
+  GATE_DENIAL_REASONS,
 } from '../services/attendanceService.js';
+import { getRequiredSteps } from '../constants/accessRules.js';
 import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
 import { uploadDir } from '../utils/storage.js';
 import { hasDivisionScope, hasDepartmentScope, hasGateScope } from '../middleware/auth.js';
@@ -145,6 +150,11 @@ function buildScanDenialResponse({
   activeDepartment,
   activeDivision,
   requiredSteps,
+  securityReview = false,
+  requestedEventType = null,
+  suggestedEventType = null,
+  resolvedEventType = null,
+  personInside = null,
 }) {
   return {
     matched: true,
@@ -161,6 +171,11 @@ function buildScanDenialResponse({
     sessionState,
     dayPass,
     requiredSteps,
+    securityReview,
+    requestedEventType,
+    suggestedEventType,
+    resolvedEventType,
+    personInside,
   };
 }
 
@@ -254,8 +269,12 @@ router.post(
     } = req.body;
 
     if (!req.file) return res.status(400).json({ error: 'Photo is required' });
-    if (!Object.values(GATE_EVENT_TYPES).includes(eventType)) {
-      return res.status(400).json({ error: 'eventType must be "entry" or "exit"' });
+    const isAutoEvent = eventType === GATE_EVENT_TYPES.AUTO;
+    if (
+      !isAutoEvent &&
+      !Object.values(GATE_EVENT_TYPES).includes(eventType)
+    ) {
+      return res.status(400).json({ error: 'eventType must be "entry", "exit", or "auto"' });
     }
     if (!Object.values(SCAN_TYPES).includes(scanType)) {
       return res.status(400).json({ error: 'scanType must be "gate" or "department"' });
@@ -278,11 +297,14 @@ router.post(
       if (gateRecord.divisionId && !gateRecord.divisionId.isActive) {
         return res.status(400).json({ error: 'Division is inactive' });
       }
-      if (gateRecord.gateType === GATE_TYPES.ENTRY && eventType !== GATE_EVENT_TYPES.ENTRY) {
+      if (gateRecord.gateType === GATE_TYPES.ENTRY && !isAutoEvent && eventType !== GATE_EVENT_TYPES.ENTRY) {
         return res.status(400).json({ error: 'This gate allows entry scans only' });
       }
-      if (gateRecord.gateType === GATE_TYPES.EXIT && eventType !== GATE_EVENT_TYPES.EXIT) {
+      if (gateRecord.gateType === GATE_TYPES.EXIT && !isAutoEvent && eventType !== GATE_EVENT_TYPES.EXIT) {
         return res.status(400).json({ error: 'This gate allows exit scans only' });
+      }
+      if (isAutoEvent && gateRecord.gateType !== GATE_TYPES.BOTH) {
+        return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
       }
 
       divisionId = gateRecord.divisionId?._id || gateRecord.divisionId;
@@ -396,10 +418,56 @@ router.post(
     let dayPass = activePass ? await formatPassResponse(activePass) : null;
     let sessionState = getPassSessionState(activePass);
 
+    let resolvedEventType = eventType;
+    let personInside = null;
+
     if (scanType === SCAN_TYPES.GATE) {
+      if (gateRecord.gateType === GATE_TYPES.BOTH) {
+        personInside = await isPersonInsideTargetDivision(matchedRegistration._id, divisionId);
+
+        if (isAutoEvent) {
+          resolvedEventType = await resolveAutoGateEventType(matchedRegistration._id, divisionId);
+        } else if (isOppositeGateEvent(personInside, eventType)) {
+          const suggestedEventType = personInside
+            ? GATE_EVENT_TYPES.EXIT
+            : GATE_EVENT_TYPES.ENTRY;
+          return res.status(400).json(
+            buildScanDenialResponse({
+              scanType,
+              matchScore,
+              registration: populated,
+              log,
+              error: personInside
+                ? 'This person is already inside the division. They should exit at this entry & exit gate, not enter again.'
+                : 'This person is not checked in at this division. They should enter at this entry & exit gate, not exit.',
+              reason: personInside
+                ? GATE_DENIAL_REASONS.ALREADY_IN_DIVISION
+                : GATE_DENIAL_REASONS.NOT_CHECKED_IN,
+              sessionState,
+              dayPass,
+              activeDivision: personInside
+                ? { divisionId: divisionId?.toString(), divisionName: gateRecord?.divisionId?.name || 'Division' }
+                : null,
+              requiredSteps: getRequiredSteps(
+                personInside
+                  ? GATE_DENIAL_REASONS.ALREADY_IN_DIVISION
+                  : GATE_DENIAL_REASONS.NOT_CHECKED_IN,
+                { hasActiveDepartment: Boolean(sessionState?.currentDepartmentId) }
+              ),
+              securityReview: true,
+              requestedEventType: eventType,
+              suggestedEventType,
+              personInside,
+            })
+          );
+        }
+      } else if (isAutoEvent) {
+        return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
+      }
+
       const gateCheck = await validateGateScan(
         activePass,
-        eventType,
+        resolvedEventType,
         matchedRegistration._id,
         divisionId
       );
@@ -424,7 +492,7 @@ router.post(
         );
       }
 
-      if (eventType === GATE_EVENT_TYPES.ENTRY) {
+      if (resolvedEventType === GATE_EVENT_TYPES.ENTRY) {
         const { registration, role, display } = await loadRegistrationContext(matchedRegistration._id);
         dayPass = await createOrRefreshDayPass({
           registration,
@@ -438,6 +506,11 @@ router.post(
       } else if (activePass) {
         dayPass = await updateDayPassAfterGateExit(activePass);
         sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
+      }
+
+      if (resolvedEventType !== eventType) {
+        log.eventType = resolvedEventType;
+        await log.save();
       }
     } else {
       const deptCheck = await validateDepartmentScan(
@@ -486,6 +559,8 @@ router.post(
       sessionState,
       hasGateEntry,
       photoUrl: `/uploads/gate/${path.basename(req.file.path)}`,
+      resolvedEventType: scanType === SCAN_TYPES.GATE ? resolvedEventType : eventType,
+      autoResolved: isAutoEvent && scanType === SCAN_TYPES.GATE,
     });
   })
 );

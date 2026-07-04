@@ -1,4 +1,6 @@
 import { hasPermission } from '@/lib/auth/session';
+import { buildEntryExitUrl } from '@/lib/entryExit';
+import { getGateSession } from '@/lib/gateSession';
 
 export const MODULE_ROUTES = [
   { module: 'gate', path: '/access-scope', label: 'Gate Access' },
@@ -47,6 +49,14 @@ export function hasAssignedEntryExitScope(user) {
 
 export function getPostLoginRoute(user) {
   if (!user) return '/login';
+
+  if (typeof window !== 'undefined') {
+    const gateSession = getGateSession();
+    if (gateSession) {
+      return buildEntryExitUrl(gateSession);
+    }
+  }
+
   if (user.isSuperAdmin) return getDashboardRoute();
   if (hasAssignedEntryExitScope(user)) return '/access-scope';
   return getDashboardRoute();

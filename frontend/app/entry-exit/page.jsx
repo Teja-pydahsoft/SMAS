@@ -6,14 +6,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { saveGatePhotoForRegistration } from '@/lib/gateRegistration';
 import CameraCapture from '@/components/CameraCapture';
-import PassCard from '@/components/PassCard';
-import GateMatchedPerson from '@/components/GateMatchedPerson';
-import AccessRulesPanel, { RequiredStepsList } from '@/components/AccessRulesPanel';
+import GateScanDetailsPanel from '@/components/GateScanDetailsPanel';
 import EntryExitSelector from '@/components/EntryExitSelector';
 import PageShell from '@/components/PageShell';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
-import { eventActionLabel, buildEntryExitUrl } from '@/lib/entryExit';
+import { buildEntryExitUrl, isAutoGateEvent } from '@/lib/entryExit';
 import { parseGateSessionFromSearchParams, setGateSession, getGateSession, clearGateSession } from '@/lib/gateSession';
 
 function notFoundMessage(result) {
@@ -27,40 +25,13 @@ function notFoundMessage(result) {
 }
 
 function captureLabel(eventType, scanType) {
+  if (isAutoGateEvent(eventType) && scanType === 'gate') {
+    return 'Capture photo — entry or exit is determined from person status';
+  }
   if (scanType === 'department') {
     return eventType === 'entry' ? 'Capture for department check-in' : 'Capture for department check-out';
   }
   return eventType === 'entry' ? 'Capture for gate entry' : 'Capture for gate exit';
-}
-
-function SessionStatus({ sessionState }) {
-  if (!sessionState) return null;
-  return (
-    <div className="gate-session-status">
-      <p>
-        Division:{' '}
-        <strong>{sessionState.divisionInside ? 'Inside' : 'Outside'}</strong>
-      </p>
-      {sessionState.currentDepartmentName && (
-        <p>
-          Current department: <strong>{sessionState.currentDepartmentName}</strong>
-        </p>
-      )}
-      {(sessionState.departmentVisits || []).length > 0 && (
-        <div className="gate-visit-list">
-          <p className="field-hint">Today&apos;s department visits</p>
-          <ul>
-            {sessionState.departmentVisits.map((visit, idx) => (
-              <li key={`${visit.departmentId}-${idx}`}>
-                {visit.departmentName} — in {visit.entryAt ? new Date(visit.entryAt).toLocaleTimeString() : '—'}
-                {visit.exitAt ? ` → out ${new Date(visit.exitAt).toLocaleTimeString()}` : ' (active)'}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
 }
 
 function EntryExitContent() {
@@ -76,7 +47,6 @@ function EntryExitContent() {
   const urlEventType = searchParams.get('eventType');
 
   const scanType = urlScanType === 'department' ? 'department' : 'gate';
-  const eventType = urlEventType === 'exit' ? 'exit' : 'entry';
 
   const lockedMode = Boolean(
     urlScanType &&
@@ -93,13 +63,14 @@ function EntryExitContent() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [showDayPass, setShowDayPass] = useState(false);
   const [cameraKey] = useState(0);
   const [setupLoading, setSetupLoading] = useState(true);
 
   const divisions = useMemo(() => accessScope?.divisions || [], [accessScope]);
 
   const currentDivision = useMemo(
-    () => divisions.find((d) => d._id === urlDivisionId) || null,
+    () => divisions.find((d) => String(d._id) === String(urlDivisionId)) || null,
     [divisions, urlDivisionId]
   );
 
@@ -107,14 +78,26 @@ function EntryExitContent() {
   const departments = useMemo(() => currentDivision?.departments || [], [currentDivision]);
 
   const selectedGate = useMemo(
-    () => gates.find((g) => g._id === urlGateId) || null,
+    () => gates.find((g) => String(g._id) === String(urlGateId)) || null,
     [gates, urlGateId]
   );
 
   const selectedDepartment = useMemo(
-    () => departments.find((d) => d._id === urlDepartmentId) || null,
+    () => departments.find((d) => String(d._id) === String(urlDepartmentId)) || null,
     [departments, urlDepartmentId]
   );
+
+  const isBothGate = scanType === 'gate' && selectedGate?.gateType === 'both';
+
+  const eventType = useMemo(() => {
+    if (scanType === 'department') {
+      return urlEventType === 'exit' ? 'exit' : 'entry';
+    }
+    if (isBothGate || urlEventType === 'auto') {
+      return 'auto';
+    }
+    return urlEventType === 'exit' ? 'exit' : 'entry';
+  }, [scanType, urlEventType, isBothGate]);
 
   const accessPointValid =
     scanType === 'gate' ? Boolean(selectedGate) : Boolean(selectedDepartment);
@@ -147,6 +130,7 @@ function EntryExitContent() {
     setSessionState(null);
     setPhotoBlob(null);
     setError('');
+    setShowDayPass(false);
   }, []);
 
   const applySelection = useCallback(
@@ -185,8 +169,22 @@ function EntryExitContent() {
       return;
     }
     const session = parseGateSessionFromSearchParams(searchParams);
-    if (session) setGateSession(session);
-  }, [isSuperAdmin, lockedMode, router, searchParams]);
+    if (!session) return;
+
+    if (
+      session.scanType === 'gate' &&
+      session.gateId &&
+      selectedGate?.gateType === 'both' &&
+      session.eventType !== 'auto'
+    ) {
+      const autoSession = { ...session, eventType: 'auto' };
+      setGateSession(autoSession);
+      router.replace(buildEntryExitUrl(autoSession));
+      return;
+    }
+
+    setGateSession(session);
+  }, [isSuperAdmin, lockedMode, router, searchParams, selectedGate?.gateType]);
 
   const processScan = useCallback(
     async (blob, type, nextScanType) => {
@@ -218,6 +216,7 @@ function EntryExitContent() {
             ...data,
             matched: data.matched ?? Boolean(data.registration),
             denied: data.denied ?? Boolean(data.error),
+            securityReview: data.securityReview ?? false,
           });
         }
         if (data.sessionState) setSessionState(data.sessionState);
@@ -255,13 +254,11 @@ function EntryExitContent() {
   }
 
   const showNotFound = result && !result.matched;
-  const showDenied = result?.matched && (result.denied || error);
-  const showSuccess = result?.matched && !showDenied;
+  const showSecurityReview = result?.matched && result?.securityReview;
+  const showDenied = result?.matched && (result.denied || error) && !showSecurityReview;
+  const showSuccess = result?.matched && !showDenied && !showSecurityReview;
 
-  const contextTitle =
-    scanType === 'gate'
-      ? `${currentDivision?.name || 'Division'} — ${selectedGate?.name || 'Gate'} — ${eventActionLabel('gate', eventType)}`
-      : `${currentDivision?.name || 'Division'} — ${selectedDepartment?.name || 'Department'} — ${eventActionLabel('department', eventType)}`;
+  const effectiveEventType = result?.resolvedEventType || (eventType === 'auto' ? 'entry' : eventType);
 
   if (!lockedMode && !isSuperAdmin) {
     return (
@@ -291,7 +288,6 @@ function EntryExitContent() {
               onApply={applySelection}
               disabled={!canWrite}
             />
-            <AccessRulesPanel compact />
             {error && <p className="error-msg">{error}</p>}
             {divisions.length === 0 && !error && (
               <div className="card gate-landing__empty" style={{ marginTop: '1rem' }}>
@@ -324,25 +320,14 @@ function EntryExitContent() {
         )}
       </div>
 
-      {isSuperAdmin ? (
+      {isSuperAdmin && (
         <EntryExitSelector
           divisions={divisions}
           value={currentSession}
           onApply={applySelection}
           disabled={!canWrite || setupLoading}
         />
-      ) : (
-        <div className="card entry-exit-context" style={{ marginBottom: '1rem' }}>
-          <p className="entry-exit-context__label">Active access point</p>
-          <p className="entry-exit-context__title">{contextTitle}</p>
-          <p className="field-hint">
-            Capture the registered person&apos;s photo — they will be processed for this{' '}
-            {scanType === 'gate' ? 'gate' : 'department'} automatically.
-          </p>
-        </div>
       )}
-
-      <AccessRulesPanel compact />
 
       {setupLoading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading access point...</p>
@@ -389,58 +374,7 @@ function EntryExitContent() {
               </p>
             )}
 
-            {error && !showDenied && <p className="error-msg">{error}</p>}
-
-            {showSuccess && (
-              <div className="gate-result gate-result--success">
-                <p style={{ color: 'var(--success)', fontWeight: 600 }}>
-                  {scanType === 'gate' ? 'Gate' : 'Department'}{' '}
-                  {eventType === 'entry' ? 'Entry' : 'Exit'} — Access Granted
-                </p>
-                <p style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
-                  Match score: {(result.matchScore * 100).toFixed(1)}%
-                </p>
-                {result.registration && (
-                  <GateMatchedPerson
-                    registration={result.registration}
-                    matchScore={result.matchScore}
-                    sessionState={sessionState || result.sessionState}
-                    activeDepartment={result.activeDepartment}
-                    activeDivision={result.activeDivision}
-                    hasGateEntry={result.hasGateEntry ?? sessionState?.divisionInside}
-                  />
-                )}
-                <SessionStatus sessionState={sessionState || result.sessionState} />
-              </div>
-            )}
-
-            {showDenied && (
-              <div className="gate-result gate-result--denied">
-                <p style={{ color: 'var(--danger)', fontWeight: 600 }}>
-                  {scanType === 'gate' ? 'Gate' : 'Department'}{' '}
-                  {eventType === 'entry' ? 'Check-in' : 'Check-out'} — Access Denied
-                </p>
-                <p style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>{error}</p>
-                <GateMatchedPerson
-                  registration={result.registration}
-                  matchScore={result.matchScore}
-                  sessionState={sessionState || result.sessionState}
-                  activeDepartment={
-                    result.activeDepartment ||
-                    (sessionState?.currentDepartmentId
-                      ? {
-                          departmentId: sessionState.currentDepartmentId,
-                          departmentName: sessionState.currentDepartmentName,
-                        }
-                      : null)
-                  }
-                  activeDivision={result.activeDivision}
-                  hasGateEntry={result.hasGateEntry ?? sessionState?.divisionInside}
-                />
-                <SessionStatus sessionState={sessionState || result.sessionState} />
-                <RequiredStepsList steps={result.requiredSteps} />
-              </div>
-            )}
+            {error && !showDenied && !showSecurityReview && <p className="error-msg">{error}</p>}
 
             {showNotFound && (
               <div className="gate-result gate-result--not-found">
@@ -461,21 +395,21 @@ function EntryExitContent() {
             )}
           </div>
 
-          <div className="card gate-layout__pass">
-            <h3 className="gate-pass-panel__title">Day Pass</h3>
-            {dayPass ? (
-              <>
-                <p className="gate-pass-panel__desc">
-                  Scan the QR to open pass details, today&apos;s active entries, and date-wise history.
-                </p>
-                <PassCard pass={dayPass} />
-              </>
-            ) : (
-              <div className="gate-pass-panel__empty">
-                <p>Complete a division gate entry scan to issue the day pass.</p>
-              </div>
-            )}
-          </div>
+          <GateScanDetailsPanel
+            scanType={scanType}
+            effectiveEventType={effectiveEventType}
+            result={result}
+            sessionState={sessionState}
+            error={error}
+            dayPass={dayPass}
+            showDayPass={showDayPass}
+            onToggleDayPass={() => setShowDayPass((open) => !open)}
+            gateName={selectedGate?.name}
+            onDismissSecurityReview={resetScanState}
+            showSuccess={showSuccess}
+            showDenied={showDenied}
+            showSecurityReview={showSecurityReview}
+          />
         </div>
       )}
     </PageShell>

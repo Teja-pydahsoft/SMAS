@@ -6,7 +6,7 @@ import { GATE_TYPES } from '../constants/index.js';
 function gateAllowedEvents(gateType) {
   if (gateType === GATE_TYPES.ENTRY) return ['entry'];
   if (gateType === GATE_TYPES.EXIT) return ['exit'];
-  return ['entry', 'exit'];
+  return ['auto'];
 }
 
 function normalizeId(value) {

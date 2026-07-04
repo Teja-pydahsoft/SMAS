@@ -234,7 +234,7 @@ function HistoryTab({ entriesByDate }) {
 export default function PassVerifyView({
   data,
   title = 'Pass verification',
-  subtitle = 'SMAS',
+  subtitle = 'SAMS',
   showPassFields = true,
 }) {
   const [tab, setTab] = useState('details');
@@ -249,7 +249,7 @@ export default function PassVerifyView({
         <div className="pass-verify-brand">
           <span className="pass-brand-icon">S</span>
           <div>
-            <p className="pass-brand-name">SMAS</p>
+            <p className="pass-brand-name">SAMS</p>
             <p className="pass-brand-sub">{subtitle || title}</p>
           </div>
         </div>

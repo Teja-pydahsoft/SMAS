@@ -101,7 +101,14 @@ export default function DashboardPage() {
                 <button type="button" className="btn-primary">Register Users</button>
               </Link>
             </WriteAccess>
-            {(user.isSuperAdmin || hasAssignedEntryExitScope(user)) && (
+            {user.isSuperAdmin && (
+              <WriteAccess module="gate">
+                <Link href="/entry-exit">
+                  <button type="button" className="btn-secondary">Entry & Exit</button>
+                </Link>
+              </WriteAccess>
+            )}
+            {!user.isSuperAdmin && hasAssignedEntryExitScope(user) && (
               <WriteAccess module="gate">
                 <Link href="/access-scope">
                   <button type="button" className="btn-secondary">Gate Access</button>

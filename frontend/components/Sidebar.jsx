@@ -233,9 +233,12 @@ export default function Sidebar() {
 
   const visibleNavItems = useMemo(() => {
     return navItems.filter((item) => {
-      if (item.path === '/entry-exit') return Boolean(gateSessionUrl);
-      if (item.path === '/access-scope') {
+      if (item.path === '/entry-exit') {
         if (user?.isSuperAdmin) return can('gate', 'read');
+        return Boolean(gateSessionUrl);
+      }
+      if (item.path === '/access-scope') {
+        if (user?.isSuperAdmin) return false;
         return hasAssignedEntryExitScope(user);
       }
       if (!item.module) return true;
@@ -281,7 +284,7 @@ export default function Sidebar() {
         <div className="brand">
           <span className="brand-icon">S</span>
           <div className="brand-text">
-            <h1>SMAS</h1>
+            <h1>SAMS</h1>
             <p>Access System</p>
           </div>
         </div>

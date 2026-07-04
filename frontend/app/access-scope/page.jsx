@@ -20,7 +20,11 @@ export default function AccessScopePage() {
 
   useEffect(() => {
     if (authLoading || !user) return;
-    if (!hasAssignedEntryExitScope(user) && !user.isSuperAdmin) {
+    if (user.isSuperAdmin) {
+      router.replace('/entry-exit');
+      return;
+    }
+    if (!hasAssignedEntryExitScope(user)) {
       router.replace(getDashboardRoute());
       return;
     }
@@ -59,7 +63,7 @@ export default function AccessScopePage() {
           <div className="gate-landing__brand">
             <span className="brand-icon">S</span>
             <div>
-              <h1>SMAS</h1>
+              <h1>SAMS</h1>
               <p>Gate Access</p>
             </div>
           </div>

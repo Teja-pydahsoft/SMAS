@@ -15,9 +15,14 @@ export const MODULE_ROUTES = [
 export function getAccessibleModules(user) {
   return MODULE_ROUTES.filter(({ module, path }) => {
     if (module === 'gate') {
-      if (path === '/entry-exit') return false;
-      if (user?.isSuperAdmin) return hasPermission(user, module, 'read');
-      return hasAssignedEntryExitScope(user);
+      if (path === '/entry-exit') {
+        if (user?.isSuperAdmin) return hasPermission(user, module, 'read');
+        return false;
+      }
+      if (path === '/access-scope') {
+        if (user?.isSuperAdmin) return false;
+        return hasAssignedEntryExitScope(user);
+      }
     }
     return hasPermission(user, module, 'read');
   });

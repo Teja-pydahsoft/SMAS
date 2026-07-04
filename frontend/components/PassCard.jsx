@@ -22,7 +22,7 @@ export default function PassCard({ pass, onPrint }) {
         <div className="pass-brand">
           <span className="pass-brand-icon">S</span>
           <div>
-            <p className="pass-brand-name">SMAS</p>
+            <p className="pass-brand-name">SAMS</p>
             <p className="pass-brand-sub">Access System</p>
           </div>
         </div>

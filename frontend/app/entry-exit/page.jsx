@@ -9,11 +9,12 @@ import CameraCapture from '@/components/CameraCapture';
 import PassCard from '@/components/PassCard';
 import GateMatchedPerson from '@/components/GateMatchedPerson';
 import AccessRulesPanel, { RequiredStepsList } from '@/components/AccessRulesPanel';
+import EntryExitSelector from '@/components/EntryExitSelector';
 import PageShell from '@/components/PageShell';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
 import { eventActionLabel, buildEntryExitUrl } from '@/lib/entryExit';
-import { parseGateSessionFromSearchParams, setGateSession, getGateSession } from '@/lib/gateSession';
+import { parseGateSessionFromSearchParams, setGateSession, getGateSession, clearGateSession } from '@/lib/gateSession';
 
 function notFoundMessage(result) {
   if (result?.reason === 'ambiguous') {
@@ -119,20 +120,18 @@ function EntryExitContent() {
     scanType === 'gate' ? Boolean(selectedGate) : Boolean(selectedDepartment);
 
   const canScan = canWrite && lockedMode && accessPointValid;
+  const isSuperAdmin = Boolean(user?.isSuperAdmin);
 
-  useEffect(() => {
-    if (!lockedMode) {
-      const storedSession = getGateSession();
-      if (storedSession) {
-        router.replace(buildEntryExitUrl(storedSession));
-      } else {
-        router.replace('/access-scope');
-      }
-      return;
-    }
-    const session = parseGateSessionFromSearchParams(searchParams);
-    if (session) setGateSession(session);
-  }, [lockedMode, router, searchParams]);
+  const currentSession = useMemo(() => {
+    if (!lockedMode) return null;
+    return {
+      scanType,
+      divisionId: urlDivisionId,
+      gateId: urlGateId || undefined,
+      departmentId: urlDepartmentId || undefined,
+      eventType,
+    };
+  }, [lockedMode, scanType, urlDivisionId, urlGateId, urlDepartmentId, eventType]);
 
   useEffect(() => {
     api.auth
@@ -149,6 +148,45 @@ function EntryExitContent() {
     setPhotoBlob(null);
     setError('');
   }, []);
+
+  const applySelection = useCallback(
+    (session) => {
+      const sameAsCurrent =
+        currentSession &&
+        currentSession.scanType === session.scanType &&
+        currentSession.divisionId === session.divisionId &&
+        currentSession.eventType === session.eventType &&
+        (session.scanType === 'gate'
+          ? currentSession.gateId === session.gateId
+          : currentSession.departmentId === session.departmentId);
+
+      if (currentSession && !sameAsCurrent) resetScanState();
+      setGateSession(session);
+      router.replace(buildEntryExitUrl(session));
+    },
+    [currentSession, resetScanState, router]
+  );
+
+  const clearSelection = useCallback(() => {
+    clearGateSession();
+    resetScanState();
+    router.replace('/entry-exit');
+  }, [resetScanState, router]);
+
+  useEffect(() => {
+    if (!lockedMode) {
+      if (isSuperAdmin) return;
+      const storedSession = getGateSession();
+      if (storedSession) {
+        router.replace(buildEntryExitUrl(storedSession));
+      } else {
+        router.replace('/access-scope');
+      }
+      return;
+    }
+    const session = parseGateSessionFromSearchParams(searchParams);
+    if (session) setGateSession(session);
+  }, [isSuperAdmin, lockedMode, router, searchParams]);
 
   const processScan = useCallback(
     async (blob, type, nextScanType) => {
@@ -225,10 +263,46 @@ function EntryExitContent() {
       ? `${currentDivision?.name || 'Division'} — ${selectedGate?.name || 'Gate'} — ${eventActionLabel('gate', eventType)}`
       : `${currentDivision?.name || 'Division'} — ${selectedDepartment?.name || 'Department'} — ${eventActionLabel('department', eventType)}`;
 
-  if (!lockedMode) {
+  if (!lockedMode && !isSuperAdmin) {
     return (
       <PageShell title="Entry & Exit" description="Redirecting to Gate Access...">
         <p style={{ color: 'var(--text-muted)' }}>Select a gate or department to continue.</p>
+      </PageShell>
+    );
+  }
+
+  if (!lockedMode && isSuperAdmin) {
+    return (
+      <PageShell
+        title="Entry & Exit"
+        description="Select a gate or department, then scan registered people"
+      >
+        {!canWrite && (
+          <p className="read-only-banner">View only — scanning requires write access.</p>
+        )}
+
+        {setupLoading ? (
+          <p style={{ color: 'var(--text-muted)' }}>Loading divisions and gates...</p>
+        ) : (
+          <>
+            <EntryExitSelector
+              divisions={divisions}
+              value={null}
+              onApply={applySelection}
+              disabled={!canWrite}
+            />
+            <AccessRulesPanel compact />
+            {error && <p className="error-msg">{error}</p>}
+            {divisions.length === 0 && !error && (
+              <div className="card gate-landing__empty" style={{ marginTop: '1rem' }}>
+                <p className="section-title">No gates or departments configured</p>
+                <p className="section-desc">
+                  Create divisions with gates or departments in System settings first.
+                </p>
+              </div>
+            )}
+          </>
+        )}
       </PageShell>
     );
   }
@@ -239,19 +313,34 @@ function EntryExitContent() {
       description="Scan the registered person for the selected gate or department"
     >
       <div className="entry-exit-toolbar">
-        <Link href="/access-scope">
-          <button type="button" className="btn-secondary">← Gate Access</button>
-        </Link>
+        {isSuperAdmin ? (
+          <button type="button" className="btn-secondary" onClick={clearSelection}>
+            Change access point
+          </button>
+        ) : (
+          <Link href="/access-scope">
+            <button type="button" className="btn-secondary">← Gate Access</button>
+          </Link>
+        )}
       </div>
 
-      <div className="card entry-exit-context" style={{ marginBottom: '1rem' }}>
-        <p className="entry-exit-context__label">Active access point</p>
-        <p className="entry-exit-context__title">{contextTitle}</p>
-        <p className="field-hint">
-          Capture the registered person&apos;s photo — they will be processed for this{' '}
-          {scanType === 'gate' ? 'gate' : 'department'} automatically.
-        </p>
-      </div>
+      {isSuperAdmin ? (
+        <EntryExitSelector
+          divisions={divisions}
+          value={currentSession}
+          onApply={applySelection}
+          disabled={!canWrite || setupLoading}
+        />
+      ) : (
+        <div className="card entry-exit-context" style={{ marginBottom: '1rem' }}>
+          <p className="entry-exit-context__label">Active access point</p>
+          <p className="entry-exit-context__title">{contextTitle}</p>
+          <p className="field-hint">
+            Capture the registered person&apos;s photo — they will be processed for this{' '}
+            {scanType === 'gate' ? 'gate' : 'department'} automatically.
+          </p>
+        </div>
+      )}
 
       <AccessRulesPanel compact />
 
@@ -261,15 +350,21 @@ function EntryExitContent() {
         <div className="card gate-result gate-result--not-found">
           <p className="gate-not-found__title">Access point not available</p>
           <p className="gate-not-found__text">
-            {user?.isSuperAdmin
+            {isSuperAdmin
               ? 'This gate or department could not be found. It may be inactive or deleted.'
               : 'You do not have access to this gate or department. Choose one from Gate Access.'}
           </p>
-          <Link href="/access-scope">
-            <button type="button" className="btn-primary" style={{ marginTop: '1rem' }}>
-              Back to Gate Access
+          {isSuperAdmin ? (
+            <button type="button" className="btn-primary" style={{ marginTop: '1rem' }} onClick={clearSelection}>
+              Choose another access point
             </button>
-          </Link>
+          ) : (
+            <Link href="/access-scope">
+              <button type="button" className="btn-primary" style={{ marginTop: '1rem' }}>
+                Back to Gate Access
+              </button>
+            </Link>
+          )}
         </div>
       ) : (
         <div className="gate-layout">

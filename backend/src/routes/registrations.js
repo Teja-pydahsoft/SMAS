@@ -45,7 +45,7 @@ const upload = multer({
 });
 
 function generateRegistrationCode() {
-  return `SMAS-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  return `SAMS-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
 
 function validateFormData(form, formData) {

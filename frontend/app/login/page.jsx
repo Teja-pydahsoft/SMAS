@@ -60,7 +60,7 @@ function LoginForm() {
       <div className="login-brand">
         <span className="brand-icon">S</span>
         <div>
-          <h1>SMAS</h1>
+          <h1>SAMS</h1>
           <p>System Login</p>
         </div>
       </div>

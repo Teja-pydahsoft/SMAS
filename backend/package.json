@@ -2,7 +2,7 @@
   "name": "smas-backend",
   "version": "1.0.0",
   "type": "module",
-  "description": "SMAS Express API",
+  "description": "SAMS Express API",
   "main": "src/index.js",
   "scripts": {
     "dev": "node --watch src/index.js",

@@ -1,4 +1,4 @@
-# SMAS — Smart Management Access System
+# SAMS — Smart Access Management System
 
 Dynamic role-based registration with face verification and gate entry/exit tracking.
 

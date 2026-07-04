@@ -126,7 +126,7 @@ async function start() {
   }
 
   app.listen(PORT, HOST, () => {
-    console.log(`SMAS Backend running on http://${HOST}:${PORT}`);
+    console.log(`SAMS Backend running on http://${HOST}:${PORT}`);
   });
 }
 

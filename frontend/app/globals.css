@@ -2955,3 +2955,66 @@ body {
   }
 }
 
+/* ─── Access flow rules ─── */
+.access-rules-panel {
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.access-rules-panel--compact {
+  padding: 0.85rem 1rem;
+}
+
+.access-rules-panel__title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.access-rules-panel__intro {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 0.65rem;
+}
+
+.access-rules-panel__list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.access-rules-panel__item {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.access-rules-panel__item strong {
+  color: var(--text);
+}
+
+.access-rules-steps {
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: var(--warning-light);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+.access-rules-steps__title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--warning);
+  margin-bottom: 0.45rem;
+}
+
+.access-rules-steps__list {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+

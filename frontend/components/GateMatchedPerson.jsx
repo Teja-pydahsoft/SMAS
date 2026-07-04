@@ -6,7 +6,14 @@ function photoUrlFromPath(photoPath) {
   return `/uploads/registrations/${name}`;
 }
 
-export default function GateMatchedPerson({ registration, matchScore, sessionState, activeDepartment, hasGateEntry }) {
+export default function GateMatchedPerson({
+  registration,
+  matchScore,
+  sessionState,
+  activeDepartment,
+  activeDivision,
+  hasGateEntry,
+}) {
   if (!registration) return null;
 
   const photoUrl = registration.photoUrl || photoUrlFromPath(registration.photoPath);
@@ -42,6 +49,11 @@ export default function GateMatchedPerson({ registration, matchScore, sessionSta
           <p>
             Division status:{' '}
             <strong>{sessionState.divisionInside ? 'Inside' : 'Outside'}</strong>
+          </p>
+        )}
+        {activeDivision?.divisionName && (
+          <p className="gate-matched-person__active-dept">
+            Active division: <strong>{activeDivision.divisionName}</strong>
           </p>
         )}
         {activeDepartment?.departmentName ? (

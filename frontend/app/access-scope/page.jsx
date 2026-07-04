@@ -7,6 +7,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { buildEntryExitUrl, makeEntryButtonLabel } from '@/lib/entryExit';
 import { clearGateFlowState, setGateSession } from '@/lib/gateSession';
 import { getDashboardRoute, hasAssignedEntryExitScope } from '@/lib/auth/routing';
+import AccessRulesPanel from '@/components/AccessRulesPanel';
 
 export default function AccessScopePage() {
   const router = useRouter();
@@ -73,6 +74,8 @@ export default function AccessScopePage() {
             Select a gate or department below to start entry or exit scanning.
           </p>
         </div>
+
+        <AccessRulesPanel compact />
 
         {loading && <p className="gate-landing-loading">Loading division gates...</p>}
         {error && <p className="error-msg">{error}</p>}

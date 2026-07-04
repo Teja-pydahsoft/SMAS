@@ -23,6 +23,7 @@ import {
   createOrRefreshDayPass,
   updateDayPassAfterDepartmentScan,
   updateDayPassAfterGateExit,
+  madeGateEntryToday,
 } from '../services/attendanceService.js';
 import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
 import { uploadDir } from '../utils/storage.js';
@@ -142,6 +143,8 @@ function buildScanDenialResponse({
   dayPass,
   hasGateEntry,
   activeDepartment,
+  activeDivision,
+  requiredSteps,
 }) {
   return {
     matched: true,
@@ -154,8 +157,10 @@ function buildScanDenialResponse({
     reason,
     hasGateEntry,
     activeDepartment,
+    activeDivision,
     sessionState,
     dayPass,
+    requiredSteps,
   };
 }
 
@@ -392,8 +397,16 @@ router.post(
     let sessionState = getPassSessionState(activePass);
 
     if (scanType === SCAN_TYPES.GATE) {
-      const gateCheck = await validateGateScan(activePass, eventType);
+      const gateCheck = await validateGateScan(
+        activePass,
+        eventType,
+        matchedRegistration._id,
+        divisionId
+      );
       if (!gateCheck.ok) {
+        const denialDayPass = gateCheck.pass
+          ? await formatPassResponse(gateCheck.pass)
+          : dayPass;
         return res.status(400).json(
           buildScanDenialResponse({
             scanType,
@@ -401,8 +414,12 @@ router.post(
             registration: populated,
             log,
             error: gateCheck.error,
-            sessionState,
-            dayPass,
+            reason: gateCheck.reason,
+            sessionState: gateCheck.sessionState || sessionState,
+            dayPass: denialDayPass,
+            activeDepartment: gateCheck.activeDepartment,
+            activeDivision: gateCheck.activeDivision,
+            requiredSteps: gateCheck.requiredSteps,
           })
         );
       }
@@ -431,6 +448,9 @@ router.post(
         divisionId
       );
       if (!deptCheck.ok) {
+        const denialDayPass = deptCheck.pass
+          ? await formatPassResponse(deptCheck.pass)
+          : dayPass;
         return res.status(400).json(
           buildScanDenialResponse({
             scanType,
@@ -441,8 +461,10 @@ router.post(
             reason: deptCheck.reason,
             hasGateEntry: deptCheck.hasGateEntry,
             activeDepartment: deptCheck.activeDepartment,
-            sessionState,
-            dayPass,
+            activeDivision: deptCheck.activeDivision,
+            sessionState: deptCheck.sessionState || sessionState,
+            dayPass: denialDayPass,
+            requiredSteps: deptCheck.requiredSteps,
           })
         );
       }
@@ -450,6 +472,8 @@ router.post(
       dayPass = await updateDayPassAfterDepartmentScan(activePass, department, eventType);
       sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
     }
+
+    const hasGateEntry = await madeGateEntryToday(matchedRegistration._id, divisionId);
 
     res.json({
       matched: true,
@@ -460,6 +484,7 @@ router.post(
       log,
       dayPass,
       sessionState,
+      hasGateEntry,
       photoUrl: `/uploads/gate/${path.basename(req.file.path)}`,
     });
   })

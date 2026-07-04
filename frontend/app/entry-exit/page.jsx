@@ -8,6 +8,7 @@ import { saveGatePhotoForRegistration } from '@/lib/gateRegistration';
 import CameraCapture from '@/components/CameraCapture';
 import PassCard from '@/components/PassCard';
 import GateMatchedPerson from '@/components/GateMatchedPerson';
+import AccessRulesPanel, { RequiredStepsList } from '@/components/AccessRulesPanel';
 import PageShell from '@/components/PageShell';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
@@ -252,6 +253,8 @@ function EntryExitContent() {
         </p>
       </div>
 
+      <AccessRulesPanel compact />
+
       {setupLoading ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading access point...</p>
       ) : !accessPointValid ? (
@@ -308,6 +311,7 @@ function EntryExitContent() {
                     matchScore={result.matchScore}
                     sessionState={sessionState || result.sessionState}
                     activeDepartment={result.activeDepartment}
+                    activeDivision={result.activeDivision}
                     hasGateEntry={result.hasGateEntry ?? sessionState?.divisionInside}
                   />
                 )}
@@ -335,14 +339,11 @@ function EntryExitContent() {
                         }
                       : null)
                   }
+                  activeDivision={result.activeDivision}
                   hasGateEntry={result.hasGateEntry ?? sessionState?.divisionInside}
                 />
                 <SessionStatus sessionState={sessionState || result.sessionState} />
-                {result.reason === 'no_gate_entry' && scanType === 'department' && (
-                  <p className="field-hint" style={{ marginTop: '0.75rem' }}>
-                    Complete division gate entry first from Access Scope.
-                  </p>
-                )}
+                <RequiredStepsList steps={result.requiredSteps} />
               </div>
             )}
 

@@ -164,46 +164,131 @@ function DetailsTab({ details, valid, expired, inactive, sessionState, showPassF
 }
 
 function TodayActiveTab({ todayActive, todayEntries, sessionState }) {
+  // Merge and sort all today's entries by time for the timeline
+  const allEntries = [...todayEntries].sort((a, b) => {
+    const ta = new Date(a.at || a.entryAt || 0).getTime();
+    const tb = new Date(b.at || b.entryAt || 0).getTime();
+    return ta - tb;
+  });
+
   return (
     <div className="pass-verify-today">
-      <div className="card pass-verify-today__summary">
-        <p>
-          Division:{' '}
-          <strong>{sessionState?.divisionInside ? 'Inside' : 'Outside'}</strong>
-        </p>
+      {/* Summary strip */}
+      <div className="today-summary-strip">
+        <div className="today-summary-strip__item">
+          <span className="today-summary-strip__label">Division</span>
+          <span className={`today-summary-strip__value ${sessionState?.divisionInside ? 'today-summary-strip__value--inside' : ''}`}>
+            {sessionState?.divisionInside ? 'Inside' : 'Outside'}
+          </span>
+        </div>
         {sessionState?.gateEntryAt && (
-          <p className="field-hint">
-            Gate entry today: {formatDateTime(sessionState.gateEntryAt)}
-          </p>
+          <div className="today-summary-strip__item">
+            <span className="today-summary-strip__label">Gate entry</span>
+            <span className="today-summary-strip__value">{formatDateTime(sessionState.gateEntryAt)}</span>
+          </div>
         )}
-        {sessionState?.currentDepartmentName ? (
-          <p>
-            Active department: <strong>{sessionState.currentDepartmentName}</strong>
-          </p>
-        ) : (
-          <p>Active department: <strong>None</strong></p>
-        )}
+        <div className="today-summary-strip__item">
+          <span className="today-summary-strip__label">Department</span>
+          <span className="today-summary-strip__value">
+            {sessionState?.currentDepartmentName || 'None'}
+          </span>
+        </div>
+        <div className="today-summary-strip__item">
+          <span className="today-summary-strip__label">Active now</span>
+          <span className="today-summary-strip__value">
+            {todayActive.length > 0 ? `${todayActive.length} entry` : 'None'}
+          </span>
+        </div>
       </div>
 
-      <h3 className="section-title">Active entries today</h3>
-      {todayActive.length === 0 ? (
-        <p className="pass-verify-empty">No active gate or department entries right now.</p>
-      ) : (
-        <div className="pass-verify-entry-list">
-          {todayActive.map((entry) => (
-            <EntryRow key={entry.id} entry={entry} showActive />
-          ))}
-        </div>
-      )}
+      {/* Timeline */}
+      <h3 className="section-title" style={{ marginBottom: '1rem' }}>Today&apos;s Timeline</h3>
 
-      <h3 className="section-title" style={{ marginTop: '1.5rem' }}>All entries today</h3>
-      {todayEntries.length === 0 ? (
+      {allEntries.length === 0 ? (
         <p className="pass-verify-empty">No gate or department scans recorded today.</p>
       ) : (
-        <div className="pass-verify-entry-list">
-          {todayEntries.map((entry) => (
-            <EntryRow key={entry.id} entry={entry} />
-          ))}
+        <div className="today-timeline">
+          {allEntries.map((entry, idx) => {
+            const isGate = entry.scanType !== 'department';
+            const isActive = entry.status === 'Active';
+            const time = entry.at || entry.entryAt;
+            const isLast = idx === allEntries.length - 1;
+
+            return (
+              <div key={entry.id} className={`today-timeline__item ${isLast ? 'today-timeline__item--last' : ''}`}>
+                {/* Connector line */}
+                <div className="today-timeline__connector">
+                  <div className={`today-timeline__dot ${isGate ? 'today-timeline__dot--gate' : 'today-timeline__dot--dept'} ${isActive ? 'today-timeline__dot--active' : ''}`}>
+                    {isGate ? (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                        <polyline points="10 17 15 12 10 7" />
+                        <line x1="15" y1="12" x2="3" y2="12" />
+                      </svg>
+                    ) : (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 21h18" />
+                        <path d="M5 21V7l8-4v18" />
+                        <path d="M19 21V11l-6-4" />
+                      </svg>
+                    )}
+                  </div>
+                  {!isLast && <div className="today-timeline__line" />}
+                </div>
+
+                {/* Content */}
+                <div className={`today-timeline__card ${isActive ? 'today-timeline__card--active' : ''}`}>
+                  <div className="today-timeline__card-header">
+                    <div className="today-timeline__card-badges">
+                      <span className={`badge ${isGate ? 'badge-success' : 'badge-info'}`}>
+                        {isGate ? 'Gate' : 'Department'}
+                      </span>
+                      {isActive && (
+                        <span className="badge badge-warning today-timeline__active-badge">
+                          <span className="today-timeline__pulse" aria-hidden="true" />
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <span className="today-timeline__time">
+                      {time ? formatDateTime(time) : '—'}
+                    </span>
+                  </div>
+
+                  <p className="today-timeline__label">{entry.label}</p>
+
+                  <div className="today-timeline__meta">
+                    {entry.divisionName && (
+                      <span className="today-timeline__meta-item">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <rect x="3" y="3" width="7" height="7" rx="1" />
+                          <rect x="14" y="3" width="7" height="7" rx="1" />
+                          <path d="M3 14h7v7H3z" /><path d="M14 14h7v7h-7z" />
+                        </svg>
+                        {entry.divisionName}
+                      </span>
+                    )}
+                    {entry.departmentName && entry.scanType !== 'department' && (
+                      <span className="today-timeline__meta-item">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" />
+                        </svg>
+                        {entry.departmentName}
+                      </span>
+                    )}
+                    {entry.entryAt && entry.exitAt && (
+                      <span className="today-timeline__meta-item today-timeline__meta-item--duration">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                        </svg>
+                        {formatDateTime(entry.entryAt)} → {formatDateTime(entry.exitAt)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

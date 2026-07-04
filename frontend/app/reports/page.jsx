@@ -67,48 +67,87 @@ export default function ReportsPage() {
         ) : people.length === 0 ? (
           <p style={{ color: 'var(--text-muted)' }}>No registered people with access activity yet.</p>
         ) : (
-          <div className="reports-people-list">
-            {people.map((person) => (
-              <button
-                key={person.registrationId}
-                type="button"
-                className="reports-person-card"
-                onClick={() => setSelectedRegistrationId(person.registrationId)}
-              >
-                <div className="reports-person-card__photo-wrap">
-                  {person.photoUrl ? (
-                    <img src={person.photoUrl} alt="" className="reports-person-card__photo" />
-                  ) : (
-                    <div className="reports-person-card__photo reports-person-card__photo--placeholder">
-                      No Photo
-                    </div>
-                  )}
-                </div>
-                <div className="reports-person-card__body">
-                  <p className="reports-person-card__name">{person.displayName || 'Unnamed'}</p>
-                  <p className="reports-person-card__meta">{person.roleName}</p>
-                  <p className="reports-person-card__code">{person.registrationCode}</p>
-                  <div className="reports-person-card__stats">
-                    <span className="badge badge-info">{person.totalScans} scans</span>
-                    {person.divisionInside ? (
-                      <span className="badge badge-success">
-                        Inside {person.activeDivisionName || 'division'}
+          <div className="reports-table-wrap">
+            <table className="reports-table">
+              <thead>
+                <tr>
+                  <th>Person</th>
+                  <th>Role / Code</th>
+                  <th>Status</th>
+                  <th>Scans</th>
+                  <th>Last Activity</th>
+                  <th aria-label="View"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {people.map((person) => (
+                  <tr
+                    key={person.registrationId}
+                    className="reports-table__row"
+                    onClick={() => setSelectedRegistrationId(person.registrationId)}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View report for ${person.displayName || 'Unnamed'}`}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedRegistrationId(person.registrationId);
+                      }
+                    }}
+                  >
+                    <td className="reports-table__person-cell">
+                      <div className="reports-table__person">
+                        {person.photoUrl ? (
+                          <img
+                            src={person.photoUrl}
+                            alt=""
+                            className="reports-table__avatar"
+                          />
+                        ) : (
+                          <div className="reports-table__avatar reports-table__avatar--placeholder">
+                            {(person.displayName || 'U').charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="reports-table__name">{person.displayName || 'Unnamed'}</span>
+                      </div>
+                    </td>
+                    <td className="reports-table__meta-cell">
+                      <span className="reports-table__role">{person.roleName || '—'}</span>
+                      <span className="reports-table__code">{person.registrationCode}</span>
+                    </td>
+                    <td>
+                      <div className="reports-table__badges">
+                        {person.divisionInside ? (
+                          <span className="badge badge-success">
+                            Inside {person.activeDivisionName || 'division'}
+                          </span>
+                        ) : (
+                          <span className="badge badge-info">Outside</span>
+                        )}
+                        {person.currentDepartmentName && (
+                          <span className="badge badge-warning">{person.currentDepartmentName}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <span className="badge badge-info">{person.totalScans} scans</span>
+                    </td>
+                    <td className="reports-table__time">
+                      {person.lastScanAt ? formatDateTime(person.lastScanAt) : '—'}
+                    </td>
+                    <td className="reports-table__action-cell">
+                      <span className="reports-table__view-btn" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        View
                       </span>
-                    ) : (
-                      <span className="badge badge-info">Outside</span>
-                    )}
-                    {person.currentDepartmentName && (
-                      <span className="badge badge-warning">{person.currentDepartmentName}</span>
-                    )}
-                  </div>
-                  {person.lastScanAt && (
-                    <p className="reports-person-card__time">
-                      Last activity: {formatDateTime(person.lastScanAt)}
-                    </p>
-                  )}
-                </div>
-              </button>
-            ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

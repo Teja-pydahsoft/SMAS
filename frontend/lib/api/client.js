@@ -141,6 +141,14 @@ export const api = {
       request(`/gate/session/${registrationId}?divisionId=${divisionId}`),
   },
 
+  reports: {
+    listRegistrations: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/reports/registrations${qs ? `?${qs}` : ''}`);
+    },
+    getRegistration: (registrationId) => request(`/reports/registrations/${registrationId}`),
+  },
+
   divisions: {
     list: (params = {}) => {
       const qs = new URLSearchParams(params).toString();

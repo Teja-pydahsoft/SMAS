@@ -52,7 +52,7 @@ function EntryRow({ entry, showActive }) {
   );
 }
 
-function DetailsTab({ details, valid, expired, inactive, sessionState }) {
+function DetailsTab({ details, valid, expired, inactive, sessionState, showPassFields = true }) {
   return (
     <div className="pass-verify-details">
       <div className="pass-verify-details__hero card">
@@ -66,19 +66,53 @@ function DetailsTab({ details, valid, expired, inactive, sessionState }) {
             <h2 className="pass-verify-details__name">{details.holderName || '—'}</h2>
             <p className="pass-verify-details__role">{details.roleName}</p>
             <p className="pass-verify-details__code">{details.registrationCode}</p>
-            <StatusBadge valid={valid} expired={expired} inactive={inactive} />
+            {showPassFields ? (
+              <StatusBadge valid={valid} expired={expired} inactive={inactive} />
+            ) : (
+              <span className={`badge ${sessionState?.divisionInside ? 'badge-success' : 'badge-info'}`}>
+                {sessionState?.divisionInside ? 'Inside division' : 'Outside division'}
+              </span>
+            )}
           </div>
         </div>
 
         <div className="pass-verify-details__meta-grid">
-          <div className="pass-meta-row">
-            <span className="pass-meta-label">Pass ID</span>
-            <span className="pass-meta-value">{details.passCode}</span>
-          </div>
-          <div className="pass-meta-row">
-            <span className="pass-meta-label">Pass type</span>
-            <span className="pass-meta-value">{details.passTitle || details.passType}</span>
-          </div>
+          {showPassFields && details.passCode && details.passType !== 'registration' && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">Pass ID</span>
+              <span className="pass-meta-value">{details.passCode}</span>
+            </div>
+          )}
+          {showPassFields && details.passTitle && details.passType !== 'registration' && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">Pass type</span>
+              <span className="pass-meta-value">{details.passTitle || details.passType}</span>
+            </div>
+          )}
+          {details.registeredAt && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">Registered</span>
+              <span className="pass-meta-value">{formatDateTime(details.registeredAt)}</span>
+            </div>
+          )}
+          {typeof details.totalScans === 'number' && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">Total scans</span>
+              <span className="pass-meta-value">{details.totalScans}</span>
+            </div>
+          )}
+          {details.lastScanAt && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">Last scan</span>
+              <span className="pass-meta-value">{formatDateTime(details.lastScanAt)}</span>
+            </div>
+          )}
+          {(details.divisionsVisited || []).length > 0 && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">Divisions visited</span>
+              <span className="pass-meta-value">{details.divisionsVisited.join(', ')}</span>
+            </div>
+          )}
           {details.divisionName && (
             <div className="pass-meta-row">
               <span className="pass-meta-label">Division</span>
@@ -197,7 +231,12 @@ function HistoryTab({ entriesByDate }) {
   );
 }
 
-export default function PassVerifyView({ data }) {
+export default function PassVerifyView({
+  data,
+  title = 'Pass verification',
+  subtitle = 'SMAS',
+  showPassFields = true,
+}) {
   const [tab, setTab] = useState('details');
 
   if (!data) return null;
@@ -211,9 +250,10 @@ export default function PassVerifyView({ data }) {
           <span className="pass-brand-icon">S</span>
           <div>
             <p className="pass-brand-name">SMAS</p>
-            <p className="pass-brand-sub">Pass verification</p>
+            <p className="pass-brand-sub">{subtitle || title}</p>
           </div>
         </div>
+        <p className="pass-verify-header__title">{title}</p>
       </div>
 
       <div className="sub-nav pass-verify-tabs" role="tablist">
@@ -239,6 +279,7 @@ export default function PassVerifyView({ data }) {
             expired={expired}
             inactive={inactive}
             sessionState={sessionState}
+            showPassFields={showPassFields}
           />
         )}
         {tab === 'today' && (

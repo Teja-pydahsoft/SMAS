@@ -1053,6 +1053,102 @@ body {
   margin-top: 0.25rem;
 }
 
+.reports-search-input {
+  min-width: 220px;
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.reports-people-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.85rem;
+}
+
+.reports-person-card {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.reports-person-card:hover {
+  background: var(--bg-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.reports-person-card__photo-wrap {
+  flex-shrink: 0;
+}
+
+.reports-person-card__photo {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
+
+.reports-person-card__photo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.reports-person-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.reports-person-card__name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.reports-person-card__meta,
+.reports-person-card__code {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.reports-person-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.reports-person-card__time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.45rem;
+}
+
+.reports-detail-modal {
+  max-width: 760px;
+  width: min(760px, 96vw);
+}
+
+.pass-verify-header__title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  margin-top: 0.75rem;
+}
+
 @media (max-width: 900px) {
   .gate-layout {
     grid-template-columns: 1fr;
@@ -2448,6 +2544,39 @@ body {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrap input {
+  width: 100%;
+  padding-right: 2.75rem;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.password-toggle-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
 }
 
 .login-hint {

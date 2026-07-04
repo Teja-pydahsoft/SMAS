@@ -3,26 +3,21 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
 import PageShell from '@/components/PageShell';
+import RegistrationReportModal from '@/components/RegistrationReportModal';
 import { formatDateTime } from '@/lib/formatDate';
 
 export default function ReportsPage() {
-  const [logs, setLogs] = useState([]);
-  const [divisions, setDivisions] = useState([]);
+  const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [eventFilter, setEventFilter] = useState('');
-  const [divisionFilter, setDivisionFilter] = useState('');
-  const [scanTypeFilter, setScanTypeFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [selectedRegistrationId, setSelectedRegistrationId] = useState(null);
 
-  async function loadLogs() {
+  async function loadPeople() {
     setLoading(true);
     setError('');
     try {
-      const params = { limit: 100 };
-      if (eventFilter) params.eventType = eventFilter;
-      if (divisionFilter) params.divisionId = divisionFilter;
-      if (scanTypeFilter) params.scanType = scanTypeFilter;
-      setLogs(await api.gate.logs(params));
+      setPeople(await api.reports.listRegistrations({ search, limit: 200 }));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -31,54 +26,35 @@ export default function ReportsPage() {
   }
 
   useEffect(() => {
-    api.divisions.list().then(setDivisions).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    loadLogs();
-  }, [eventFilter, divisionFilter, scanTypeFilter]);
+    const timer = setTimeout(() => {
+      loadPeople();
+    }, search ? 250 : 0);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   return (
     <PageShell
       title="Reports"
-      description="Gate and department access activity logs"
+      description="Registered people with gate and department access history"
     >
       <div className="card">
         <div className="reports-section-header">
           <div>
-            <h3 className="section-title">Access Activity Logs</h3>
-            <p className="section-desc">Division gate and department check-in/out scans</p>
+            <h3 className="section-title">Registered People</h3>
+            <p className="section-desc">
+              Select a person to view details, today&apos;s active entries, and date-wise history
+            </p>
           </div>
           <div className="reports-section-actions">
-            <select
-              value={scanTypeFilter}
-              onChange={(e) => setScanTypeFilter(e.target.value)}
-              aria-label="Filter by scan type"
-            >
-              <option value="">All scan types</option>
-              <option value="gate">Division gate</option>
-              <option value="department">Department</option>
-            </select>
-            <select
-              value={divisionFilter}
-              onChange={(e) => setDivisionFilter(e.target.value)}
-              aria-label="Filter by division"
-            >
-              <option value="">All divisions</option>
-              {divisions.map((d) => (
-                <option key={d._id} value={d._id}>{d.name}</option>
-              ))}
-            </select>
-            <select
-              value={eventFilter}
-              onChange={(e) => setEventFilter(e.target.value)}
-              aria-label="Filter by event type"
-            >
-              <option value="">All events</option>
-              <option value="entry">Entry only</option>
-              <option value="exit">Exit only</option>
-            </select>
-            <button type="button" className="btn-secondary" onClick={loadLogs} disabled={loading}>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, code, role..."
+              aria-label="Search registered people"
+              className="reports-search-input"
+            />
+            <button type="button" className="btn-secondary" onClick={loadPeople} disabled={loading}>
               {loading ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
@@ -86,47 +62,61 @@ export default function ReportsPage() {
 
         {error && <p className="error-msg">{error}</p>}
 
-        {loading && logs.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)' }}>Loading gate logs...</p>
-        ) : logs.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)' }}>No gate activity yet.</p>
+        {loading && people.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>Loading registered people...</p>
+        ) : people.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)' }}>No registered people with access activity yet.</p>
         ) : (
-          <div className="reports-log-list">
-            {logs.map((log) => (
-              <div key={log._id} className="log-item">
-                <div className="reports-log-item__header">
-                  <span className={`badge ${log.matched ? 'badge-success' : 'badge-danger'}`}>
-                    {log.scanType === 'department' ? 'dept' : 'gate'} · {log.eventType}
-                  </span>
-                  <span className="reports-log-item__time">{formatDateTime(log.createdAt)}</span>
+          <div className="reports-people-list">
+            {people.map((person) => (
+              <button
+                key={person.registrationId}
+                type="button"
+                className="reports-person-card"
+                onClick={() => setSelectedRegistrationId(person.registrationId)}
+              >
+                <div className="reports-person-card__photo-wrap">
+                  {person.photoUrl ? (
+                    <img src={person.photoUrl} alt="" className="reports-person-card__photo" />
+                  ) : (
+                    <div className="reports-person-card__photo reports-person-card__photo--placeholder">
+                      No Photo
+                    </div>
+                  )}
                 </div>
-                <p className="reports-log-item__status">
-                  {log.matched
-                    ? `Matched (${(log.matchScore * 100).toFixed(1)}%)`
-                    : 'Person not found'}
-                </p>
-                {log.divisionId?.name && (
-                  <p className="reports-log-item__meta">Division: {log.divisionId.name}</p>
-                )}
-                {log.gateRefId?.name && (
-                  <p className="reports-log-item__meta">Gate: {log.gateRefId.name}</p>
-                )}
-                {log.departmentId?.name && (
-                  <p className="reports-log-item__meta">Department: {log.departmentId.name}</p>
-                )}
-                {log.registrationId?.registrationCode && (
-                  <p className="reports-log-item__meta">
-                    Code: {log.registrationId.registrationCode}
-                  </p>
-                )}
-                {log.roleId?.name && (
-                  <p className="reports-log-item__meta">Role: {log.roleId.name}</p>
-                )}
-              </div>
+                <div className="reports-person-card__body">
+                  <p className="reports-person-card__name">{person.displayName || 'Unnamed'}</p>
+                  <p className="reports-person-card__meta">{person.roleName}</p>
+                  <p className="reports-person-card__code">{person.registrationCode}</p>
+                  <div className="reports-person-card__stats">
+                    <span className="badge badge-info">{person.totalScans} scans</span>
+                    {person.divisionInside ? (
+                      <span className="badge badge-success">
+                        Inside {person.activeDivisionName || 'division'}
+                      </span>
+                    ) : (
+                      <span className="badge badge-info">Outside</span>
+                    )}
+                    {person.currentDepartmentName && (
+                      <span className="badge badge-warning">{person.currentDepartmentName}</span>
+                    )}
+                  </div>
+                  {person.lastScanAt && (
+                    <p className="reports-person-card__time">
+                      Last activity: {formatDateTime(person.lastScanAt)}
+                    </p>
+                  )}
+                </div>
+              </button>
             ))}
           </div>
         )}
       </div>
+
+      <RegistrationReportModal
+        registrationId={selectedRegistrationId}
+        onClose={() => setSelectedRegistrationId(null)}
+      />
     </PageShell>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
+import { resolvePhotoUrl } from '@/lib/photoUrl';
 
 const TABS = [
   { id: 'details', label: 'Details' },
@@ -58,10 +59,24 @@ function DetailsTab({ details, valid, expired, inactive, sessionState, showPassF
       <div className="pass-verify-details__hero card">
         <div className="pass-verify-details__profile">
           {details.holderPhotoUrl ? (
-            <img src={details.holderPhotoUrl} alt="" className="pass-verify-details__photo" />
-          ) : (
-            <div className="pass-verify-details__photo pass-verify-details__photo--placeholder">No Photo</div>
-          )}
+            <img
+              src={resolvePhotoUrl(details.holderPhotoUrl)}
+              alt=""
+              className="pass-verify-details__photo"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                if (e.currentTarget.nextSibling) {
+                  e.currentTarget.nextSibling.style.display = 'flex';
+                }
+              }}
+            />
+          ) : null}
+          <div
+            className="pass-verify-details__photo pass-verify-details__photo--placeholder"
+            style={{ display: details.holderPhotoUrl ? 'none' : 'flex' }}
+          >
+            No Photo
+          </div>
           <div>
             <h2 className="pass-verify-details__name">{details.holderName || '—'}</h2>
             <p className="pass-verify-details__role">{details.roleName}</p>

@@ -2589,6 +2589,111 @@ body {
   font-size: 0.8rem;
 }
 
+/* ─── Mobile responsive (< 640px) ─── */
+@media (max-width: 640px) {
+  .pass-card {
+    border-radius: 12px;
+  }
+
+  .pass-card__header {
+    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .pass-brand-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 0.95rem;
+  }
+
+  .pass-brand-name {
+    font-size: 0.85rem;
+  }
+
+  .pass-brand-sub {
+    font-size: 0.62rem;
+  }
+
+  /* Stack body to single column: Photo on top, Details, then QR at bottom */
+  .pass-card__body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+    min-height: unset;
+  }
+
+  .pass-card__photo-col {
+    border-right: none;
+    border-bottom: 1px solid #E8EEF5;
+    padding: 1rem;
+    flex-direction: row;
+    justify-content: center;
+    gap: 1rem;
+  }
+
+  .pass-card__photo,
+  .pass-card__photo--placeholder {
+    width: 90px;
+    height: 110px;
+  }
+
+  .pass-card__details-col {
+    padding: 1rem;
+  }
+
+  .pass-card__name {
+    font-size: 1.1rem;
+  }
+
+  .pass-card__role {
+    font-size: 0.78rem;
+  }
+
+  .pass-card__table {
+    font-size: 0.72rem;
+  }
+
+  .pass-card__table-label {
+    width: 42%;
+  }
+
+  .pass-card__qr-col {
+    border-left: none;
+    border-top: 1px solid #E8EEF5;
+    padding: 1rem;
+    flex-direction: row;
+    justify-content: center;
+    gap: 0.6rem;
+  }
+
+  .pass-card__qr,
+  .pass-card__qr--placeholder {
+    width: 100px;
+    height: 100px;
+  }
+
+  .pass-card__qr-hint {
+    font-size: 0.65rem;
+    align-self: center;
+  }
+
+  .pass-card__footer {
+    padding: 0.7rem 1rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .pass-card__footer-note {
+    font-size: 0.64rem;
+  }
+
+  .pass-card__print-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* Legacy compatibility */
 .pass-meta-row {
   display: flex;

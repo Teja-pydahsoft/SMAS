@@ -1,6 +1,7 @@
 'use client';
 
 import { formatDateTime } from '@/lib/formatDate';
+import { resolvePhotoUrl } from '@/lib/photoUrl';
 
 export default function PassCard({ pass, onPrint }) {
   if (!pass) return null;
@@ -53,18 +54,26 @@ export default function PassCard({ pass, onPrint }) {
         <div className="pass-card__photo-col">
           {pass.holderPhotoUrl ? (
             <img
-              src={pass.holderPhotoUrl}
+              src={resolvePhotoUrl(pass.holderPhotoUrl)}
               alt={pass.holderName || 'Pass holder'}
               className="pass-card__photo"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                if (e.currentTarget.nextSibling) {
+                  e.currentTarget.nextSibling.style.display = 'flex';
+                }
+              }}
             />
-          ) : (
-            <div className="pass-card__photo pass-card__photo--placeholder">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <circle cx="12" cy="8" r="4" />
-                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-              </svg>
-            </div>
-          )}
+          ) : null}
+          <div
+            className="pass-card__photo pass-card__photo--placeholder"
+            style={{ display: pass.holderPhotoUrl ? 'none' : 'flex' }}
+          >
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+            </svg>
+          </div>
         </div>
 
         {/* Middle column — Name + tabular details */}

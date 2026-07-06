@@ -1,10 +1,6 @@
 'use client';
 
-function photoUrlFromPath(photoPath) {
-  if (!photoPath) return null;
-  const name = photoPath.replace(/\\/g, '/').split('/').pop();
-  return `/uploads/registrations/${name}`;
-}
+import { resolvePhotoUrl } from '@/lib/photoUrl';
 
 export default function GateMatchedPerson({
   registration,
@@ -16,16 +12,30 @@ export default function GateMatchedPerson({
 }) {
   if (!registration) return null;
 
-  const photoUrl = registration.photoUrl || photoUrlFromPath(registration.photoPath);
+  const photoUrl = resolvePhotoUrl(registration.photoUrl || registration.photoPath);
 
   return (
     <div className="gate-matched-person">
       <div className="gate-matched-person__header">
         {photoUrl ? (
-          <img src={photoUrl} alt="" className="gate-matched-person__photo" />
-        ) : (
-          <div className="gate-matched-person__photo gate-matched-person__photo--placeholder">No Photo</div>
-        )}
+          <img
+            src={photoUrl}
+            alt=""
+            className="gate-matched-person__photo"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              if (e.currentTarget.nextSibling) {
+                e.currentTarget.nextSibling.style.display = 'flex';
+              }
+            }}
+          />
+        ) : null}
+        <div
+          className="gate-matched-person__photo gate-matched-person__photo--placeholder"
+          style={{ display: photoUrl ? 'none' : 'flex' }}
+        >
+          No Photo
+        </div>
         <div>
           <p className="gate-matched-person__name">{registration.displayName || 'Unnamed'}</p>
           <p className="gate-matched-person__role">{registration.roleId?.name || '—'}</p>

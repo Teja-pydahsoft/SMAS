@@ -136,6 +136,19 @@ export const api = {
       if (divisionId) form.append('divisionId', divisionId);
       return request('/gate/scan', { method: 'POST', body: form });
     },
+    qrScan: (passCode, eventType, options = {}) => {
+      const { gateId = null, departmentId = null, divisionId = null } = options;
+      return request('/gate/qr-scan', {
+        method: 'POST',
+        body: JSON.stringify({
+          passCode,
+          eventType,
+          gateId,
+          departmentId,
+          divisionId,
+        }),
+      });
+    },
     logs: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
       return request(`/gate/logs${qs ? `?${qs}` : ''}`);

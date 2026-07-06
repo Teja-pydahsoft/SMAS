@@ -6,6 +6,7 @@ import Registration from '../models/Registration.js';
 import GateLog from '../models/GateLog.js';
 import Gate from '../models/Gate.js';
 import Department from '../models/Department.js';
+import Pass from '../models/Pass.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { REGISTRATION_STATUS, GATE_EVENT_TYPES, GATE_TYPES, SCAN_TYPES } from '../constants/index.js';
 import {
@@ -238,6 +239,278 @@ async function identifyFromPhoto(filePath, registrationId) {
   const matched = matchScore >= MATCH_THRESHOLD && !!matchedRegistration;
   return { matchedRegistration, matchScore, matched, autoIdentified: !registrationId };
 }
+
+// ─── QR-code gate scan ────────────────────────────────────────────────────────
+// Accepts the passCode encoded in a Registration Pass QR, validates it and
+// records the gate entry/exit exactly like a face scan would (matchScore = 1.0).
+router.post(
+  '/qr-scan',
+  asyncHandler(async (req, res) => {
+    const {
+      passCode,
+      eventType,
+      gateId,
+      divisionId: bodyDivisionId,
+      departmentId,
+      scanType = SCAN_TYPES.QR,
+    } = req.body;
+
+    if (!passCode?.trim()) {
+      return res.status(400).json({ error: 'passCode is required' });
+    }
+
+    const isAutoEvent = eventType === GATE_EVENT_TYPES.AUTO;
+    if (
+      !isAutoEvent &&
+      !Object.values(GATE_EVENT_TYPES).includes(eventType)
+    ) {
+      return res.status(400).json({ error: 'eventType must be "entry", "exit", or "auto"' });
+    }
+
+    // Resolve gate/division info identical to face scan
+    const logFields = { scanType };
+    let divisionId = bodyDivisionId || null;
+    let gateRecord = null;
+    let department = null;
+    const effectiveScanType = departmentId ? SCAN_TYPES.DEPARTMENT : SCAN_TYPES.GATE;
+
+    if (effectiveScanType === SCAN_TYPES.GATE) {
+      if (!gateId) return res.status(400).json({ error: 'gateId is required for gate scans' });
+
+      gateRecord = await Gate.findById(gateId).populate('divisionId', 'name slug isActive');
+      if (!gateRecord) return res.status(404).json({ error: 'Gate not found' });
+      if (!gateRecord.isActive) return res.status(400).json({ error: 'Gate is inactive' });
+      if (gateRecord.divisionId && !gateRecord.divisionId.isActive) {
+        return res.status(400).json({ error: 'Division is inactive' });
+      }
+      if (gateRecord.gateType === GATE_TYPES.ENTRY && !isAutoEvent && eventType !== GATE_EVENT_TYPES.ENTRY) {
+        return res.status(400).json({ error: 'This gate allows entry scans only' });
+      }
+      if (gateRecord.gateType === GATE_TYPES.EXIT && !isAutoEvent && eventType !== GATE_EVENT_TYPES.EXIT) {
+        return res.status(400).json({ error: 'This gate allows exit scans only' });
+      }
+      if (isAutoEvent && gateRecord.gateType !== GATE_TYPES.BOTH) {
+        return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
+      }
+
+      divisionId = gateRecord.divisionId?._id || gateRecord.divisionId;
+      logFields.gateRefId = gateRecord._id;
+      logFields.divisionId = divisionId;
+      logFields.gateId = gateRecord._id.toString();
+    } else {
+      if (!bodyDivisionId) {
+        return res.status(400).json({ error: 'divisionId is required for department scans' });
+      }
+      if (!departmentId) {
+        return res.status(400).json({ error: 'departmentId is required for department scans' });
+      }
+
+      department = await Department.findById(departmentId);
+      if (!department) return res.status(404).json({ error: 'Department not found' });
+      if (!department.isActive) return res.status(400).json({ error: 'Department is inactive' });
+
+      const departmentDivisionIds = (department.divisionIds || []).map((id) => id.toString());
+      if (!departmentDivisionIds.includes(bodyDivisionId.toString())) {
+        return res.status(400).json({ error: 'Department does not belong to the selected division' });
+      }
+
+      divisionId = bodyDivisionId;
+      logFields.divisionId = divisionId;
+      logFields.departmentId = department._id;
+      logFields.gateId = 'department';
+    }
+
+    // Scope check
+    if (req.user && !req.user.isSuperAdmin) {
+      if (!hasDivisionScope(req.user, divisionId)) {
+        return res.status(403).json({ error: 'You do not have access to this division' });
+      }
+      if (effectiveScanType === SCAN_TYPES.GATE && !hasGateScope(req.user, gateRecord._id)) {
+        return res.status(403).json({ error: 'You do not have access to this gate' });
+      }
+      if (effectiveScanType === SCAN_TYPES.DEPARTMENT && !hasDepartmentScope(req.user, department._id)) {
+        return res.status(403).json({ error: 'You do not have access to this department' });
+      }
+    }
+
+    // Resolve registration from the pass
+    const pass = await Pass.findOne({ passCode: passCode.trim(), isActive: true });
+    if (!pass) {
+      return res.status(400).json({ error: 'Invalid or inactive pass. QR code not recognised.' });
+    }
+    if (pass.passType !== 'registration') {
+      return res.status(400).json({ error: 'Only Registration Pass QR codes can be used at the gate.' });
+    }
+
+    const matchedRegistration = await Registration.findById(pass.registrationId);
+    if (!matchedRegistration) {
+      return res.status(404).json({ error: 'Registration not found for this pass' });
+    }
+    if (matchedRegistration.status !== REGISTRATION_STATUS.VERIFIED) {
+      return res.status(400).json({ error: 'Registration is not verified' });
+    }
+
+    const matchScore = 1.0; // QR scan — identity is proven by possession of the pass
+
+    const log = await GateLog.create({
+      registrationId: matchedRegistration._id,
+      roleId: matchedRegistration.roleId,
+      matchScore,
+      matched: true,
+      ...logFields,
+      eventType, // will be updated if auto-resolved
+      metadata: { qrScan: true, passCode: pass.passCode, scanType: effectiveScanType },
+    });
+
+    const populated = await formatRegistrationForScan(matchedRegistration);
+    const activePass = await getActiveDayPass(matchedRegistration._id, divisionId);
+    let dayPass = activePass ? await formatPassResponse(activePass) : null;
+    let sessionState = getPassSessionState(activePass);
+    let resolvedEventType = eventType;
+
+    if (effectiveScanType === SCAN_TYPES.GATE) {
+      if (gateRecord.gateType === GATE_TYPES.BOTH) {
+        const personInside = await isPersonInsideTargetDivision(matchedRegistration._id, divisionId);
+
+        if (isAutoEvent) {
+          resolvedEventType = await resolveAutoGateEventType(matchedRegistration._id, divisionId);
+        } else if (isOppositeGateEvent(personInside, eventType)) {
+          const suggestedEventType = personInside
+            ? GATE_EVENT_TYPES.EXIT
+            : GATE_EVENT_TYPES.ENTRY;
+          return res.status(400).json(
+            buildScanDenialResponse({
+              scanType: effectiveScanType,
+              matchScore,
+              registration: populated,
+              log,
+              error: personInside
+                ? 'This person is already inside the division. They should exit, not enter again.'
+                : 'This person is not checked in at this division. They should enter, not exit.',
+              reason: personInside
+                ? GATE_DENIAL_REASONS.ALREADY_IN_DIVISION
+                : GATE_DENIAL_REASONS.NOT_CHECKED_IN,
+              sessionState,
+              dayPass,
+              activeDivision: personInside
+                ? { divisionId: divisionId?.toString(), divisionName: gateRecord?.divisionId?.name || 'Division' }
+                : null,
+              requiredSteps: getRequiredSteps(
+                personInside
+                  ? GATE_DENIAL_REASONS.ALREADY_IN_DIVISION
+                  : GATE_DENIAL_REASONS.NOT_CHECKED_IN,
+                { hasActiveDepartment: Boolean(sessionState?.currentDepartmentId) }
+              ),
+              securityReview: false,
+              requestedEventType: eventType,
+              suggestedEventType,
+            })
+          );
+        }
+      } else if (isAutoEvent) {
+        return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
+      }
+
+      const gateCheck = await validateGateScan(
+        activePass,
+        resolvedEventType,
+        matchedRegistration._id,
+        divisionId
+      );
+      if (!gateCheck.ok) {
+        const denialDayPass = gateCheck.pass
+          ? await formatPassResponse(gateCheck.pass)
+          : dayPass;
+        return res.status(400).json(
+          buildScanDenialResponse({
+            scanType: effectiveScanType,
+            matchScore,
+            registration: populated,
+            log,
+            error: gateCheck.error,
+            reason: gateCheck.reason,
+            sessionState: gateCheck.sessionState || sessionState,
+            dayPass: denialDayPass,
+            activeDepartment: gateCheck.activeDepartment,
+            activeDivision: gateCheck.activeDivision,
+            requiredSteps: gateCheck.requiredSteps,
+          })
+        );
+      }
+
+      if (resolvedEventType === GATE_EVENT_TYPES.ENTRY) {
+        const { registration, role, display } = await loadRegistrationContext(matchedRegistration._id);
+        dayPass = await createOrRefreshDayPass({
+          registration,
+          role,
+          display,
+          gateLogId: log._id,
+          divisionId,
+          divisionName: gateRecord?.divisionId?.name || '',
+        });
+        sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
+      } else if (activePass) {
+        dayPass = await updateDayPassAfterGateExit(activePass);
+        sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
+      }
+
+      if (resolvedEventType !== eventType) {
+        log.eventType = resolvedEventType;
+        await log.save();
+      }
+    } else {
+      // Department QR scan
+      const deptCheck = await validateDepartmentScan(
+        activePass,
+        department,
+        eventType,
+        matchedRegistration._id,
+        divisionId
+      );
+      if (!deptCheck.ok) {
+        const denialDayPass = deptCheck.pass
+          ? await formatPassResponse(deptCheck.pass)
+          : dayPass;
+        return res.status(400).json(
+          buildScanDenialResponse({
+            scanType: effectiveScanType,
+            matchScore,
+            registration: populated,
+            log,
+            error: deptCheck.error,
+            reason: deptCheck.reason,
+            hasGateEntry: deptCheck.hasGateEntry,
+            activeDepartment: deptCheck.activeDepartment,
+            activeDivision: deptCheck.activeDivision,
+            sessionState: deptCheck.sessionState || sessionState,
+            dayPass: denialDayPass,
+            requiredSteps: deptCheck.requiredSteps,
+          })
+        );
+      }
+
+      dayPass = await updateDayPassAfterDepartmentScan(activePass, department, eventType);
+      sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
+    }
+
+    const hasGateEntry = await madeGateEntryToday(matchedRegistration._id, divisionId);
+
+    res.json({
+      matched: true,
+      denied: false,
+      scanType: effectiveScanType,
+      matchScore,
+      registration: populated,
+      log,
+      dayPass,
+      sessionState,
+      hasGateEntry,
+      resolvedEventType: effectiveScanType === SCAN_TYPES.GATE ? resolvedEventType : eventType,
+      autoResolved: isAutoEvent && effectiveScanType === SCAN_TYPES.GATE,
+      qrScan: true,
+    });
+  })
+);
 
 router.get(
   '/session/:registrationId',

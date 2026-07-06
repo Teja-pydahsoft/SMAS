@@ -24,6 +24,7 @@ export const GATE_EVENT_TYPES = {
 export const SCAN_TYPES = {
   GATE: 'gate',
   DEPARTMENT: 'department',
+  QR: 'qr',
 };
 
 export const GATE_TYPES = {

@@ -88,7 +88,9 @@ export default function GateScanDetailsPanel({
               <p className="field-hint">Applied automatically from person status</p>
             )}
             <p className="gate-details-panel__match-score">
-              Match score: {(result.matchScore * 100).toFixed(1)}%
+              {result.qrScan
+                ? 'QR Code Verified'
+                : `Match score: ${(result.matchScore * 100).toFixed(1)}%`}
             </p>
             {result.registration && (
               <GateMatchedPerson

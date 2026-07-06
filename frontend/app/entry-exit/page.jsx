@@ -5,14 +5,21 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { saveGatePhotoForRegistration } from '@/lib/gateRegistration';
-import CameraCapture from '@/components/CameraCapture';
+import GateCameraScanner from '@/components/GateCameraScanner';
 import GateScanDetailsPanel from '@/components/GateScanDetailsPanel';
 import EntryExitSelector from '@/components/EntryExitSelector';
 import PageShell from '@/components/PageShell';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
 import { buildEntryExitUrl, isAutoGateEvent } from '@/lib/entryExit';
-import { parseGateSessionFromSearchParams, setGateSession, getGateSession, clearGateSession } from '@/lib/gateSession';
+import {
+  parseGateSessionFromSearchParams,
+  setGateSession,
+  getGateSession,
+  clearGateSession,
+} from '@/lib/gateSession';
+
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 function notFoundMessage(result) {
   if (result?.reason === 'ambiguous') {
@@ -26,13 +33,38 @@ function notFoundMessage(result) {
 
 function captureLabel(eventType, scanType) {
   if (isAutoGateEvent(eventType) && scanType === 'gate') {
-    return 'Capture photo — entry or exit is determined from person status';
+    return 'Capture — entry or exit resolved from status';
   }
   if (scanType === 'department') {
     return eventType === 'entry' ? 'Capture for department check-in' : 'Capture for department check-out';
   }
   return eventType === 'entry' ? 'Capture for gate entry' : 'Capture for gate exit';
 }
+
+function applyResult(res, setResult, setSessionState, setDayPass, setError) {
+  setResult(res);
+  if (res.sessionState) setSessionState(res.sessionState);
+  if (res.dayPass) setDayPass(res.dayPass);
+  if (res.denied) setError(res.error || 'Access denied');
+  else if (res.error) setError(res.error);
+}
+
+function applyErrorData(e, setResult, setSessionState, setDayPass, setError) {
+  const data = e.data || {};
+  if (data.matched || data.registration) {
+    setResult({
+      ...data,
+      matched: data.matched ?? Boolean(data.registration),
+      denied: data.denied ?? Boolean(data.error),
+      securityReview: data.securityReview ?? false,
+    });
+  }
+  if (data.sessionState) setSessionState(data.sessionState);
+  if (data.dayPass) setDayPass(data.dayPass);
+  setError(data.error || e.message);
+}
+
+// ── main content ──────────────────────────────────────────────────────────────
 
 function EntryExitContent() {
   const router = useRouter();
@@ -46,6 +78,7 @@ function EntryExitContent() {
   const urlDepartmentId = searchParams.get('departmentId');
   const urlEventType = searchParams.get('eventType');
 
+  // scanType = gate | department (the access-point type, not face/qr)
   const scanType = urlScanType === 'department' ? 'department' : 'gate';
 
   const lockedMode = Boolean(
@@ -90,12 +123,8 @@ function EntryExitContent() {
   const isBothGate = scanType === 'gate' && selectedGate?.gateType === 'both';
 
   const eventType = useMemo(() => {
-    if (scanType === 'department') {
-      return urlEventType === 'exit' ? 'exit' : 'entry';
-    }
-    if (isBothGate || urlEventType === 'auto') {
-      return 'auto';
-    }
+    if (scanType === 'department') return urlEventType === 'exit' ? 'exit' : 'entry';
+    if (isBothGate || urlEventType === 'auto') return 'auto';
     return urlEventType === 'exit' ? 'exit' : 'entry';
   }, [scanType, urlEventType, isBothGate]);
 
@@ -186,60 +215,68 @@ function EntryExitContent() {
     setGateSession(session);
   }, [isSuperAdmin, lockedMode, router, searchParams, selectedGate?.gateType]);
 
-  const processScan = useCallback(
-    async (blob, type, nextScanType) => {
-      if (!blob) return;
+  // ── face scan ─────────────────────────────────────────────────────────────
+
+  const handleFaceCapture = useCallback(
+    async (blob) => {
+      if (!blob) { resetScanState(); return; }
+      if (!canScan) {
+        setError('This access point is not available. Return to Gate Access and select one.');
+        return;
+      }
+
       setLoading(true);
       resetScanState();
       setPhotoBlob(blob);
 
       try {
         const options =
-          nextScanType === 'gate'
+          scanType === 'gate'
             ? { gateId: urlGateId, scanType: 'gate' }
-            : {
-                divisionId: urlDivisionId,
-                departmentId: urlDepartmentId,
-                scanType: 'department',
-              };
+            : { divisionId: urlDivisionId, departmentId: urlDepartmentId, scanType: 'department' };
 
-        const res = await api.gate.scan(blob, type, options);
-        setResult(res);
-        if (res.sessionState) setSessionState(res.sessionState);
-        if (res.dayPass) setDayPass(res.dayPass);
-        if (res.error) setError(res.error);
-        if (res.denied) setError(res.error || 'Access denied');
+        const res = await api.gate.scan(blob, eventType, options);
+        applyResult(res, setResult, setSessionState, setDayPass, setError);
       } catch (e) {
-        const data = e.data || {};
-        if (data.matched || data.registration) {
-          setResult({
-            ...data,
-            matched: data.matched ?? Boolean(data.registration),
-            denied: data.denied ?? Boolean(data.error),
-            securityReview: data.securityReview ?? false,
-          });
-        }
-        if (data.sessionState) setSessionState(data.sessionState);
-        if (data.dayPass) setDayPass(data.dayPass);
-        setError(data.error || e.message);
+        applyErrorData(e, setResult, setSessionState, setDayPass, setError);
       } finally {
         setLoading(false);
       }
     },
-    [urlGateId, urlDivisionId, urlDepartmentId, resetScanState]
+    [canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState]
   );
 
-  async function handleCapture(blob) {
-    if (!blob) {
+  // ── QR scan ───────────────────────────────────────────────────────────────
+
+  const handleQrDetect = useCallback(
+    async (passCode) => {
+      if (loading) return; // already processing
+      if (!canScan) {
+        setError('This access point is not available. Return to Gate Access and select one.');
+        return;
+      }
+
+      setLoading(true);
       resetScanState();
-      return;
-    }
-    if (!canScan) {
-      setError('This access point is not available. Return to Gate Access and select one.');
-      return;
-    }
-    await processScan(blob, eventType, scanType);
-  }
+
+      try {
+        const options =
+          scanType === 'gate'
+            ? { gateId: urlGateId }
+            : { divisionId: urlDivisionId, departmentId: urlDepartmentId };
+
+        const res = await api.gate.qrScan(passCode, eventType, options);
+        applyResult(res, setResult, setSessionState, setDayPass, setError);
+      } catch (e) {
+        applyErrorData(e, setResult, setSessionState, setDayPass, setError);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loading, canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState]
+  );
+
+  // ── registration redirect ─────────────────────────────────────────────────
 
   async function handleRegisterPerson() {
     setRegistering(true);
@@ -253,12 +290,15 @@ function EntryExitContent() {
     }
   }
 
+  // ── derived state ─────────────────────────────────────────────────────────
+
   const showNotFound = result && !result.matched;
   const showSecurityReview = result?.matched && result?.securityReview;
   const showDenied = result?.matched && (result.denied || error) && !showSecurityReview;
   const showSuccess = result?.matched && !showDenied && !showSecurityReview;
-
   const effectiveEventType = result?.resolvedEventType || (eventType === 'auto' ? 'entry' : eventType);
+
+  // ── unlocked states ───────────────────────────────────────────────────────
 
   if (!lockedMode && !isSuperAdmin) {
     return (
@@ -274,27 +314,17 @@ function EntryExitContent() {
         title="Entry & Exit"
         description="Select a gate or department, then scan registered people"
       >
-        {!canWrite && (
-          <p className="read-only-banner">View only — scanning requires write access.</p>
-        )}
-
+        {!canWrite && <p className="read-only-banner">View only — scanning requires write access.</p>}
         {setupLoading ? (
           <p style={{ color: 'var(--text-muted)' }}>Loading divisions and gates...</p>
         ) : (
           <>
-            <EntryExitSelector
-              divisions={divisions}
-              value={null}
-              onApply={applySelection}
-              disabled={!canWrite}
-            />
+            <EntryExitSelector divisions={divisions} value={null} onApply={applySelection} disabled={!canWrite} />
             {error && <p className="error-msg">{error}</p>}
             {divisions.length === 0 && !error && (
               <div className="card gate-landing__empty" style={{ marginTop: '1rem' }}>
                 <p className="section-title">No gates or departments configured</p>
-                <p className="section-desc">
-                  Create divisions with gates or departments in System settings first.
-                </p>
+                <p className="section-desc">Create divisions with gates or departments in System settings first.</p>
               </div>
             )}
           </>
@@ -303,10 +333,12 @@ function EntryExitContent() {
     );
   }
 
+  // ── active gate view ──────────────────────────────────────────────────────
+
   return (
     <PageShell
       title="Entry & Exit"
-      description="Scan the registered person for the selected gate or department"
+      description="Show a Registration Pass QR code, or press Capture for face recognition"
     >
       <div className="entry-exit-toolbar">
         {isSuperAdmin ? (
@@ -345,27 +377,23 @@ function EntryExitContent() {
             </button>
           ) : (
             <Link href="/access-scope">
-              <button type="button" className="btn-primary" style={{ marginTop: '1rem' }}>
-                Back to Gate Access
-              </button>
+              <button type="button" className="btn-primary" style={{ marginTop: '1rem' }}>Back to Gate Access</button>
             </Link>
           )}
         </div>
       ) : (
         <div className="gate-layout">
           <div className="card gate-layout__camera">
-            {!canWrite && (
-              <p className="read-only-banner">View only — scanning requires write access.</p>
-            )}
+            {!canWrite && <p className="read-only-banner">View only — scanning requires write access.</p>}
 
-            <CameraCapture
+            {/* Single unified scanner — auto-detects QR, button for face */}
+            <GateCameraScanner
               key={`${scanType}-${urlDivisionId}-${urlGateId}-${urlDepartmentId}-${eventType}-${cameraKey}`}
               autoStart={canScan}
-              onCapture={handleCapture}
-              label={captureLabel(eventType, scanType)}
+              onFaceCapture={handleFaceCapture}
+              onQrDetect={handleQrDetect}
+              captureLabel={captureLabel(eventType, scanType)}
               processing={loading}
-              processingLabel={loading ? 'Processing...' : undefined}
-              hideRetake={loading}
             />
 
             {canWrite && !canScan && (
@@ -376,21 +404,33 @@ function EntryExitContent() {
 
             {error && !showDenied && !showSecurityReview && <p className="error-msg">{error}</p>}
 
+            {/* Not-found result */}
             {showNotFound && (
               <div className="gate-result gate-result--not-found">
-                <p className="gate-not-found__title">Person Not Found</p>
-                <p className="gate-not-found__text">{result.message || notFoundMessage(result)}</p>
-                <WriteAccess module="registrations">
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={handleRegisterPerson}
-                    disabled={registering}
-                    style={{ marginTop: '0.75rem' }}
-                  >
-                    {registering ? 'Opening registration...' : 'Register this person'}
-                  </button>
-                </WriteAccess>
+                {result.qrScan ? (
+                  <>
+                    <p className="gate-not-found__title">Pass Not Found</p>
+                    <p className="gate-not-found__text">
+                      {result.message || 'This QR code does not match a valid active pass.'}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="gate-not-found__title">Person Not Found</p>
+                    <p className="gate-not-found__text">{result.message || notFoundMessage(result)}</p>
+                    <WriteAccess module="registrations">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={handleRegisterPerson}
+                        disabled={registering}
+                        style={{ marginTop: '0.75rem' }}
+                      >
+                        {registering ? 'Opening registration...' : 'Register this person'}
+                      </button>
+                    </WriteAccess>
+                  </>
+                )}
               </div>
             )}
           </div>

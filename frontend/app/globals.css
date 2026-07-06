@@ -4371,6 +4371,11 @@ body {
   border-radius: var(--radius);
 }
 
+/* Mirror front-camera video feed (CSS only — captured blob is un-mirrored) */
+.gate-cam-scanner__video--mirrored {
+  transform: scaleX(-1);
+}
+
 /* QR targeting overlay */
 .gate-cam-scanner__qr-overlay {
   position: absolute;
@@ -4387,6 +4392,36 @@ body {
   border: 2.5px solid rgba(255, 255, 255, 0.65);
   border-radius: 0.6rem;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.28);
+}
+
+/* Flip camera button — sits inside the viewport, top-left corner */
+.gate-cam-scanner__flip-btn {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.gate-cam-scanner__flip-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.gate-cam-scanner__flip-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Status badge (top-right corner of viewport) */

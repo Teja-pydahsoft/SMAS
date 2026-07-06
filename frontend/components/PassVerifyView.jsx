@@ -113,35 +113,46 @@ function DetailsTab({ details, valid, expired, inactive, sessionState, showPassF
               <span className="pass-meta-value">{details.divisionsVisited.join(', ')}</span>
             </div>
           )}
-          {details.divisionName && (
-            <div className="pass-meta-row">
-              <span className="pass-meta-label">Division</span>
-              <span className="pass-meta-value">{details.divisionName}</span>
-            </div>
-          )}
           {details.validDate && (
             <div className="pass-meta-row">
               <span className="pass-meta-label">Valid date</span>
               <span className="pass-meta-value">{details.validDate}</span>
             </div>
           )}
-          {details.issuedAt && (
+          {/* Day pass: show In-Time / Out-Time instead of division inside/outside */}
+          {details.passType === 'day_pass' && sessionState?.gateEntryAt && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">In Time</span>
+              <span className="pass-meta-value pass-meta-value--in">
+                {formatDateTime(sessionState.gateEntryAt)}
+              </span>
+            </div>
+          )}
+          {details.passType === 'day_pass' && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">Out Time</span>
+              <span className="pass-meta-value">
+                {sessionState?.gateExitAt ? (
+                  <span className="pass-meta-value--out">{formatDateTime(sessionState.gateExitAt)}</span>
+                ) : details.validUntil ? (
+                  <span className="pass-meta-value--expected">
+                    Expected by {formatDateTime(details.validUntil)}
+                  </span>
+                ) : '—'}
+              </span>
+            </div>
+          )}
+          {/* Non-day pass: show issued time */}
+          {details.passType !== 'day_pass' && details.issuedAt && (
             <div className="pass-meta-row">
               <span className="pass-meta-label">Issued</span>
               <span className="pass-meta-value">{formatDateTime(details.issuedAt)}</span>
             </div>
           )}
-          {sessionState && (
-            <div className="pass-meta-row">
-              <span className="pass-meta-label">Division status</span>
-              <span className="pass-meta-value">
-                {sessionState.divisionInside ? 'Inside' : 'Outside'}
-              </span>
-            </div>
-          )}
+          {/* Current department (still useful to show on verify page) */}
           {sessionState?.currentDepartmentName && (
             <div className="pass-meta-row">
-              <span className="pass-meta-label">Current department</span>
+              <span className="pass-meta-label">Active dept</span>
               <span className="pass-meta-value">{sessionState.currentDepartmentName}</span>
             </div>
           )}
@@ -176,17 +187,21 @@ function TodayActiveTab({ todayActive, todayEntries, sessionState }) {
       {/* Summary strip */}
       <div className="today-summary-strip">
         <div className="today-summary-strip__item">
-          <span className="today-summary-strip__label">Division</span>
-          <span className={`today-summary-strip__value ${sessionState?.divisionInside ? 'today-summary-strip__value--inside' : ''}`}>
-            {sessionState?.divisionInside ? 'Inside' : 'Outside'}
+          <span className="today-summary-strip__label">In Time</span>
+          <span className={`today-summary-strip__value ${sessionState?.gateEntryAt ? 'today-summary-strip__value--inside' : ''}`}>
+            {sessionState?.gateEntryAt ? formatDateTime(sessionState.gateEntryAt) : '—'}
           </span>
         </div>
-        {sessionState?.gateEntryAt && (
-          <div className="today-summary-strip__item">
-            <span className="today-summary-strip__label">Gate entry</span>
-            <span className="today-summary-strip__value">{formatDateTime(sessionState.gateEntryAt)}</span>
-          </div>
-        )}
+        <div className="today-summary-strip__item">
+          <span className="today-summary-strip__label">Out Time</span>
+          <span className="today-summary-strip__value">
+            {sessionState?.gateExitAt
+              ? formatDateTime(sessionState.gateExitAt)
+              : sessionState?.gateEntryAt
+                ? <span style={{ color: 'var(--warning)', fontSize: '0.8rem' }}>Not yet exited</span>
+                : '—'}
+          </span>
+        </div>
         <div className="today-summary-strip__item">
           <span className="today-summary-strip__label">Department</span>
           <span className="today-summary-strip__value">

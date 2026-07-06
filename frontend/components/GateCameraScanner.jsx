@@ -5,28 +5,28 @@
  *
  * Single camera window that auto-detects both QR codes and faces.
  *
- * - QR path  : BarcodeDetector runs continuously on every video frame.
- *              The moment a valid Registration Pass QR is found, onQrDetect
- *              fires automatically — no button press needed.
+ * - QR path  : BarcodeDetector runs continuously. When a valid QR is found,
+ *              a "Scan QR" button appears over the viewport. The operator must
+ *              tap it to confirm and fire onQrDetect. This prevents accidental
+ *              multiple scans (especially on entry/exit gates where each scan
+ *              toggles state).
  *
  * - Face path: The operator presses "Capture" to freeze the frame and send
  *              it to face recognition via onFaceCapture.
  *
- * - Flip     : When the device has more than one camera a flip button is
+ * - Flip     : When the device has more than one camera, a flip button is
  *              shown inside the viewport (top-left). Tapping it switches
  *              between the front-facing and rear-facing camera.
  *
  * Props:
  *   onFaceCapture(blob: Blob)    – called when operator presses Capture
- *   onQrDetect(passCode: string) – called automatically when a QR is found
+ *   onQrDetect(passCode: string) – called when operator confirms QR scan
  *   captureLabel: string         – label for the Capture button
  *   processing: bool             – true while a scan is in-flight
  *   autoStart: bool              – open camera on mount
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-const QR_COOLDOWN_MS = 3000;
 
 function extractPassCode(rawValue) {
   try {
@@ -45,7 +45,7 @@ function extractPassCode(rawValue) {
   return null;
 }
 
-// Flip camera icon (two circular arrows)
+// Flip camera icon
 function FlipIcon() {
   return (
     <svg
@@ -79,8 +79,6 @@ export default function GateCameraScanner({
   const streamRef = useRef(null);
   const detectorRef = useRef(null);
   const rafRef = useRef(null);
-  const lastQrRef = useRef(null);
-  const qrCooldownRef = useRef(false);
 
   const [active, setActive] = useState(false);
   const [preview, setPreview] = useState(null);
@@ -90,6 +88,7 @@ export default function GateCameraScanner({
   const [facingMode, setFacingMode] = useState('user');   // 'user' | 'environment'
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
   const [flipping, setFlipping] = useState(false);
+  const [pendingQr, setPendingQr] = useState(null); // {passCode, raw} when QR detected but not confirmed
 
   // ── Detect number of cameras ──────────────────────────────────────────────
   useEffect(() => {
@@ -129,13 +128,12 @@ export default function GateCameraScanner({
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    lastQrRef.current = null;
-    qrCooldownRef.current = false;
   }, []);
 
   const stopCamera = useCallback(() => {
     stopStream();
     setActive(false);
+    setPendingQr(null);
   }, [stopStream]);
 
   useEffect(() => () => stopStream(), [stopStream]);
@@ -145,21 +143,16 @@ export default function GateCameraScanner({
     const video = videoRef.current;
     const detector = detectorRef.current;
 
-    if (video && detector && !processing && !qrCooldownRef.current && video.readyState >= 2) {
+    // Only scan if no QR is pending confirmation and not processing
+    if (video && detector && !pendingQr && !processing && video.readyState >= 2) {
       try {
         const barcodes = await detector.detect(video);
         if (barcodes.length > 0) {
           const passCode = extractPassCode(barcodes[0].rawValue);
-          if (passCode && passCode !== lastQrRef.current) {
-            lastQrRef.current = passCode;
-            qrCooldownRef.current = true;
+          if (passCode) {
+            // Show confirmation button — do NOT fire onQrDetect yet
+            setPendingQr({ passCode, raw: barcodes[0].rawValue });
             setDetectedType('qr');
-            onQrDetect?.(passCode);
-            setTimeout(() => {
-              qrCooldownRef.current = false;
-              lastQrRef.current = null;
-              setDetectedType(null);
-            }, QR_COOLDOWN_MS);
           }
         }
       } catch {
@@ -168,7 +161,7 @@ export default function GateCameraScanner({
     }
 
     rafRef.current = requestAnimationFrame(qrScanLoop);
-  }, [processing, onQrDetect]);
+  }, [pendingQr, processing]);
 
   // ── Start camera with a given facingMode ─────────────────────────────────
   const startCamera = useCallback(
@@ -176,6 +169,7 @@ export default function GateCameraScanner({
       setError('');
       setPreview(null);
       setDetectedType(null);
+      setPendingQr(null);
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -188,8 +182,6 @@ export default function GateCameraScanner({
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
         setActive(true);
-        lastQrRef.current = null;
-        qrCooldownRef.current = false;
         if (detectorRef.current) {
           rafRef.current = requestAnimationFrame(qrScanLoop);
         }
@@ -204,12 +196,12 @@ export default function GateCameraScanner({
   // Restart QR loop when processing finishes
   useEffect(() => {
     if (!active || !detectorRef.current) return;
-    if (!processing) {
+    if (!processing && !pendingQr) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(qrScanLoop);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [processing]);
+  }, [processing, pendingQr]);
 
   useEffect(() => {
     if (autoStart) startCamera();
@@ -224,9 +216,27 @@ export default function GateCameraScanner({
     const nextFacing = facingMode === 'user' ? 'environment' : 'user';
     stopStream();
     setFacingMode(nextFacing);
+    setPendingQr(null); // clear any pending QR when flipping
     await startCamera(nextFacing);
     setFlipping(false);
   }, [flipping, active, facingMode, stopStream, startCamera]);
+
+  // ── Confirm QR scan ───────────────────────────────────────────────────────
+  function confirmQrScan() {
+    if (!pendingQr || processing) return;
+    setDetectedType(null); // clear the badge
+    onQrDetect?.(pendingQr.passCode);
+    setPendingQr(null); // clear after firing
+  }
+
+  function cancelQrScan() {
+    setPendingQr(null);
+    setDetectedType(null);
+    // Resume QR scan loop
+    if (detectorRef.current && active && !processing) {
+      rafRef.current = requestAnimationFrame(qrScanLoop);
+    }
+  }
 
   // ── Face capture ──────────────────────────────────────────────────────────
   function captureFrame() {
@@ -271,10 +281,9 @@ export default function GateCameraScanner({
   }
 
   // ── Derived render state ──────────────────────────────────────────────────
-  const showCapture = active && !preview && !processing;
+  const showCapture = active && !preview && !processing && !pendingQr;
   const showRetake = preview && !processing;
   const showProcessing = processing;
-  // Mirror the live video for front camera (CSS only — the captured blob is un-mirrored above)
   const videoMirrored = facingMode === 'user';
 
   return (
@@ -305,15 +314,54 @@ export default function GateCameraScanner({
           <img src={preview} alt="Captured frame" className="gate-cam-scanner__preview" />
         )}
 
-        {/* QR targeting frame */}
-        {active && !preview && qrSupported && (
+        {/* QR targeting frame (only when no QR is pending confirmation) */}
+        {active && !preview && qrSupported && !pendingQr && (
           <div className="gate-cam-scanner__qr-overlay" aria-hidden="true">
             <div className="gate-cam-scanner__qr-frame" />
           </div>
         )}
 
+        {/* QR detected — show confirmation overlay */}
+        {active && !preview && pendingQr && (
+          <div className="gate-cam-scanner__qr-confirm-overlay">
+            <div className="gate-cam-scanner__qr-confirm-card">
+              <div className="gate-cam-scanner__qr-icon" aria-hidden="true">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                  <rect x="14" y="14" width="3" height="3" />
+                  <rect x="19" y="14" width="2" height="2" />
+                  <rect x="14" y="19" width="2" height="2" />
+                  <rect x="18" y="18" width="3" height="3" />
+                </svg>
+              </div>
+              <p className="gate-cam-scanner__qr-confirm-title">QR Code Detected</p>
+              <p className="gate-cam-scanner__qr-confirm-code">{pendingQr.passCode}</p>
+              <div className="gate-cam-scanner__qr-confirm-actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={confirmQrScan}
+                  disabled={processing}
+                >
+                  {processing ? 'Processing...' : 'Scan QR'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={cancelQrScan}
+                  disabled={processing}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Flip camera button — inside viewport, top-left */}
-        {active && !preview && hasMultipleCameras && (
+        {active && !preview && !pendingQr && hasMultipleCameras && (
           <button
             type="button"
             className="gate-cam-scanner__flip-btn"
@@ -326,12 +374,7 @@ export default function GateCameraScanner({
           </button>
         )}
 
-        {/* Status badge — top-right */}
-        {active && detectedType === 'qr' && (
-          <div className="gate-cam-scanner__badge gate-cam-scanner__badge--qr" aria-live="polite">
-            QR detected
-          </div>
-        )}
+        {/* Status badge — top-right (only for face capture, QR uses overlay) */}
         {active && detectedType === 'face' && (
           <div className="gate-cam-scanner__badge gate-cam-scanner__badge--face" aria-live="polite">
             Face captured
@@ -352,11 +395,11 @@ export default function GateCameraScanner({
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
       {/* ── Hint row ── */}
-      {active && !preview && !processing && (
+      {active && !preview && !processing && !pendingQr && (
         <p className="gate-cam-scanner__hint field-hint">
           {qrSupported
-            ? 'QR code is detected automatically · press Capture to use face recognition'
-            : 'Press Capture to use face recognition'}
+            ? 'Show QR code to the camera, or press Capture for face scan'
+            : 'Press Capture for face recognition'}
         </p>
       )}
 

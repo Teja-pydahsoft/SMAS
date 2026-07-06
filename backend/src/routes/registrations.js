@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,31 +16,18 @@ import {
 import { createRegistrationPass } from '../services/passService.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import { PASS_TYPES } from '../constants/index.js';
-import { uploadDir } from '../utils/storage.js';
+import { createMulter } from '../utils/storage.js';
+import {
+  isCloudinaryEnabled,
+  uploadToCloudinary,
+  deleteFromCloudinary,
+  extractPublicId,
+} from '../services/cloudinaryService.js';
 
 const router = Router();
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(uploadDir, 'registrations');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${req.params.id || uuidv4()}-${Date.now()}${path.extname(file.originalname) || '.jpg'}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/octet-stream') {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'));
-    }
-  },
+const upload = createMulter('registrations', (req, file) => {
+  return `${req.params.id || uuidv4()}-${Date.now()}${path.extname(file.originalname) || '.jpg'}`;
 });
 
 function generateRegistrationCode() {
@@ -204,23 +190,42 @@ router.post(
 
     if (!req.file) return res.status(400).json({ error: 'Photo is required' });
 
-    const imageBuffer = fs.readFileSync(req.file.path);
+    const imageBuffer = req.file.buffer || fs.readFileSync(req.file.path);
     const { embedding, face_detected } = await extractFaceEmbedding(
       imageBuffer,
-      req.file.filename,
+      req.file.filename || req.file.originalname,
       req.file.mimetype
     );
 
     if (!face_detected || !embedding?.length) {
-      fs.unlinkSync(req.file.path);
+      // Clean up: delete local file if it was written
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
       return res.status(400).json({ error: 'No face detected in the photo. Please retake.' });
     }
 
-    if (registration.photoPath && fs.existsSync(registration.photoPath)) {
-      fs.unlinkSync(registration.photoPath);
+    // Delete old photo (Cloudinary or local)
+    if (registration.photoPath) {
+      if (registration.photoPath.includes('cloudinary.com')) {
+        const publicId = extractPublicId(registration.photoPath);
+        await deleteFromCloudinary(publicId);
+      } else if (fs.existsSync(registration.photoPath)) {
+        fs.unlinkSync(registration.photoPath);
+      }
     }
 
-    registration.photoPath = req.file.path;
+    // Upload to Cloudinary if enabled, otherwise use local path
+    let photoUrl;
+    if (isCloudinaryEnabled()) {
+      const filename = `${req.params.id}-${Date.now()}`;
+      const result = await uploadToCloudinary(imageBuffer, 'registrations', filename);
+      photoUrl = result.url;
+    } else {
+      photoUrl = req.file.path;
+    }
+
+    registration.photoPath = photoUrl;
     registration.faceEmbedding = embedding;
 
     const isVerified = registration.status === REGISTRATION_STATUS.VERIFIED;
@@ -248,7 +253,7 @@ router.post(
 
     res.json({
       registration: updated,
-      photoUrl: `/uploads/registrations/${path.basename(req.file.path)}`,
+      photoUrl: photoUrlFromPath(photoUrl),
     });
   })
 );
@@ -313,8 +318,13 @@ router.delete(
     const registration = await Registration.findById(req.params.id);
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
 
-    if (registration.photoPath && fs.existsSync(registration.photoPath)) {
-      fs.unlinkSync(registration.photoPath);
+    if (registration.photoPath) {
+      if (registration.photoPath.includes('cloudinary.com')) {
+        const publicId = extractPublicId(registration.photoPath);
+        await deleteFromCloudinary(publicId);
+      } else if (fs.existsSync(registration.photoPath)) {
+        fs.unlinkSync(registration.photoPath);
+      }
     }
 
     try {

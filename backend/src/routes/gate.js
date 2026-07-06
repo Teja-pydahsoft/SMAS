@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import Registration from '../models/Registration.js';
@@ -32,7 +31,11 @@ import {
 } from '../services/attendanceService.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
-import { uploadDir } from '../utils/storage.js';
+import { createMulter } from '../utils/storage.js';
+import {
+  isCloudinaryEnabled,
+  uploadToCloudinary,
+} from '../services/cloudinaryService.js';
 import { hasDivisionScope, hasDepartmentScope, hasGateScope } from '../middleware/auth.js';
 
 const router = Router();
@@ -41,24 +44,8 @@ const MIN_MATCH_MARGIN = parseFloat(process.env.MIN_MATCH_MARGIN || '0.05');
 const SEARCH_TOP_K = parseInt(process.env.SEARCH_TOP_K || '5', 10);
 const EMBEDDING_SIZE = parseInt(process.env.FACE_EMBEDDING_SIZE || '512', 10);
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(uploadDir, 'gate');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `gate-${Date.now()}${path.extname(file.originalname) || '.jpg'}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files are allowed'));
-  },
+const upload = createMulter('gate', (req, file) => {
+  return `gate-${Date.now()}${path.extname(file.originalname) || '.jpg'}`;
 });
 
 router.get(
@@ -180,17 +167,33 @@ function buildScanDenialResponse({
   };
 }
 
-async function identifyFromPhoto(filePath, registrationId) {
-  const imageBuffer = fs.readFileSync(filePath);
+async function identifyFromPhoto(file, registrationId) {
+  const filePath = file.path || null;
+  const imageBuffer = file.buffer || fs.readFileSync(filePath);
+  const filename = file.filename || file.originalname || 'photo.jpg';
+
   const { embedding, face_detected } = await extractFaceEmbedding(
     imageBuffer,
-    path.basename(filePath),
+    filename,
     'image/jpeg'
   );
 
   if (!face_detected || !embedding?.length) {
-    fs.unlinkSync(filePath);
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     return { error: 'No face detected in the photo' };
+  }
+
+  // Upload gate scan photo to Cloudinary (for audit log) if enabled
+  let savedPhotoPath = filePath;
+  if (isCloudinaryEnabled()) {
+    try {
+      const result = await uploadToCloudinary(imageBuffer, 'gate', `gate-${Date.now()}`);
+      savedPhotoPath = result.url;
+      // Clean up temp local file if multer wrote one
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (err) {
+      console.error('Cloudinary gate upload failed, falling back to local:', err.message);
+    }
   }
 
   let matchedRegistration = null;
@@ -199,15 +202,21 @@ async function identifyFromPhoto(filePath, registrationId) {
   if (registrationId) {
     matchedRegistration = await Registration.findById(registrationId);
     if (!matchedRegistration) {
-      fs.unlinkSync(filePath);
+      if (savedPhotoPath && !savedPhotoPath.startsWith('http') && fs.existsSync(savedPhotoPath)) {
+        fs.unlinkSync(savedPhotoPath);
+      }
       return { error: 'Registration not found', status: 404 };
     }
     if (matchedRegistration.status !== REGISTRATION_STATUS.VERIFIED) {
-      fs.unlinkSync(filePath);
+      if (savedPhotoPath && !savedPhotoPath.startsWith('http') && fs.existsSync(savedPhotoPath)) {
+        fs.unlinkSync(savedPhotoPath);
+      }
       return { error: 'Registration is not verified', status: 400 };
     }
     if (matchedRegistration.faceEmbedding?.length !== EMBEDDING_SIZE) {
-      fs.unlinkSync(filePath);
+      if (savedPhotoPath && !savedPhotoPath.startsWith('http') && fs.existsSync(savedPhotoPath)) {
+        fs.unlinkSync(savedPhotoPath);
+      }
       return {
         error: 'Registration photo uses an outdated face model. Please re-upload the photo.',
         status: 400,
@@ -227,6 +236,7 @@ async function identifyFromPhoto(filePath, registrationId) {
         ambiguous: true,
         matchScore: searchResult.best?.similarity ?? 0,
         candidates: searchResult.matches?.slice(0, 3) ?? [],
+        savedPhotoPath,
       };
     }
 
@@ -237,7 +247,7 @@ async function identifyFromPhoto(filePath, registrationId) {
   }
 
   const matched = matchScore >= MATCH_THRESHOLD && !!matchedRegistration;
-  return { matchedRegistration, matchScore, matched, autoIdentified: !registrationId };
+  return { matchedRegistration, matchScore, matched, autoIdentified: !registrationId, savedPhotoPath };
 }
 
 // ─── QR-code gate scan ────────────────────────────────────────────────────────
@@ -620,7 +630,7 @@ router.post(
       }
     }
 
-    const identify = await identifyFromPhoto(req.file.path, registrationId || null);
+    const identify = await identifyFromPhoto(req.file, registrationId || null);
     if (identify.error) {
       return res.status(identify.status || 400).json({ error: identify.error });
     }
@@ -629,7 +639,7 @@ router.post(
       const log = await GateLog.create({
         matchScore: identify.matchScore,
         matched: false,
-        photoPath: req.file.path,
+        photoPath: identify.savedPhotoPath,
         ...logFields,
         metadata: {
           threshold: MATCH_THRESHOLD,
@@ -652,14 +662,14 @@ router.post(
       });
     }
 
-    const { matchedRegistration, matchScore, matched, autoIdentified } = identify;
+    const { matchedRegistration, matchScore, matched, autoIdentified, savedPhotoPath } = identify;
 
     const log = await GateLog.create({
       registrationId: matchedRegistration?._id || undefined,
       roleId: matchedRegistration?.roleId || undefined,
       matchScore,
       matched,
-      photoPath: req.file.path,
+      photoPath: savedPhotoPath,
       ...logFields,
       metadata: {
         threshold: MATCH_THRESHOLD,

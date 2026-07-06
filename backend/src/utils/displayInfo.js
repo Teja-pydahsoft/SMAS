@@ -32,6 +32,15 @@ export function buildDisplayInfo(formData, fields = []) {
 
 export function photoUrlFromPath(photoPath) {
   if (!photoPath) return null;
+  // Cloudinary URLs are already full https:// URLs — return as-is
+  if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
+    return photoPath;
+  }
+  // Local fallback: derive URL from filename
   const name = photoPath.replace(/\\/g, '/').split('/').pop();
+  // Detect subfolder from the path so gate photos resolve correctly
+  if (photoPath.replace(/\\/g, '/').includes('/gate/')) {
+    return `/uploads/gate/${name}`;
+  }
   return `/uploads/registrations/${name}`;
 }

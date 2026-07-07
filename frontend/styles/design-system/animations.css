@@ -1,0 +1,114 @@
+/* ═══════════════════════════════════════════════════════════════
+   SAMS Design System — Animations
+════════════════════════════════════════════════════════════════ */
+
+/* ── Fade in from bottom (page entry) ── */
+.admin-fade-in {
+  animation: fadeInUp 0.35s ease both;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Staggered children ── */
+.stagger-children > * {
+  animation: fadeInUp 0.3s ease both;
+}
+
+.stagger-children > *:nth-child(1) { animation-delay: 0.04s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.08s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.12s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.16s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.20s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.24s; }
+
+/* ── Slide in from right ── */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* ── Slide in from bottom ── */
+@keyframes slideInUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Scale in (modal) ── */
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ── Overlay in ── */
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Pulse ring (live status) ── */
+@keyframes pulseRing {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.3), 0 2px 8px rgba(0, 0, 0, 0.15); }
+  50%       { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.1), 0 2px 8px rgba(0, 0, 0, 0.15); }
+}
+
+/* ── Dot pulse ── */
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(1.4); }
+}
+
+/* ── Shimmer ── */
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Spin ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Admin pulse (live dot) ── */
+@keyframes adminPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+/* ── Ripple effect ── */
+.admin-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 60%);
+  opacity: 0;
+  transform: scale(0);
+  transition: transform 0.4s ease, opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.admin-ripple:active::after {
+  opacity: 1;
+  transform: scale(2);
+  transition: none;
+}
+
+/* ── Hover scale utility ── */
+.hover-scale {
+  transition: transform var(--transition-medium);
+}
+.hover-scale:hover { transform: scale(1.02); }
+
+/* ── Hover lift utility ── */
+.hover-lift {
+  transition: transform var(--transition-medium), box-shadow var(--transition-medium);
+}
+.hover-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+}

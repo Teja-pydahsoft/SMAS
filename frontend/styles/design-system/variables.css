@@ -1,0 +1,189 @@
+/* ═══════════════════════════════════════════════════════════════
+   SAMS Design System — Variables
+   Enterprise-grade CSS custom properties
+════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Color Palette ── */
+  --color-primary:          #2563EB;
+  --color-primary-hover:    #1D4ED8;
+  --color-primary-active:   #1E40AF;
+  --color-primary-light:    #DBEAFE;
+  --color-primary-subtle:   rgba(37, 99, 235, 0.08);
+  --color-primary-ring:     rgba(37, 99, 235, 0.25);
+
+  --color-secondary:        #60A5FA;
+  --color-accent:           #3B82F6;
+
+  --color-success:          #10B981;
+  --color-success-hover:    #059669;
+  --color-success-light:    #D1FAE5;
+  --color-success-subtle:   rgba(16, 185, 129, 0.08);
+
+  --color-warning:          #F59E0B;
+  --color-warning-hover:    #D97706;
+  --color-warning-light:    #FEF3C7;
+  --color-warning-subtle:   rgba(245, 158, 11, 0.08);
+
+  --color-danger:           #EF4444;
+  --color-danger-hover:     #DC2626;
+  --color-danger-light:     #FEE2E2;
+  --color-danger-subtle:    rgba(239, 68, 68, 0.08);
+
+  --color-info:             #3B82F6;
+  --color-info-light:       #DBEAFE;
+  --color-info-subtle:      rgba(59, 130, 246, 0.08);
+
+  /* ── Surfaces ── */
+  --surface-bg:             #F5F7FB;
+  --surface-base:           #FFFFFF;
+  --surface-raised:         #FFFFFF;
+  --surface-secondary:      #F8FAFC;
+  --surface-tertiary:       #F1F5F9;
+  --surface-overlay:        rgba(255, 255, 255, 0.92);
+  --surface-inset:          #F1F5F9;
+  --surface-hover:          #EFF6FF;
+  --surface-sidebar:        #FFFFFF;
+
+  /* ── Borders ── */
+  --border-color:           #E5E7EB;
+  --border-subtle:          #F3F4F6;
+  --border-strong:          #D1D5DB;
+  --border-primary:         rgba(37, 99, 235, 0.3);
+
+  /* ── Text ── */
+  --text-primary:           #111827;
+  --text-secondary:         #6B7280;
+  --text-muted:             #9CA3AF;
+  --text-disabled:          #D1D5DB;
+  --text-inverse:           #FFFFFF;
+  --text-brand:             #2563EB;
+
+  /* ── Typography ── */
+  --font-family:            'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:              'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  --text-10:  clamp(0.575rem, 1.6vw, 0.625rem);
+  --text-11:  clamp(0.625rem, 1.8vw, 0.6875rem);
+  --text-12:  clamp(0.6875rem, 2vw, 0.75rem);
+  --text-13:  clamp(0.75rem, 2.2vw, 0.8125rem);
+  --text-14:  clamp(0.8125rem, 2.4vw, 0.875rem);
+  --text-15:  clamp(0.875rem, 2.6vw, 0.9375rem);
+  --text-16:  clamp(0.9375rem, 2.8vw, 1rem);
+  --text-18:  clamp(1rem, 3.2vw, 1.125rem);
+  --text-20:  clamp(1.1rem, 3.6vw, 1.25rem);
+  --text-24:  clamp(1.2rem, 4vw, 1.5rem);
+  --text-30:  clamp(1.4rem, 5vw, 1.875rem);
+  --text-36:  clamp(1.65rem, 6vw, 2.25rem);
+
+  /* ── Shadows ── */
+  --shadow-xs:    0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm:    0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md:    0 4px 6px rgba(15, 23, 42, 0.05), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-card:  0 1px 3px rgba(15, 23, 42, 0.05), 0 12px 30px rgba(15, 23, 42, 0.07);
+  --shadow-lg:    0 4px 16px rgba(15, 23, 42, 0.06), 0 18px 40px rgba(15, 23, 42, 0.10);
+  --shadow-xl:    0 8px 32px rgba(15, 23, 42, 0.10), 0 24px 56px rgba(15, 23, 42, 0.12);
+  --shadow-inset: inset 0 1px 3px rgba(15, 23, 42, 0.06), inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  --shadow-btn-primary: 0 1px 2px rgba(37, 99, 235, 0.3), 0 4px 12px rgba(37, 99, 235, 0.2);
+  --shadow-btn-primary-hover: 0 2px 4px rgba(37, 99, 235, 0.35), 0 6px 16px rgba(37, 99, 235, 0.25);
+  --shadow-sidebar: 1px 0 0 var(--border-color), 4px 0 24px rgba(15, 23, 42, 0.04);
+  --shadow-topnav:  0 1px 0 var(--border-color), 0 2px 12px rgba(15, 23, 42, 0.04);
+  --shadow-modal:   0 8px 32px rgba(15, 23, 42, 0.12), 0 32px 64px rgba(15, 23, 42, 0.10);
+  --shadow-glass:   0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(37, 99, 235, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  /* ── Glass morphism ── */
+  --glass-bg:     rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.8);
+  --glass-blur:   blur(20px);
+
+  /* ── Border Radius ── */
+  --radius-sm:   8px;
+  --radius:      12px;
+  --radius-md:   14px;
+  --radius-lg:   16px;
+  --radius-xl:   20px;
+  --radius-2xl:  22px;
+  --radius-full: 9999px;
+
+  /* ── Spacing Scale ── */
+  --space-1:   0.25rem;
+  --space-2:   0.5rem;
+  --space-3:   0.75rem;
+  --space-4:   1rem;
+  --space-5:   1.25rem;
+  --space-6:   1.5rem;
+  --space-8:   2rem;
+  --space-10:  2.5rem;
+  --space-12:  3rem;
+  --space-16:  4rem;
+
+  /* ── Layout ── */
+  --sidebar-width:        260px;
+  --admin-sidebar-width:  260px;
+  --topnav-height:        64px;
+  --mobile-header-height: 60px;
+
+  /* ── Transitions ── */
+  --transition-fast:   0.1s ease;
+  --transition:        0.15s ease;
+  --transition-medium: 0.2s ease;
+  --transition-slow:   0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Z-index layers ── */
+  --z-base:     1;
+  --z-raised:   10;
+  --z-dropdown: 100;
+  --z-sidebar:  200;
+  --z-topnav:   201;
+  --z-modal:    300;
+  --z-overlay:  400;
+  --z-toast:    500;
+
+  /* ── Legacy aliases (keep backward compatibility) ── */
+  --bg:                   var(--surface-bg);
+  --bg-card:              var(--surface-base);
+  --bg-hover:             var(--surface-hover);
+  --bg-inset:             var(--surface-inset);
+  --border:               var(--border-color);
+  --border-subtle:        var(--border-subtle);
+  --text:                 var(--text-primary);
+  --text-muted:           var(--text-secondary);
+  --text-secondary:       var(--text-secondary);
+  --primary:              var(--color-primary);
+  --primary-hover:        var(--color-primary-hover);
+  --primary-light:        var(--color-primary-subtle);
+  --secondary:            var(--color-secondary);
+  --secondary-light:      rgba(96, 165, 250, 0.12);
+  --accent:               var(--color-accent);
+  --accent-light:         rgba(59, 130, 246, 0.1);
+  --success:              var(--color-success);
+  --success-light:        var(--color-success-subtle);
+  --warning:              var(--color-warning);
+  --warning-light:        var(--color-warning-subtle);
+  --warning-strong:       var(--color-warning-hover);
+  --danger:               var(--color-danger);
+  --danger-light:         var(--color-danger-subtle);
+  --danger-strong:        var(--color-danger-hover);
+
+  --shadow:           var(--shadow-card);
+  --shadow-raised:    var(--shadow-card);
+  --shadow-raised-sm: var(--shadow-sm);
+  --shadow-raised-lg: var(--shadow-lg);
+  --shadow-pressed:   var(--shadow-inset);
+  --shadow-pressed-sm:var(--shadow-inset);
+
+  --radius-pill:  var(--radius-full);
+  --transition:   var(--transition);
+
+  /* Typography scale backward compat */
+  --text-xs:   var(--text-11);
+  --text-sm:   var(--text-13);
+  --text-base: var(--text-14);
+  --text-md:   var(--text-15);
+  --text-lg:   var(--text-16);
+  --text-xl:   var(--text-18);
+  --text-2xl:  var(--text-24);
+  --text-3xl:  var(--text-30);
+}

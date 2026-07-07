@@ -1,0 +1,163 @@
+/* ═══════════════════════════════════════════════════════════════
+   SAMS Design System — Utilities
+════════════════════════════════════════════════════════════════ */
+
+/* ── Display ── */
+.hidden        { display: none !important; }
+.flex          { display: flex; }
+.inline-flex   { display: inline-flex; }
+.grid          { display: grid; }
+.block         { display: block; }
+.inline-block  { display: inline-block; }
+
+/* ── Flexbox ── */
+.items-center   { align-items: center; }
+.items-start    { align-items: flex-start; }
+.items-end      { align-items: flex-end; }
+.justify-center { justify-content: center; }
+.justify-between{ justify-content: space-between; }
+.justify-end    { justify-content: flex-end; }
+.flex-wrap      { flex-wrap: wrap; }
+.flex-col       { flex-direction: column; }
+.flex-1         { flex: 1; }
+.flex-shrink-0  { flex-shrink: 0; }
+.gap-1  { gap: var(--space-1); }
+.gap-2  { gap: var(--space-2); }
+.gap-3  { gap: var(--space-3); }
+.gap-4  { gap: var(--space-4); }
+.gap-5  { gap: var(--space-5); }
+.gap-6  { gap: var(--space-6); }
+
+/* ── Spacing ── */
+.mt-2  { margin-top:    var(--space-2); }
+.mt-4  { margin-top:    var(--space-4); }
+.mt-auto { margin-top: auto; }
+.mb-4  { margin-bottom: var(--space-4); }
+.p-4   { padding: var(--space-4); }
+.px-4  { padding-inline: var(--space-4); }
+.py-4  { padding-block: var(--space-4); }
+
+/* ── Width ── */
+.w-full   { width: 100%; }
+.min-w-0  { min-width: 0; }
+.max-w-sm { max-width: 420px; }
+.max-w-md { max-width: 640px; }
+.max-w-lg { max-width: 960px; }
+
+/* ── Overflow ── */
+.overflow-hidden { overflow: hidden; }
+.overflow-auto   { overflow: auto; }
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Cursor ── */
+.cursor-pointer { cursor: pointer; }
+.cursor-default { cursor: default; }
+
+/* ── Select none ── */
+.select-none { user-select: none; }
+
+/* ── Rounded ── */
+.rounded    { border-radius: var(--radius); }
+.rounded-lg { border-radius: var(--radius-lg); }
+.rounded-xl { border-radius: var(--radius-xl); }
+.rounded-full { border-radius: var(--radius-full); }
+
+/* ── No-print ── */
+.no-print { }
+
+/* ── Place items ── */
+.place-items-center { place-items: center; }
+
+/* ── Color shorthands ── */
+.text-success { color: var(--color-success) !important; }
+.text-danger  { color: var(--color-danger) !important; }
+.text-warning { color: var(--color-warning) !important; }
+.text-primary { color: var(--color-primary) !important; }
+.text-muted   { color: var(--text-secondary) !important; }
+.text-subtle  { color: var(--text-muted) !important; }
+
+/* ── SR-only (accessibility) ── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Focus ring ── */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Divider ── */
+.divider {
+  height: 1px;
+  background: var(--border-color);
+  border: none;
+  margin: var(--space-4) 0;
+}
+
+/* ── Spinner ── */
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ── Sub-nav wrap ── */
+.sub-nav-wrap { flex-wrap: wrap; }
+
+/* ── Page body overrides ── */
+.gate-landing-shell, .login-shell { min-height: 100vh; overflow-y: auto; }
+
+/* ── Print ── */
+@media print {
+  body * { visibility: hidden; }
+  .pass-card, .pass-card * { visibility: visible; }
+
+  @page { size: A5 landscape; margin: 12mm 16mm; }
+
+  body { background: #fff !important; margin: 0; padding: 0; }
+
+  .pass-card {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    width: 180mm;
+    max-width: 180mm;
+    height: auto;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    outline: 2px solid #111827;
+    outline-offset: 2px;
+    border: 1px solid #E5E7EB !important;
+  }
+
+  .pass-card__accent { height: 8px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pass-card__header { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pass-card__photo-col { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pass-card__qr-col { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pass-card__footer { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pass-card__type-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pass-brand-icon { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pass-card__role { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  .no-print { display: none !important; visibility: hidden !important; }
+  .pass-card__print-btn { display: none !important; }
+  .pass-card__footer-note { visibility: visible !important; }
+}

@@ -1,0 +1,143 @@
+/* ═══════════════════════════════════════════════════════════════
+   SAMS Design System — Badges & Status Indicators
+════════════════════════════════════════════════════════════════ */
+
+/* ── Base badge ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-11);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.badge-success {
+  background: var(--color-success-light);
+  color: var(--color-success-hover);
+}
+
+.badge-warning {
+  background: var(--color-warning-light);
+  color: var(--color-warning-hover);
+}
+
+.badge-danger {
+  background: var(--color-danger-light);
+  color: var(--color-danger-hover);
+}
+
+.badge-info {
+  background: var(--color-primary-light);
+  color: var(--color-primary-hover);
+}
+
+.badge-secondary {
+  background: var(--surface-inset);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+/* ── Admin status pill ── */
+.admin-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-11);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.admin-status--approved,
+.admin-status--inside {
+  background: var(--color-success-light);
+  color: var(--color-success-hover);
+}
+
+.admin-status--pending {
+  background: var(--color-warning-light);
+  color: var(--color-warning-hover);
+}
+
+.admin-status--rejected {
+  background: var(--color-danger-light);
+  color: var(--color-danger-hover);
+}
+
+.admin-status--outside {
+  background: var(--surface-inset);
+  color: var(--text-secondary);
+}
+
+/* ── Pass status badge ── */
+.pass-status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-10);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  margin-left: 5px;
+  vertical-align: middle;
+  font-weight: 700;
+}
+
+.pass-status-badge.has-pass {
+  background: var(--color-success-light);
+  color: var(--color-success-hover);
+}
+
+.pass-status-badge.no-pass {
+  background: var(--color-warning-light);
+  color: var(--color-warning-hover);
+}
+
+/* ── Live dot ── */
+.admin-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  animation: live-pulse 1.8s ease-in-out infinite;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+  50%       { opacity: 0.75; box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.1); }
+}
+
+/* ── Service pills ── */
+.admin-service-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-11);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--surface-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.admin-service-pill.is-online {
+  color: var(--color-success-hover);
+  background: var(--color-success-light);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.admin-service-pill.is-offline {
+  color: var(--color-danger-hover);
+  background: var(--color-danger-light);
+  border-color: rgba(239, 68, 68, 0.25);
+}

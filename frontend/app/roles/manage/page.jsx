@@ -89,6 +89,7 @@ export default function ManageRolesPage() {
                 <tr>
                   <th>Role Name</th>
                   <th>Description</th>
+                  <th>Shift Based</th>
                   <th>Status</th>
                   <th>Created</th>
                   {showActions && <th>Actions</th>}
@@ -99,6 +100,13 @@ export default function ManageRolesPage() {
                   <tr key={role._id} className={!role.isActive ? 'row-inactive' : undefined}>
                     <td className="name-cell">{role.name}</td>
                     <td>{role.description || '—'}</td>
+                    <td>
+                      {role.isShiftBased ? (
+                        <span className="badge badge-info">Shift Required</span>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
+                      )}
+                    </td>
                     <td>
                       <span className={`badge ${role.isActive ? 'badge-success' : 'badge-danger'}`}>
                         {role.isActive ? 'Active' : 'Inactive'}

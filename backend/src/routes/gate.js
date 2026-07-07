@@ -109,9 +109,45 @@ router.post(
   })
 );
 
+// ─── Attach shift to an existing gate log after entry ────────────────────────
+router.patch(
+  '/logs/:id/shift',
+  asyncHandler(async (req, res) => {
+    const { shiftId, shiftName } = req.body;
+    if (!shiftId || !shiftName) {
+      return res.status(400).json({ error: 'shiftId and shiftName are required' });
+    }
+
+    const log = await GateLog.findById(req.params.id);
+    if (!log) return res.status(404).json({ error: 'Gate log not found' });
+
+    log.metadata = { ...(log.metadata || {}), shiftId, shiftName };
+    log.markModified('metadata');
+    await log.save();
+
+    // Also patch the day pass qrPayload so shift is visible on the pass
+    const dayPass = log.registrationId
+      ? await Pass.findOne({
+          registrationId: log.registrationId,
+          passType: 'day_pass',
+          isActive: true,
+          validDate: log.createdAt.toISOString().slice(0, 10),
+        })
+      : null;
+
+    if (dayPass) {
+      dayPass.qrPayload = { ...(dayPass.qrPayload || {}), shiftId, shiftName };
+      dayPass.markModified('qrPayload');
+      await dayPass.save();
+    }
+
+    res.json({ ok: true, log });
+  })
+);
+
 async function formatRegistrationForScan(registrationDoc) {
   const registration = await Registration.findById(registrationDoc._id)
-    .populate('roleId', 'name slug')
+    .populate('roleId', 'name slug isShiftBased')
     .populate('formId', 'fields');
   if (!registration) return null;
   const obj = registration.toObject();
@@ -831,6 +867,12 @@ router.post(
 
     const hasGateEntry = await madeGateEntryToday(matchedRegistration._id, divisionId);
 
+    const photoUrl = savedPhotoPath
+      ? savedPhotoPath.startsWith('http')
+        ? savedPhotoPath
+        : `/uploads/gate/${path.basename(savedPhotoPath)}`
+      : null;
+
     res.json({
       matched: true,
       denied: false,
@@ -841,7 +883,7 @@ router.post(
       dayPass,
       sessionState,
       hasGateEntry,
-      photoUrl: `/uploads/gate/${path.basename(req.file.path)}`,
+      photoUrl,
       resolvedEventType: scanType === SCAN_TYPES.GATE ? resolvedEventType : eventType,
       autoResolved: isAutoEvent && scanType === SCAN_TYPES.GATE,
     });

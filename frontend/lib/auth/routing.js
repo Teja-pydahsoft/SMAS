@@ -9,6 +9,7 @@ export const MODULE_ROUTES = [
   { module: 'departments', path: '/departments/manage', label: 'Departments' },
   { module: 'registrations', path: '/registrations/manage', label: 'Registrations' },
   { module: 'registration_roles', path: '/roles/manage', label: 'Registration Roles' },
+  { module: 'shifts', path: '/shifts/manage', label: 'Shifts' },
   { module: 'reports', path: '/reports', label: 'Reports' },
   { module: 'system_users', path: '/system/users/manage', label: 'System Users' },
   { module: 'system_roles', path: '/system/roles/manage', label: 'System Roles' },

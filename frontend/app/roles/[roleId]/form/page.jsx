@@ -10,6 +10,7 @@ export default function RoleFormBuilderPage() {
   const params = useParams();
   const roleId = params.roleId;
   const [role, setRole] = useState(null);
+  const [isShiftBased, setIsShiftBased] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [fields, setFields] = useState([emptyFormField(0)]);
@@ -28,6 +29,7 @@ export default function RoleFormBuilderPage() {
     try {
       const r = await api.roles.get(roleId);
       setRole(r);
+      setIsShiftBased(Boolean(r.isShiftBased));
       try {
         const form = await api.forms.getByRole(roleId);
         setFormId(form._id);
@@ -58,13 +60,16 @@ export default function RoleFormBuilderPage() {
     }
 
     try {
+      // Save shift setting back to the role
+      await api.roles.update(roleId, { isShiftBased });
+
       if (formId) {
         await api.forms.update(formId, { title, description, fields: validFields });
       } else {
         const form = await api.forms.create({ roleId, title, description, fields: validFields });
         setFormId(form._id);
       }
-      setSuccess('Form saved successfully');
+      setSuccess('Role settings and form saved successfully');
     } catch (e) {
       setError(e.message);
     } finally {
@@ -84,6 +89,23 @@ export default function RoleFormBuilderPage() {
       </div>
 
       <form onSubmit={handleSave}>
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <h3 className="section-title">Role Settings</h3>
+          <div className="form-group">
+            <label className="checkbox-option">
+              <input
+                type="checkbox"
+                checked={isShiftBased}
+                onChange={(e) => setIsShiftBased(e.target.checked)}
+              />
+              <span>Shift breakdown required for this role</span>
+            </label>
+            <p className="field-hint">
+              When enabled, users with this role must select a shift at check-in time.
+            </p>
+          </div>
+        </div>
+
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <h3 className="section-title">Form Settings</h3>
           <div className="form-group">

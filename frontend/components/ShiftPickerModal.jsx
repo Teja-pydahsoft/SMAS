@@ -1,0 +1,115 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/api/client';
+
+/**
+ * ShiftPickerModal
+ *
+ * Shows after a successful gate entry when the role has isShiftBased = true.
+ * Lets the operator pick a shift for this person's check-in.
+ *
+ * Props:
+ *   logId       – GateLog _id to patch once a shift is selected
+ *   personName  – display name shown in the heading
+ *   onConfirm(shiftId, shiftName) – called after the shift is saved
+ *   onSkip()    – called if operator skips (shouldn't happen for mandatory, but kept as escape)
+ */
+export default function ShiftPickerModal({ logId, personName, onConfirm, onSkip }) {
+  const [shifts, setShifts] = useState([]);
+  const [selected, setSelected] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [fetchLoading, setFetchLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.shifts
+      .list({ isActive: 'true' })
+      .then((data) => setShifts(data))
+      .catch((e) => setError(e.message))
+      .finally(() => setFetchLoading(false));
+  }, []);
+
+  async function handleConfirm() {
+    if (!selected) {
+      setError('Please select a shift to continue.');
+      return;
+    }
+    const shift = shifts.find((s) => s._id === selected);
+    if (!shift) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      await api.gate.attachShift(logId, shift._id, shift.name);
+      onConfirm(shift._id, shift.name);
+    } catch (e) {
+      setError(e.message || 'Failed to save shift. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="shift-picker-overlay" role="dialog" aria-modal="true" aria-label="Select shift">
+      <div className="shift-picker-modal">
+        <h3 className="shift-picker-modal__title">Select Shift</h3>
+        <p className="shift-picker-modal__desc">
+          <strong>{personName || 'This person'}</strong> is assigned to a shift-based role.
+          Choose their shift for this check-in.
+        </p>
+
+        {fetchLoading ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Loading shifts...</p>
+        ) : shifts.length === 0 ? (
+          <div>
+            <p className="error-msg">
+              No active shifts found. Create shifts in the Shifts section first.
+            </p>
+            <button type="button" className="btn-secondary" style={{ marginTop: '0.75rem' }} onClick={onSkip}>
+              Continue without shift
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="shift-picker-modal__options">
+              {shifts.map((shift) => (
+                <label
+                  key={shift._id}
+                  className={`shift-picker-modal__option ${selected === shift._id ? 'shift-picker-modal__option--selected' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="shift"
+                    value={shift._id}
+                    checked={selected === shift._id}
+                    onChange={() => { setSelected(shift._id); setError(''); }}
+                  />
+                  <div className="shift-picker-modal__option-body">
+                    <span className="shift-picker-modal__option-name">{shift.name}</span>
+                    {shift.description && (
+                      <span className="shift-picker-modal__option-desc">{shift.description}</span>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            {error && <p className="error-msg" style={{ marginTop: '0.75rem' }}>{error}</p>}
+
+            <div className="shift-picker-modal__actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleConfirm}
+                disabled={loading || !selected}
+              >
+                {loading ? 'Saving...' : 'Confirm Shift'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

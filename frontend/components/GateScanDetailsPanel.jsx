@@ -92,6 +92,11 @@ export default function GateScanDetailsPanel({
                 ? 'QR Code Verified'
                 : `Match score: ${(result.matchScore * 100).toFixed(1)}%`}
             </p>
+            {result.shiftName && (
+              <p className="gate-details-panel__shift">
+                Shift: <strong>{result.shiftName}</strong>
+              </p>
+            )}
             {result.registration && (
               <GateMatchedPerson
                 registration={result.registration}

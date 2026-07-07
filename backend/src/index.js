@@ -24,6 +24,7 @@ import authRouter from './routes/auth.js';
 import systemRolesRouter from './routes/systemRoles.js';
 import systemUsersRouter from './routes/systemUsers.js';
 import reportsRouter from './routes/reports.js';
+import shiftsRouter from './routes/shifts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -85,6 +86,7 @@ app.use('/api/departments', departmentsRouter);
 app.use('/api/system-roles', systemRolesRouter);
 app.use('/api/system-users', systemUsersRouter);
 app.use('/api/reports', reportsRouter);
+app.use('/api/shifts', shiftsRouter);
 
 app.use(notFound);
 app.use(errorHandler);

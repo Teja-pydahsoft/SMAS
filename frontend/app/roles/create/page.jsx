@@ -11,6 +11,7 @@ export default function CreateRolePage() {
   const { allowed, loading: permLoading } = useRequireWrite('registration_roles', '/roles/manage');
   const [roleName, setRoleName] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
+  const [isShiftBased, setIsShiftBased] = useState(false);
   const [formTitle, setFormTitle] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [fields, setFields] = useState([emptyFormField(0)]);
@@ -46,6 +47,7 @@ export default function CreateRolePage() {
       const role = await api.roles.create({
         name: roleName.trim(),
         description: roleDescription.trim(),
+        isShiftBased,
       });
 
       await api.forms.create({
@@ -58,6 +60,7 @@ export default function CreateRolePage() {
       setSuccess(`Role "${role.name}" and registration form created successfully.`);
       setRoleName('');
       setRoleDescription('');
+      setIsShiftBased(false);
       setFormTitle('');
       setFormDescription('');
       setFields([emptyFormField(0)]);
@@ -95,6 +98,20 @@ export default function CreateRolePage() {
             onChange={(e) => setRoleDescription(e.target.value)}
             placeholder="Optional description for this role"
           />
+        </div>
+
+        <div className="form-group">
+          <label className="checkbox-option">
+            <input
+              type="checkbox"
+              checked={isShiftBased}
+              onChange={(e) => setIsShiftBased(e.target.checked)}
+            />
+            <span>Shift breakdown required for this role</span>
+          </label>
+          <p className="field-hint">
+            When enabled, users with this role must select a shift at check-in time.
+          </p>
         </div>
       </div>
 

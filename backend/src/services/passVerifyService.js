@@ -152,6 +152,8 @@ export async function getPassVerifyInfo(passCode) {
       validUntil: pass.validUntil,
       divisionId,
       divisionName: pass.qrPayload?.divisionName || null,
+      shiftId: pass.qrPayload?.shiftId || null,
+      shiftName: pass.qrPayload?.shiftName || null,
       details: pass.details || [],
       issuedAt: pass.qrPayload?.issuedAt || pass.createdAt,
     },

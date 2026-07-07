@@ -7,6 +7,7 @@ import { api } from '@/lib/api/client';
 import { saveGatePhotoForRegistration } from '@/lib/gateRegistration';
 import GateCameraScanner from '@/components/GateCameraScanner';
 import GateScanDetailsPanel from '@/components/GateScanDetailsPanel';
+import ShiftPickerModal from '@/components/ShiftPickerModal';
 import EntryExitSelector from '@/components/EntryExitSelector';
 import PageShell from '@/components/PageShell';
 import { useAuth } from '@/components/AuthProvider';
@@ -99,6 +100,8 @@ function EntryExitContent() {
   const [showDayPass, setShowDayPass] = useState(false);
   const [cameraKey] = useState(0);
   const [setupLoading, setSetupLoading] = useState(true);
+  // Shift picker — shown after a successful gate entry when role.isShiftBased = true
+  const [shiftPicker, setShiftPicker] = useState(null); // { logId, personName } | null
 
   const divisions = useMemo(() => accessScope?.divisions || [], [accessScope]);
 
@@ -160,6 +163,23 @@ function EntryExitContent() {
     setPhotoBlob(null);
     setError('');
     setShowDayPass(false);
+    setShiftPicker(null);
+  }, []);
+
+  // After a successful gate ENTRY, check if the role requires a shift selection
+  const maybePromptShift = useCallback((res) => {
+    const isEntry =
+      res.scanType === 'gate' &&
+      !res.denied &&
+      res.matched &&
+      (res.resolvedEventType === 'entry' || (!res.resolvedEventType && res.log?.eventType === 'entry'));
+    const isShiftBased = Boolean(res.registration?.roleId?.isShiftBased);
+    if (isEntry && isShiftBased && res.log?._id) {
+      setShiftPicker({
+        logId: res.log._id,
+        personName: res.registration?.displayName || res.registration?.holderName || '',
+      });
+    }
   }, []);
 
   const applySelection = useCallback(
@@ -237,13 +257,14 @@ function EntryExitContent() {
 
         const res = await api.gate.scan(blob, eventType, options);
         applyResult(res, setResult, setSessionState, setDayPass, setError);
+        maybePromptShift(res);
       } catch (e) {
         applyErrorData(e, setResult, setSessionState, setDayPass, setError);
       } finally {
         setLoading(false);
       }
     },
-    [canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState]
+    [canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState, maybePromptShift]
   );
 
   // ── QR scan ───────────────────────────────────────────────────────────────
@@ -267,13 +288,14 @@ function EntryExitContent() {
 
         const res = await api.gate.qrScan(passCode, eventType, options);
         applyResult(res, setResult, setSessionState, setDayPass, setError);
+        maybePromptShift(res);
       } catch (e) {
         applyErrorData(e, setResult, setSessionState, setDayPass, setError);
       } finally {
         setLoading(false);
       }
     },
-    [loading, canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState]
+    [loading, canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState, maybePromptShift]
   );
 
   // ── registration redirect ─────────────────────────────────────────────────
@@ -451,6 +473,22 @@ function EntryExitContent() {
             showSecurityReview={showSecurityReview}
           />
         </div>
+      )}
+
+      {/* Shift picker modal — shown after gate entry for shift-based roles */}
+      {shiftPicker && (
+        <ShiftPickerModal
+          logId={shiftPicker.logId}
+          personName={shiftPicker.personName}
+          onConfirm={(shiftId, shiftName) => {
+            setShiftPicker(null);
+            // Update the result so the details panel can show the shift
+            setResult((prev) =>
+              prev ? { ...prev, shiftId, shiftName } : prev
+            );
+          }}
+          onSkip={() => setShiftPicker(null)}
+        />
       )}
     </PageShell>
   );

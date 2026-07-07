@@ -6,6 +6,7 @@ export const APP_NAV_ITEMS = [
   { path: '/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate' },
   { path: '/roles', label: 'Roles', icon: 'roles', module: 'registration_roles' },
   { path: '/registrations', label: 'Registrations', icon: 'registrations', module: 'registrations' },
+  { path: '/shifts', label: 'Shifts', icon: 'shifts', module: 'shifts' },
   { path: '/divisions', label: 'Divisions', icon: 'divisions', module: 'divisions' },
   { path: '/departments', label: 'Departments', icon: 'departments', module: 'departments' },
   { path: '/reports', label: 'Reports', icon: 'reports', module: 'reports' },

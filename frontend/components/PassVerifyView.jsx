@@ -134,6 +134,12 @@ function DetailsTab({ details, valid, expired, inactive, sessionState, showPassF
               <span className="pass-meta-value">{details.validDate}</span>
             </div>
           )}
+          {details.shiftName && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">Shift</span>
+              <span className="pass-meta-value" style={{ fontWeight: 600 }}>{details.shiftName}</span>
+            </div>
+          )}
           {/* Day pass: show In-Time / Out-Time instead of division inside/outside */}
           {details.passType === 'day_pass' && sessionState?.gateEntryAt && (
             <div className="pass-meta-row">
@@ -189,7 +195,7 @@ function DetailsTab({ details, valid, expired, inactive, sessionState, showPassF
   );
 }
 
-function TodayActiveTab({ todayActive, todayEntries, sessionState }) {
+function TodayActiveTab({ todayActive, todayEntries, sessionState, shiftName }) {
   // Merge and sort all today's entries by time for the timeline
   const allEntries = [...todayEntries].sort((a, b) => {
     const ta = new Date(a.at || a.entryAt || 0).getTime();
@@ -229,6 +235,12 @@ function TodayActiveTab({ todayActive, todayEntries, sessionState }) {
             {todayActive.length > 0 ? `${todayActive.length} entry` : 'None'}
           </span>
         </div>
+        {shiftName && (
+          <div className="today-summary-strip__item">
+            <span className="today-summary-strip__label">Shift</span>
+            <span className="today-summary-strip__value" style={{ fontWeight: 600 }}>{shiftName}</span>
+          </div>
+        )}
       </div>
 
       {/* Timeline */}
@@ -402,6 +414,7 @@ export default function PassVerifyView({
             todayActive={todayActive}
             todayEntries={todayEntries}
             sessionState={sessionState}
+            shiftName={details?.shiftName || null}
           />
         )}
         {tab === 'history' && <HistoryTab entriesByDate={entriesByDate} />}

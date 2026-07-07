@@ -105,6 +105,14 @@ export default function PassCard({ pass, onPrint }) {
                   </td>
                 </tr>
               )}
+              {isDayPass && pass.qrPayload?.shiftName && (
+                <tr className="pass-card__table-row">
+                  <td className="pass-card__table-label">Shift</td>
+                  <td className="pass-card__table-value" style={{ fontWeight: 600 }}>
+                    {pass.qrPayload.shiftName}
+                  </td>
+                </tr>
+              )}
               {isDayPass && pass.qrPayload?.gateEntryAt && (
                 <tr className="pass-card__table-row">
                   <td className="pass-card__table-label">In Time</td>

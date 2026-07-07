@@ -156,6 +156,11 @@ export const api = {
     status: (registrationId) => request(`/gate/status/${registrationId}`),
     session: (registrationId, divisionId) =>
       request(`/gate/session/${registrationId}?divisionId=${divisionId}`),
+    attachShift: (logId, shiftId, shiftName) =>
+      request(`/gate/logs/${logId}/shift`, {
+        method: 'PATCH',
+        body: JSON.stringify({ shiftId, shiftName }),
+      }),
   },
 
   reports: {
@@ -197,5 +202,16 @@ export const api = {
     create: (data) => request('/departments', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => request(`/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id) => request(`/departments/${id}`, { method: 'DELETE' }),
+  },
+
+  shifts: {
+    list: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/shifts${qs ? `?${qs}` : ''}`);
+    },
+    get: (id) => request(`/shifts/${id}`),
+    create: (data) => request('/shifts', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/shifts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id) => request(`/shifts/${id}`, { method: 'DELETE' }),
   },
 };

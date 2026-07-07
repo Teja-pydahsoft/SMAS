@@ -33,11 +33,11 @@ router.get(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { name, description, metadata } = req.body;
+    const { name, description, isShiftBased, metadata } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
 
     const slug = req.body.slug || slugify(name);
-    const role = await Role.create({ name, slug, description, metadata });
+    const role = await Role.create({ name, slug, description, isShiftBased: Boolean(isShiftBased), metadata });
     res.status(201).json(role);
   })
 );
@@ -45,10 +45,10 @@ router.post(
 router.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const { name, description, isActive, metadata } = req.body;
+    const { name, description, isActive, isShiftBased, metadata } = req.body;
     const role = await Role.findByIdAndUpdate(
       req.params.id,
-      { name, description, isActive, metadata },
+      { name, description, isActive, isShiftBased, metadata },
       { new: true, runValidators: true }
     );
     if (!role) return res.status(404).json({ error: 'Role not found' });

@@ -4624,3 +4624,114 @@ body {
   max-width: none;
   width: 100%;
 }
+
+/* ─── Shift Picker Modal ─── */
+.shift-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.shift-picker-modal {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raised-lg);
+  padding: 1.75rem 2rem;
+  width: 100%;
+  max-width: 440px;
+  animation: adminFadeIn 0.18s ease;
+}
+
+.shift-picker-modal__title {
+  font-size: var(--text-xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.4rem;
+}
+
+.shift-picker-modal__desc {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+
+.shift-picker-modal__options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.shift-picker-modal__option {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  box-shadow: var(--shadow-pressed-sm);
+  cursor: pointer;
+  transition: background var(--transition), box-shadow var(--transition);
+  margin-bottom: 0;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.shift-picker-modal__option:hover {
+  background: var(--bg-hover);
+}
+
+.shift-picker-modal__option--selected {
+  background: var(--primary-light);
+  box-shadow:
+    var(--shadow-pressed-sm),
+    0 0 0 2px var(--primary);
+  color: var(--primary);
+}
+
+.shift-picker-modal__option input[type='radio'] {
+  flex-shrink: 0;
+}
+
+.shift-picker-modal__option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.shift-picker-modal__option-name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.shift-picker-modal__option-desc {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.shift-picker-modal__actions {
+  margin-top: 1.25rem;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.shift-picker-modal__actions .btn-primary {
+  flex: 1;
+}
+
+/* Shift label in gate scan success panel */
+.gate-details-panel__shift {
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}

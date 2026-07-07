@@ -26,6 +26,7 @@ import {
   madeGateEntryToday,
   isPersonInsideTargetDivision,
   resolveAutoGateEventType,
+  resolveAutoDepartmentEventType,
   isOppositeGateEvent,
   GATE_DENIAL_REASONS,
 } from '../services/attendanceService.js';
@@ -505,11 +506,23 @@ router.post(
         await log.save();
       }
     } else {
-      // Department QR scan
+      // Department QR scan — support auto event type
+      let resolvedDeptEventType = eventType;
+      let deptAutoResolved = false;
+
+      if (isAutoEvent) {
+        resolvedDeptEventType = await resolveAutoDepartmentEventType(
+          matchedRegistration._id, divisionId, department._id
+        );
+        deptAutoResolved = true;
+        log.eventType = resolvedDeptEventType;
+        await log.save();
+      }
+
       const deptCheck = await validateDepartmentScan(
         activePass,
         department,
-        eventType,
+        resolvedDeptEventType,
         matchedRegistration._id,
         divisionId
       );
@@ -535,8 +548,9 @@ router.post(
         );
       }
 
-      dayPass = await updateDayPassAfterDepartmentScan(activePass, department, eventType);
+      dayPass = await updateDayPassAfterDepartmentScan(activePass, department, resolvedDeptEventType);
       sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
+      resolvedEventType = resolvedDeptEventType;
     }
 
     const hasGateEntry = await madeGateEntryToday(matchedRegistration._id, divisionId);
@@ -551,8 +565,8 @@ router.post(
       dayPass,
       sessionState,
       hasGateEntry,
-      resolvedEventType: effectiveScanType === SCAN_TYPES.GATE ? resolvedEventType : eventType,
-      autoResolved: isAutoEvent && effectiveScanType === SCAN_TYPES.GATE,
+      resolvedEventType,
+      autoResolved: isAutoEvent,
       qrScan: true,
     });
   })
@@ -832,10 +846,23 @@ router.post(
         await log.save();
       }
     } else {
+      // Department face scan — support auto event type
+      let resolvedDeptEventType = eventType;
+      let deptAutoResolved = false;
+
+      if (isAutoEvent) {
+        resolvedDeptEventType = await resolveAutoDepartmentEventType(
+          matchedRegistration._id, divisionId, department._id
+        );
+        deptAutoResolved = true;
+        log.eventType = resolvedDeptEventType;
+        await log.save();
+      }
+
       const deptCheck = await validateDepartmentScan(
         activePass,
         department,
-        eventType,
+        resolvedDeptEventType,
         matchedRegistration._id,
         divisionId
       );
@@ -861,8 +888,10 @@ router.post(
         );
       }
 
-      dayPass = await updateDayPassAfterDepartmentScan(activePass, department, eventType);
+      dayPass = await updateDayPassAfterDepartmentScan(activePass, department, resolvedDeptEventType);
       sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
+      resolvedEventType = resolvedDeptEventType;
+      personInside = deptAutoResolved;
     }
 
     const hasGateEntry = await madeGateEntryToday(matchedRegistration._id, divisionId);
@@ -884,8 +913,8 @@ router.post(
       sessionState,
       hasGateEntry,
       photoUrl,
-      resolvedEventType: scanType === SCAN_TYPES.GATE ? resolvedEventType : eventType,
-      autoResolved: isAutoEvent && scanType === SCAN_TYPES.GATE,
+      resolvedEventType,
+      autoResolved: isAutoEvent,
     });
   })
 );

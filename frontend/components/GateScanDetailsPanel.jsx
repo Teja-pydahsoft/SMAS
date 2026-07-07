@@ -80,12 +80,20 @@ export default function GateScanDetailsPanel({
         {showSuccess && (
           <div className="gate-result gate-result--success">
             <p className="gate-details-panel__status-title gate-details-panel__status-title--success">
-              {scanType === 'gate' ? 'Gate' : 'Department'}{' '}
-              {(result.resolvedEventType || effectiveEventType) === 'entry' ? 'Entry' : 'Exit'} — Access
-              Granted
+              {scanType === 'department'
+                ? (result.resolvedEventType || effectiveEventType) === 'entry'
+                  ? 'Department Check-in — Access Granted'
+                  : 'Department Check-out — Access Granted'
+                : (result.resolvedEventType || effectiveEventType) === 'entry'
+                  ? 'Gate Entry — Access Granted'
+                  : 'Gate Exit — Access Granted'}
             </p>
             {result.autoResolved && (
-              <p className="field-hint">Applied automatically from person status</p>
+              <p className="field-hint">
+                {scanType === 'department'
+                  ? 'Applied automatically from department status'
+                  : 'Applied automatically from person status'}
+              </p>
             )}
             <p className="gate-details-panel__match-score">
               {result.qrScan
@@ -114,9 +122,13 @@ export default function GateScanDetailsPanel({
         {showDenied && (
           <div className="gate-result gate-result--denied">
             <p className="gate-details-panel__status-title gate-details-panel__status-title--denied">
-              {scanType === 'gate' ? 'Gate' : 'Department'}{' '}
-              {(result.resolvedEventType || effectiveEventType) === 'entry' ? 'Check-in' : 'Check-out'} —
-              Access Denied
+              {scanType === 'department'
+                ? (result.resolvedEventType || effectiveEventType) === 'entry'
+                  ? 'Department Check-in — Access Denied'
+                  : 'Department Check-out — Access Denied'
+                : (result.resolvedEventType || effectiveEventType) === 'entry'
+                  ? 'Gate Entry — Access Denied'
+                  : 'Gate Exit — Access Denied'}
             </p>
             {error && <p className="gate-details-panel__error">{error}</p>}
             <GateMatchedPerson

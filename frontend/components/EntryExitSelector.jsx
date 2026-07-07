@@ -41,7 +41,10 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
   );
 
   const eventOptions = useMemo(() => {
-    if (draft.scanType === 'department') return ['entry', 'exit'];
+    if (draft.scanType === 'department') {
+      // Departments always support auto (same as "both" gate type)
+      return ['auto', 'entry', 'exit'];
+    }
     return selectedGate?.allowedEvents || ['entry', 'exit'];
   }, [draft.scanType, selectedGate]);
 
@@ -53,18 +56,24 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
         next.divisionId = '';
         next.gateId = '';
         next.departmentId = '';
-        next.eventType = 'entry';
+        // default to auto for department scan type
+        next.eventType = patch.scanType === 'department' ? 'auto' : 'entry';
       }
 
       if (patch.divisionId !== undefined && patch.divisionId !== prev.divisionId) {
         next.gateId = '';
         next.departmentId = '';
-        next.eventType = 'entry';
+        next.eventType = prev.scanType === 'department' ? 'auto' : 'entry';
       }
 
       if (patch.gateId !== undefined && patch.gateId !== prev.gateId) {
         const gate = gateOptions.find((g) => g._id === patch.gateId);
         next.eventType = gate?.gateType === 'both' ? 'auto' : 'entry';
+      }
+
+      if (patch.departmentId !== undefined && patch.departmentId !== prev.departmentId) {
+        // Always default to auto when selecting a department
+        next.eventType = 'auto';
       }
 
       return next;
@@ -195,11 +204,14 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
           </div>
         )}
 
-        {draft.scanType === 'gate' && isAutoGateEvent(draft.eventType) ? (
+        {(draft.scanType === 'gate' && isAutoGateEvent(draft.eventType)) ||
+        (draft.scanType === 'department' && isAutoGateEvent(draft.eventType)) ? (
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Action</label>
             <p className="entry-exit-selector__auto-hint field-hint" style={{ marginTop: '0.35rem' }}>
-              Entry or exit is chosen automatically from each person&apos;s current division status.
+              {draft.scanType === 'department'
+                ? 'Check-in or check-out is chosen automatically from each person\'s department status.'
+                : 'Entry or exit is chosen automatically from each person\'s current division status.'}
             </p>
           </div>
         ) : (
@@ -228,8 +240,10 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
       {selectionReady && (
         <p className="entry-exit-selector__ready">
           Ready to scan —{' '}
-          {isAutoGateEvent(draft.eventType) && draft.scanType === 'gate'
-            ? 'auto entry / exit'
+          {isAutoGateEvent(draft.eventType)
+            ? draft.scanType === 'department'
+              ? 'auto check-in / check-out'
+              : 'auto entry / exit'
             : eventActionLabel(draft.scanType, draft.eventType)}{' '}
           at{' '}
           <strong>

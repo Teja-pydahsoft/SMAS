@@ -87,6 +87,19 @@ export async function resolveAutoGateEventType(registrationId, targetDivisionId)
   return inside ? GATE_EVENT_TYPES.EXIT : GATE_EVENT_TYPES.ENTRY;
 }
 
+/**
+ * Auto-resolve department event type.
+ * If the person is currently checked into THIS department → checkout (exit).
+ * Otherwise → checkin (entry).
+ */
+export async function resolveAutoDepartmentEventType(registrationId, divisionId, departmentId) {
+  const pass = await getActiveDayPass(registrationId, divisionId?.toString());
+  const state = getPassSessionState(pass);
+  const isInDept = state.currentDepartmentId &&
+    state.currentDepartmentId === departmentId?.toString();
+  return isInDept ? GATE_EVENT_TYPES.EXIT : GATE_EVENT_TYPES.ENTRY;
+}
+
 export function isOppositeGateEvent(personInside, eventType) {
   if (eventType === GATE_EVENT_TYPES.ENTRY) return personInside;
   if (eventType === GATE_EVENT_TYPES.EXIT) return !personInside;

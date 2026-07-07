@@ -36,6 +36,9 @@ function captureLabel(eventType, scanType) {
   if (isAutoGateEvent(eventType) && scanType === 'gate') {
     return 'Capture — entry or exit resolved from status';
   }
+  if (isAutoGateEvent(eventType) && scanType === 'department') {
+    return 'Capture — check-in or check-out resolved from status';
+  }
   if (scanType === 'department') {
     return eventType === 'entry' ? 'Capture for department check-in' : 'Capture for department check-out';
   }
@@ -126,7 +129,11 @@ function EntryExitContent() {
   const isBothGate = scanType === 'gate' && selectedGate?.gateType === 'both';
 
   const eventType = useMemo(() => {
-    if (scanType === 'department') return urlEventType === 'exit' ? 'exit' : 'entry';
+    if (scanType === 'department') {
+      // departments support auto just like "both" gates
+      if (urlEventType === 'auto') return 'auto';
+      return urlEventType === 'exit' ? 'exit' : 'entry';
+    }
     if (isBothGate || urlEventType === 'auto') return 'auto';
     return urlEventType === 'exit' ? 'exit' : 'entry';
   }, [scanType, urlEventType, isBothGate]);
@@ -220,11 +227,26 @@ function EntryExitContent() {
     const session = parseGateSessionFromSearchParams(searchParams);
     if (!session) return;
 
+    // Force auto event type for "both" gate types
     if (
       session.scanType === 'gate' &&
       session.gateId &&
       selectedGate?.gateType === 'both' &&
       session.eventType !== 'auto'
+    ) {
+      const autoSession = { ...session, eventType: 'auto' };
+      setGateSession(autoSession);
+      router.replace(buildEntryExitUrl(autoSession));
+      return;
+    }
+
+    // Force auto event type for department scans (always auto by default)
+    if (
+      session.scanType === 'department' &&
+      session.departmentId &&
+      session.eventType !== 'auto' &&
+      session.eventType !== 'entry' &&
+      session.eventType !== 'exit'
     ) {
       const autoSession = { ...session, eventType: 'auto' };
       setGateSession(autoSession);

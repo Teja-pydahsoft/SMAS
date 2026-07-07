@@ -1,16 +1,26 @@
 import { v2 as cloudinary } from 'cloudinary';
 
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
-const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
+const CLOUDINARY_API_KEY    = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
 if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
   cloudinary.config({
     cloud_name: CLOUDINARY_CLOUD_NAME,
-    api_key: CLOUDINARY_API_KEY,
+    api_key:    CLOUDINARY_API_KEY,
     api_secret: CLOUDINARY_API_SECRET,
   });
-  console.log('✓ Cloudinary configured');
+
+  // ── Verify credentials at startup by calling the ping endpoint ──────────
+  cloudinary.api.ping()
+    .then(() => console.log('✓ Cloudinary connected — cloud:', CLOUDINARY_CLOUD_NAME))
+    .catch(err => {
+      console.error('✗ Cloudinary credential check FAILED:', err.message);
+      console.error(
+        '  Fix: go to https://console.cloudinary.com → Settings → API Keys\n' +
+        '  and copy the correct Cloud Name, API Key and API Secret into .env'
+      );
+    });
 } else {
   console.warn('⚠ Cloudinary not configured — using local storage fallback');
 }

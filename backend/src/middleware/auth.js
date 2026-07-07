@@ -2,19 +2,52 @@ import jwt from 'jsonwebtoken';
 import SystemUser from '../models/SystemUser.js';
 import { PERMISSION_MODULE_LIST } from '../constants/index.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'smas-dev-jwt-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'sams-dev-jwt-secret-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+// ─── Simple in-process user cache ────────────────────────────────────────────
+// Avoids hitting MongoDB + 4 populate() calls on every authenticated request.
+// TTL: 60 seconds — short enough to pick up role/permission changes promptly.
+const USER_CACHE_TTL_MS = 60_000;
+const userCache = new Map(); // userId → { user, expiresAt }
+
+function cacheGet(userId) {
+  const entry = userCache.get(userId);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    userCache.delete(userId);
+    return null;
+  }
+  return entry.user;
+}
+
+function cacheSet(userId, user) {
+  userCache.set(userId, { user, expiresAt: Date.now() + USER_CACHE_TTL_MS });
+  // Evict stale entries if cache grows large (safety valve)
+  if (userCache.size > 500) {
+    const now = Date.now();
+    for (const [key, val] of userCache) {
+      if (now > val.expiresAt) userCache.delete(key);
+    }
+  }
+}
+
+// Call this after updating a user's roles/permissions so the next request re-fetches
+export function invalidateUserCache(userId) {
+  if (userId) userCache.delete(userId.toString());
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const PUBLIC_API_ROUTES = [
   { method: 'POST', path: '/api/auth/login' },
   { method: 'POST', path: '/api/auth/precheck' },
-  { method: 'GET', path: '/api/health' },
-  { method: 'GET', prefix: '/api/passes/verify/' },
-  { method: 'GET', path: '/api/roles' },
-  { method: 'GET', prefix: '/api/forms/role/' },
+  { method: 'GET',  path: '/api/health' },
+  { method: 'GET',  prefix: '/api/passes/verify/' },
+  { method: 'GET',  path: '/api/roles' },
+  { method: 'GET',  prefix: '/api/forms/role/' },
   { method: 'POST', path: '/api/registrations' },
-  { method: 'GET', prefix: '/api/registrations/' },
-  { method: 'PUT', prefix: '/api/registrations/' },
+  { method: 'GET',  prefix: '/api/registrations/' },
+  { method: 'PUT',  prefix: '/api/registrations/' },
   { method: 'POST', prefix: '/api/registrations/' },
 ];
 
@@ -22,7 +55,7 @@ function isPublicApiRoute(req) {
   const path = (req.originalUrl || req.url || '').split('?')[0];
   return PUBLIC_API_ROUTES.some((route) => {
     if (route.method !== req.method) return false;
-    if (route.path) return path === route.path;
+    if (route.path)   return path === route.path;
     if (route.prefix) return path.startsWith(route.prefix);
     return false;
   });
@@ -53,9 +86,26 @@ export async function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
+  // Verify JWT first — cheap, synchronous, no DB
+  let payload;
   try {
-    const payload = jwt.verify(header.slice(7), JWT_SECRET);
-    const user = await SystemUser.findById(payload.sub)
+    payload = jwt.verify(header.slice(7), JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired session' });
+  }
+
+  const userId = payload.sub;
+
+  // ── Cache hit: skip DB round-trip entirely ─────────────────────────────
+  const cached = cacheGet(userId);
+  if (cached) {
+    req.user = cached;
+    return next();
+  }
+
+  // ── Cache miss: fetch from DB, populate, then cache ────────────────────
+  try {
+    const user = await SystemUser.findById(userId)
       .populate('systemRoleId', 'name slug permissions isActive')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType divisionId')
@@ -70,6 +120,7 @@ export async function authenticate(req, res, next) {
       return res.status(403).json({ error: 'Assigned system role is inactive' });
     }
 
+    cacheSet(userId, user);
     req.user = user;
     next();
   } catch {

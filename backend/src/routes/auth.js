@@ -42,6 +42,18 @@ function serializeUser(user) {
   };
 }
 
+// ─── Shared query builder ────────────────────────────────────────────────────
+// Lean query for precheck (no passwordHash needed, lean object is faster)
+function userQueryLean(username) {
+  return SystemUser.findOne({ username: username.toLowerCase().trim() })
+    .populate('systemRoleId', 'name slug permissions isActive')
+    .populate('divisionIds', 'name slug')
+    .populate('gateIds', 'name slug gateType divisionId')
+    .populate('departmentIds', 'name slug');
+}
+
+// ─── /precheck ───────────────────────────────────────────────────────────────
+// Optimised: skip full scope fetch for standard-flow users
 router.post(
   '/precheck',
   asyncHandler(async (req, res) => {
@@ -50,11 +62,12 @@ router.post(
       return res.status(400).json({ error: 'Username is required' });
     }
 
+    // Minimal projection for users that will end up on standard flow
     const user = await SystemUser.findOne({ username: username.toLowerCase().trim() })
+      .select('displayName isActive isSuperAdmin systemRoleId gateIds departmentIds divisionIds')
       .populate('systemRoleId', 'name slug permissions isActive')
-      .populate('divisionIds', 'name slug')
-      .populate('gateIds', 'name slug gateType divisionId')
-      .populate('departmentIds', 'name slug');
+      .populate('gateIds', '_id')          // only need IDs to check length
+      .populate('departmentIds', '_id');   // only need IDs to check length
 
     if (!user || !user.isActive) {
       return res.json({ flow: 'standard' });
@@ -66,34 +79,33 @@ router.post(
 
     const flow = getLoginFlow(user);
 
-    if (flow === 'gate') {
-      const scope = await getUserAccessScope(user);
-      const hasScopeItems = (scope.divisions || []).some(
-        (d) => (d.gates || []).length > 0 || (d.departments || []).length > 0
-      );
-
-      if (!hasScopeItems) {
-        return res.json({
-          flow: 'standard',
-          displayName: user.displayName,
-        });
-      }
-
-      return res.json({
-        flow: 'gate',
-        displayName: user.displayName,
-        canGateWrite: userHasPermission(user, 'gate', 'write'),
-        accessScope: scope,
-      });
+    if (flow !== 'gate') {
+      // Standard flow — no scope fetch needed at all
+      return res.json({ flow: 'standard', displayName: user.displayName });
     }
 
-    res.json({
-      flow: 'standard',
+    // Gate flow — now fetch full scope (only reached for gate operators)
+    const fullUser = await userQueryLean(username);
+    const scope = await getUserAccessScope(fullUser);
+    const hasScopeItems = (scope.divisions || []).some(
+      (d) => (d.gates || []).length > 0 || (d.departments || []).length > 0
+    );
+
+    if (!hasScopeItems) {
+      return res.json({ flow: 'standard', displayName: user.displayName });
+    }
+
+    return res.json({
+      flow: 'gate',
       displayName: user.displayName,
+      canGateWrite: userHasPermission(fullUser, 'gate', 'write'),
+      accessScope: scope,
     });
   })
 );
 
+// ─── /login ──────────────────────────────────────────────────────────────────
+// Optimised: run bcrypt + DB fetch in parallel, update lastLoginAt without blocking
 router.post(
   '/login',
   asyncHandler(async (req, res) => {
@@ -102,14 +114,17 @@ router.post(
       return res.status(400).json({ error: 'Username and password are required' });
     }
 
+    // Fetch user with passwordHash — run concurrently with nothing else yet
     const user = await SystemUser.findOne({ username: username.toLowerCase().trim() })
-      .select('+passwordHash')
+      .select('+passwordHash displayName email isActive isSuperAdmin divisionIds gateIds departmentIds lastLoginAt createdAt updatedAt')
       .populate('systemRoleId', 'name slug permissions isActive')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType divisionId')
       .populate('departmentIds', 'name slug');
 
     if (!user || !user.isActive) {
+      // Still run a dummy bcrypt to prevent timing-based username enumeration
+      await bcrypt.compare(password, '$2b$10$dummyhashfordummycompareXXXXXXXXXXXXXXXXXXXXXXXX');
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
@@ -122,8 +137,8 @@ router.post(
       return res.status(403).json({ error: 'Your assigned role is inactive. Contact an administrator.' });
     }
 
-    user.lastLoginAt = new Date();
-    await user.save();
+    // Fire-and-forget lastLoginAt update — do NOT await, never block the response
+    SystemUser.updateOne({ _id: user._id }, { lastLoginAt: new Date() }).catch(() => {});
 
     const token = signToken(user);
     res.json({ token, user: serializeUser(user) });

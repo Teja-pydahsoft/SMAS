@@ -31,6 +31,7 @@
   .admin-topnav__profile-text{ display: none; }
   .gate-layout               { grid-template-columns: 1fr; }
   .gate-layout__details      { position: static; }
+  .reg-flow-layout           { grid-template-columns: 1fr; }
 
   .admin-dashboard__hero { flex-direction: column; align-items: stretch; }
   .admin-dashboard__hero-right { align-items: stretch; }

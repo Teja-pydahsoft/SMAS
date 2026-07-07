@@ -101,6 +101,14 @@ export const api = {
       form.append('photo', photoBlob, 'photo.jpg');
       return request(`/registrations/${id}/photo`, { method: 'POST', body: form });
     },
+    checkDuplicate: ({ photoBlob, formData, roleId, excludeId } = {}) => {
+      const form = new FormData();
+      if (photoBlob) form.append('photo', photoBlob, 'photo.jpg');
+      if (formData) form.append('formData', JSON.stringify(formData));
+      if (roleId) form.append('roleId', roleId);
+      if (excludeId) form.append('excludeId', excludeId);
+      return request('/registrations/check-duplicate', { method: 'POST', body: form });
+    },
     verify: (id, data) =>
       request(`/registrations/${id}/verify`, { method: 'POST', body: JSON.stringify(data) }),
     delete: (id) => request(`/registrations/${id}`, { method: 'DELETE' }),

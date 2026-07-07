@@ -8,7 +8,7 @@ import RegistrationForm from '../models/RegistrationForm.js';
 import Role from '../models/Role.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { REGISTRATION_STAGES, REGISTRATION_STATUS } from '../constants/index.js';
-import { extractFaceEmbedding } from '../services/aiClient.js';
+import { extractFaceEmbedding, searchFaceEmbeddings } from '../services/aiClient.js';
 import {
   indexVerifiedRegistration,
   removeRegistrationFromFaceIndex,
@@ -112,6 +112,139 @@ router.get(
       hasRegistrationPass: Boolean(pass),
       passCode: pass?.passCode || null,
     });
+  })
+);
+
+// Duplicate check: search face index + optional form data match
+router.post(
+  '/check-duplicate',
+  upload.single('photo'),
+  asyncHandler(async (req, res) => {
+    const { formData, roleId, excludeId } = req.body;
+
+    // ── 1. Face-based duplicate check ──────────────────────────────────────
+    let faceMatch = null;
+    if (req.file) {
+      try {
+        const imageBuffer = req.file.buffer || fs.readFileSync(req.file.path);
+        const { embedding, face_detected } = await extractFaceEmbedding(
+          imageBuffer,
+          req.file.filename || req.file.originalname,
+          req.file.mimetype
+        );
+
+        // Clean up temp file
+        if (req.file.path && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+
+        if (face_detected && embedding?.length) {
+          const MATCH_THRESHOLD = parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.42');
+          const searchResult = await searchFaceEmbeddings(embedding, {
+            topK: 3,
+            threshold: MATCH_THRESHOLD,
+          });
+
+          if (searchResult.best?.id) {
+            const candidateId = searchResult.best.id;
+            // Skip if this is the registration being edited
+            if (!excludeId || candidateId !== excludeId) {
+              const candidate = await Registration.findById(candidateId)
+                .populate('roleId', 'name')
+                .select('-faceEmbedding');
+              if (candidate) {
+                const display = buildDisplayInfo(
+                  candidate.formData || {},
+                  candidate.formId
+                    ? (await RegistrationForm.findById(candidate.formId).select('fields'))?.fields || []
+                    : []
+                );
+                faceMatch = {
+                  registrationId: candidate._id,
+                  registrationCode: candidate.registrationCode,
+                  displayName: display.displayName,
+                  displayPhone: display.displayPhone,
+                  role: candidate.roleId?.name,
+                  status: candidate.status,
+                  photoUrl: photoUrlFromPath(candidate.photoPath),
+                  matchScore: searchResult.best.similarity,
+                };
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // Face check failure is non-fatal — still run form data check
+        console.error('Face duplicate check error:', err.message);
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+      }
+    }
+
+    // ── 2. Form-data duplicate check (name + phone) ─────────────────────────
+    let formMatches = [];
+    if (formData) {
+      const parsed = typeof formData === 'string' ? JSON.parse(formData) : formData;
+
+      // Get the form fields to find name/phone field IDs
+      let form = null;
+      if (roleId) {
+        form = await RegistrationForm.findOne({ roleId, isActive: true }).select('fields');
+      }
+      const fields = form?.fields || [];
+
+      // Find name & phone values from submitted form data
+      const nameFieldIds = fields
+        .filter((f) => f.label?.toLowerCase().includes('name') || f.type === 'text')
+        .map((f) => f.fieldId);
+      const phoneFieldIds = fields
+        .filter((f) => f.type === 'phone' || f.label?.toLowerCase().includes('phone') || f.label?.toLowerCase().includes('mobile'))
+        .map((f) => f.fieldId);
+
+      const submittedName = nameFieldIds.map((id) => parsed[id]).find(Boolean);
+      const submittedPhone = phoneFieldIds.map((id) => parsed[id]).find(Boolean);
+
+      if (submittedName || submittedPhone) {
+        const orClauses = [];
+        if (submittedName) {
+          nameFieldIds.forEach((id) => {
+            orClauses.push({ [`formData.${id}`]: { $regex: `^${submittedName.trim()}$`, $options: 'i' } });
+          });
+        }
+        if (submittedPhone) {
+          phoneFieldIds.forEach((id) => {
+            orClauses.push({ [`formData.${id}`]: submittedPhone.trim() });
+          });
+        }
+
+        if (orClauses.length) {
+          const query = { $or: orClauses };
+          if (excludeId) query._id = { $ne: excludeId };
+
+          const existing = await Registration.find(query)
+            .populate('roleId', 'name')
+            .select('-faceEmbedding')
+            .limit(5);
+
+          for (const reg of existing) {
+            const display = buildDisplayInfo(reg.formData || {}, fields);
+            formMatches.push({
+              registrationId: reg._id,
+              registrationCode: reg.registrationCode,
+              displayName: display.displayName,
+              displayPhone: display.displayPhone,
+              role: reg.roleId?.name,
+              status: reg.status,
+              photoUrl: photoUrlFromPath(reg.photoPath),
+            });
+          }
+        }
+      }
+    }
+
+    const hasDuplicate = Boolean(faceMatch) || formMatches.length > 0;
+    res.json({ hasDuplicate, faceMatch, formMatches });
   })
 );
 

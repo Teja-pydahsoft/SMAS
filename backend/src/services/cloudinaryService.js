@@ -31,11 +31,10 @@ export async function uploadToCloudinary(buffer, folder, filename = null) {
     const options = {
       folder: `smas/${folder}`,
       resource_type: 'image',
-      format: 'jpg',
     };
 
     if (filename) {
-      // Strip extension and use as public_id to avoid duplicates
+      // Strip extension — public_id must not include a file extension
       options.public_id = filename.replace(/\.[^.]+$/, '');
     }
 

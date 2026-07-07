@@ -579,4 +579,14 @@
 }
 
 /* ── Icons ── */
-.admin-icon svg { width: 18px; height: 18px; display: block; }
+.admin-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  overflow: visible;
+}
+
+.admin-icon svg { width: 18px; height: 18px; display: block; flex-shrink: 0; }

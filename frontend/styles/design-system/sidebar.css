@@ -77,11 +77,15 @@
   border-right: 1px solid var(--border-color);
   box-shadow: var(--shadow-sidebar);
   transition: width var(--transition-medium);
-  overflow: hidden;
+  /* Do NOT use overflow:hidden — it clips icons in collapsed state */
+  overflow: visible;
 }
 
 .admin-sidebar--collapsed {
   width: 72px;
+  /* Clip only along x-axis so icons don't bleed into main content */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 /* ── Brand ── */
@@ -141,7 +145,7 @@
 .admin-sidebar__nav {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: visible;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -167,9 +171,11 @@
   cursor: pointer;
   transition: background var(--transition), color var(--transition), box-shadow var(--transition);
   letter-spacing: 0.005em;
+  /* Do NOT clip — icons must remain visible when text label is hidden */
   white-space: nowrap;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
+  min-height: 38px;
 }
 
 .admin-sidebar__link:hover {
@@ -194,16 +200,27 @@
   background: var(--color-primary);
 }
 
+/* Icon wrapper — the <span> rendered by AdminIcon */
 .admin-sidebar__icon {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Ensure icons are never clipped */
+  overflow: visible;
+}
+
+/* The SVG inside the icon span */
+.admin-sidebar__icon svg {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
 }
-
-.admin-sidebar__icon svg { width: 17px; height: 17px; }
 
 /* ── Collapsed state ── */
 .admin-sidebar--collapsed .admin-sidebar__brand {
@@ -215,12 +232,32 @@
 
 .admin-sidebar--collapsed .admin-sidebar__link {
   justify-content: center;
-  padding: 10px;
+  padding: 9px 0;
   gap: 0;
+  /* Ensure the centered icon is always visible */
+  overflow: visible;
+  width: 100%;
 }
 
-.admin-sidebar--collapsed .admin-sidebar__link span { display: none; }
+/* Hide label text when collapsed — icon stays visible */
+.admin-sidebar--collapsed .admin-sidebar__link > span:not(.admin-sidebar__icon):not(.admin-icon) {
+  display: none;
+}
+
+/* Target the text span directly rendered as {!collapsed && <span>} */
+.admin-sidebar--collapsed .admin-sidebar__link span.nav-label,
+.admin-sidebar--collapsed .admin-sidebar__link > span:last-child:not(.admin-sidebar__icon) {
+  display: none;
+}
+
 .admin-sidebar--collapsed .admin-sidebar__link::before { display: none; }
+
+/* Keep active indicator as a bottom border in collapsed mode */
+.admin-sidebar--collapsed .admin-sidebar__link--active {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: var(--radius-md);
+}
 
 .admin-sidebar--collapsed .admin-sidebar__footer {
   align-items: center;
@@ -230,8 +267,10 @@
 
 .admin-sidebar--collapsed .admin-sidebar__logout {
   justify-content: center;
-  padding: 10px;
+  padding: 9px 0;
   gap: 0;
+  width: 100%;
+  overflow: visible;
 }
 
 .admin-sidebar--collapsed .admin-sidebar__logout span { display: none; }
@@ -244,6 +283,7 @@
   padding-top: 10px;
   border-top: 1px solid var(--border-color);
   margin-top: 8px;
+  overflow: visible;
 }
 
 .admin-sidebar__user {
@@ -310,6 +350,7 @@
   justify-content: center;
   padding: 0;
   transition: background var(--transition), color var(--transition), box-shadow var(--transition);
+  z-index: 10;
 }
 
 .admin-sidebar__collapse:hover {

@@ -169,6 +169,7 @@ export const api = {
       return request(`/reports/registrations${qs ? `?${qs}` : ''}`);
     },
     getRegistration: (registrationId) => request(`/reports/registrations/${registrationId}`),
+    dailyPasses: () => request('/reports/daily-passes'),
   },
 
   divisions: {

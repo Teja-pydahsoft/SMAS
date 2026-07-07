@@ -1,6 +1,7 @@
 import Registration from '../models/Registration.js';
 import GateLog from '../models/GateLog.js';
 import Pass from '../models/Pass.js';
+import Role from '../models/Role.js';
 import { REGISTRATION_STATUS, PASS_TYPES } from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import {
@@ -251,4 +252,109 @@ export async function getRegistrationReport(registrationId) {
     todayEntries,
     entriesByDate,
   };
+}
+
+/**
+ * getDailyPassByRole
+ *
+ * Returns all active roles, each with their verified registrations and
+ * today's day-pass status for every person.
+ */
+export async function getDailyPassByRole() {
+  const today = todayDateString();
+
+  // 1. All active roles
+  const roles = await Role.find({ isActive: true }).sort({ name: 1 }).lean();
+
+  // 2. All verified registrations, grouped by roleId
+  const registrations = await Registration.find({ status: REGISTRATION_STATUS.VERIFIED })
+    .select('-faceEmbedding')
+    .populate('roleId', 'name slug isShiftBased')
+    .populate('formId', 'fields')
+    .lean();
+
+  // 3. All today's day passes (one per registration+division)
+  const todayPasses = await Pass.find({
+    passType: PASS_TYPES.DAY_PASS,
+    validDate: today,
+  }).lean();
+
+  // Build a map: registrationId → array of today's passes
+  const passesByReg = new Map();
+  for (const pass of todayPasses) {
+    const key = pass.registrationId.toString();
+    if (!passesByReg.has(key)) passesByReg.set(key, []);
+    passesByReg.get(key).push(pass);
+  }
+
+  // Build a map: roleId → registrations
+  const regsByRole = new Map();
+  for (const reg of registrations) {
+    const roleId = reg.roleId?._id?.toString() || reg.roleId?.toString();
+    if (!roleId) continue;
+    if (!regsByRole.has(roleId)) regsByRole.set(roleId, []);
+    regsByRole.get(roleId).push(reg);
+  }
+
+  // 4. Assemble per-role output
+  const result = roles
+    .filter((role) => regsByRole.has(role._id.toString()))
+    .map((role) => {
+      const roleId = role._id.toString();
+      const regs = regsByRole.get(roleId) || [];
+
+      const people = regs.map((reg) => {
+        const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
+        const passes = passesByReg.get(reg._id.toString()) || [];
+
+        // Pick the most relevant pass: active inside > active > latest
+        const activeInsidePass = passes.find((p) => p.isActive && p.qrPayload?.divisionInside);
+        const activePass = activeInsidePass || passes.find((p) => p.isActive) || passes[0] || null;
+
+        const session = activePass ? getPassSessionState(activePass) : null;
+        const divisionInside = Boolean(session?.divisionInside);
+        const gateEntryAt = session?.gateEntryAt || null;
+        const gateExitAt = session?.gateExitAt || null;
+        const divisionName = activePass?.qrPayload?.divisionName || null;
+        const shiftName = activePass?.qrPayload?.shiftName || null;
+        const currentDepartmentName = session?.currentDepartmentName || null;
+        const hadActivityToday = passes.length > 0;
+
+        return {
+          registrationId: reg._id.toString(),
+          displayName: display.displayName,
+          registrationCode: reg.registrationCode,
+          photoUrl: photoUrlFromPath(reg.photoPath),
+          hadActivityToday,
+          divisionInside,
+          divisionName,
+          gateEntryAt,
+          gateExitAt,
+          currentDepartmentName,
+          shiftName,
+        };
+      });
+
+      // Sort: inside first → had activity → alphabetical
+      people.sort((a, b) => {
+        if (a.divisionInside !== b.divisionInside) return b.divisionInside ? 1 : -1;
+        if (a.hadActivityToday !== b.hadActivityToday) return b.hadActivityToday ? 1 : -1;
+        return (a.displayName || '').localeCompare(b.displayName || '');
+      });
+
+      const insideCount = people.filter((p) => p.divisionInside).length;
+      const activeCount = people.filter((p) => p.hadActivityToday).length;
+
+      return {
+        roleId,
+        roleName: role.name,
+        isShiftBased: Boolean(role.isShiftBased),
+        totalPeople: people.length,
+        insideCount,
+        activeCount,
+        people,
+      };
+    });
+
+  return { date: today, roles: result };
 }

@@ -4,6 +4,7 @@ import { requirePermission } from '../middleware/auth.js';
 import {
   listRegistrationReports,
   getRegistrationReport,
+  getDailyPassByRole,
 } from '../services/registrationReportService.js';
 
 const router = Router();
@@ -17,6 +18,15 @@ router.get(
       limit: req.query.limit || 100,
     });
     res.json(items);
+  })
+);
+
+router.get(
+  '/daily-passes',
+  requirePermission('reports', 'read'),
+  asyncHandler(async (req, res) => {
+    const data = await getDailyPassByRole();
+    res.json(data);
   })
 );
 

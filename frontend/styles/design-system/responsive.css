@@ -266,10 +266,7 @@
 
   .sidebar-collapsed nav a { justify-content: flex-start; padding: 9px 12px; }
 
-  /* Login */
-  .login-shell { padding: 1rem 0.875rem; align-items: flex-start; padding-top: 2rem; }
-  .login-card  { padding: 1.5rem; }
-  .login-brand h1 { font-size: var(--text-18); }
+  /* Login — handled in login.css */
   .gate-landing-shell { padding: 0.875rem 0.875rem 1.5rem; }
   .gate-landing__brand h1 { font-size: var(--text-18); }
 

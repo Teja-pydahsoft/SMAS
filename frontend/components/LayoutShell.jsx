@@ -11,7 +11,7 @@ export default function LayoutShell({ children }) {
   const isPassVerify = pathname.startsWith('/pass/verify');
 
   if (isLogin) {
-    return <div className="login-shell">{children}</div>;
+    return <>{children}</>;
   }
 
   if (isPassVerify) {

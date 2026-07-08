@@ -10,6 +10,7 @@ import { getToken } from '@/lib/auth/session';
 import { buildEntryExitUrl, eventActionLabel } from '@/lib/entryExit';
 import { getGateSession, normalizeGateSession, setGateSession } from '@/lib/gateSession';
 
+/* ── Icons ──────────────────────────────────────────────────── */
 function EyeIcon({ open }) {
   if (open) {
     return (
@@ -21,7 +22,6 @@ function EyeIcon({ open }) {
       </svg>
     );
   }
-
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeLinecap="round" strokeLinejoin="round" />
@@ -30,6 +30,114 @@ function EyeIcon({ open }) {
   );
 }
 
+/* ── Rocket illustration (inline SVG) ──────────────────────── */
+function RocketIllustration() {
+  return (
+    <svg
+      className="login-hero__illustration"
+      viewBox="0 0 260 360"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      {/* Rocket body */}
+      <ellipse cx="130" cy="180" rx="28" ry="65" fill="url(#rocketBody)" />
+      {/* Nose */}
+      <path d="M102 155 Q130 90 158 155Z" fill="#E0F2FE" />
+      {/* Window */}
+      <circle cx="130" cy="170" r="12" fill="#fff" opacity="0.9" />
+      <circle cx="130" cy="170" r="8" fill="#93C5FD" />
+      <circle cx="127" cy="167" r="3" fill="#fff" opacity="0.7" />
+      {/* Left fin */}
+      <path d="M102 215 Q88 240 100 245 L102 230Z" fill="#60A5FA" />
+      {/* Right fin */}
+      <path d="M158 215 Q172 240 160 245 L158 230Z" fill="#60A5FA" />
+      {/* Exhaust outer */}
+      <ellipse cx="130" cy="252" rx="18" ry="8" fill="rgba(251,191,36,0.5)" />
+      {/* Exhaust flame */}
+      <path d="M115 248 Q122 290 130 310 Q138 290 145 248Z" fill="url(#flame)" opacity="0.9" />
+      {/* Exhaust inner */}
+      <path d="M122 248 Q127 278 130 292 Q133 278 138 248Z" fill="url(#flameInner)" />
+
+      {/* Small planet top right */}
+      <circle cx="210" cy="80" r="28" fill="rgba(147,197,253,0.3)" />
+      <circle cx="210" cy="80" r="20" fill="rgba(147,197,253,0.2)" />
+
+      {/* Small planet bottom left */}
+      <circle cx="48" cy="290" r="18" fill="rgba(96,165,250,0.25)" />
+
+      {/* Stars */}
+      <circle cx="60" cy="60" r="2" fill="white" opacity="0.7" />
+      <circle cx="195" cy="150" r="1.5" fill="white" opacity="0.6" />
+      <circle cx="80" cy="200" r="1.5" fill="white" opacity="0.5" />
+      <circle cx="220" cy="220" r="2" fill="white" opacity="0.6" />
+      <circle cx="40" cy="130" r="1" fill="white" opacity="0.5" />
+      <circle cx="170" cy="50" r="1.5" fill="white" opacity="0.4" />
+
+      <defs>
+        <linearGradient id="rocketBody" x1="102" y1="115" x2="158" y2="245" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#F1F5F9" />
+          <stop offset="100%" stopColor="#CBD5E1" />
+        </linearGradient>
+        <linearGradient id="flame" x1="130" y1="248" x2="130" y2="310" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#FBBF24" />
+          <stop offset="100%" stopColor="#F97316" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="flameInner" x1="130" y1="248" x2="130" y2="292" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#FEF3C7" />
+          <stop offset="100%" stopColor="#FBBF24" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+/* ── Hero left panel ────────────────────────────────────────── */
+function LoginHero() {
+  return (
+    <div className="login-hero" aria-hidden="true">
+      <div className="login-hero__orb login-hero__orb--1" />
+      <div className="login-hero__orb login-hero__orb--2" />
+      <div className="login-hero__orb login-hero__orb--3" />
+      <div className="login-hero__stars" />
+
+      <div className="login-hero__content">
+        <div className="login-hero__badge">
+          <span className="login-hero__badge-dot" />
+          Smart Management System
+        </div>
+
+        <h2 className="login-hero__title">
+          Secure Access<br />
+          <span>Made Simple.</span>
+        </h2>
+
+        <p className="login-hero__subtitle">
+          Manage registrations, gate access, and attendance — all in one unified platform built for modern organizations.
+        </p>
+
+        <div className="login-hero__features">
+          <div className="login-hero__feature">
+            <span className="login-hero__feature-icon">🛡️</span>
+            Face-verified access control
+          </div>
+          <div className="login-hero__feature">
+            <span className="login-hero__feature-icon">📊</span>
+            Real-time attendance reports
+          </div>
+          <div className="login-hero__feature">
+            <span className="login-hero__feature-icon">🚀</span>
+            Multi-gate & department support
+          </div>
+        </div>
+      </div>
+
+      <RocketIllustration />
+    </div>
+  );
+}
+
+/* ── Step indicator ─────────────────────────────────────────── */
 function LoginSteps({ step, flow }) {
   const steps =
     flow === 'gate'
@@ -51,7 +159,7 @@ function LoginSteps({ step, flow }) {
         return (
           <span
             key={item.id}
-            className={`login-steps__item ${active ? 'login-steps__item--active' : ''} ${done ? 'login-steps__item--done' : ''}`}
+            className={`login-steps__item${active ? ' login-steps__item--active' : ''}${done ? ' login-steps__item--done' : ''}`}
           >
             {item.label}
           </span>
@@ -69,6 +177,7 @@ function gateSelectionLabel(session) {
   return eventActionLabel('gate', session.eventType);
 }
 
+/* ── Main login form ────────────────────────────────────────── */
 function LoginForm() {
   const router = useRouter();
   const { login, user, loading: authLoading } = useAuth();
@@ -95,7 +204,6 @@ function LoginForm() {
     }
 
     router.replace(getPostLoginRoute(user));
-    // Only redirect when session is restored on load, not after in-form login.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
 
@@ -161,6 +269,7 @@ function LoginForm() {
     }
   }
 
+  /* Gate-select step keeps its own full-screen shell */
   if (step === 'gate-select') {
     return (
       <div className="gate-landing-shell login-gate-shell">
@@ -195,120 +304,129 @@ function LoginForm() {
 
   return (
     <div className="login-shell">
-      <form
-        className="login-card card"
-        onSubmit={step === 'username' ? handleUsernameContinue : handlePasswordSubmit}
-      >
-        <div className="login-brand">
-          <span className="brand-icon">S</span>
-          <div>
-            <h1>SAMS</h1>
-            <p>System Login</p>
-          </div>
-        </div>
+      {/* ── Left hero panel ── */}
+      <LoginHero />
 
-        <LoginSteps step={step} flow={flow} />
-
-        {step === 'username' && (
-          <>
-            <p className="section-desc" style={{ marginBottom: '1.25rem' }}>
-              Enter your username to continue
-            </p>
-            <div className="form-group">
-              <label htmlFor="login-username">Username</label>
-              <input
-                id="login-username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter username"
-                autoComplete="username"
-                autoFocus
-                required
-              />
+      {/* ── Right form panel ── */}
+      <div className="login-form-panel">
+        <div className="login-card">
+          {/* Brand */}
+          <div className="login-brand">
+            <span className="brand-icon">S</span>
+            <div>
+              <h1>SAMS</h1>
+              <p>System Login</p>
             </div>
-          </>
-        )}
+          </div>
 
-        {step === 'password' && (
-          <>
-            <p className="section-desc" style={{ marginBottom: '1.25rem' }}>
-              {pendingGateSession ? (
-                <>
-                  Signing in as <strong>{displayName || username}</strong> for{' '}
-                  <strong>{gateSelectionLabel(pendingGateSession)}</strong>
-                </>
-              ) : (
-                <>
-                  Enter password for <strong>{displayName || username}</strong>
-                </>
-              )}
+          {/* Heading */}
+          <div className="login-heading">
+            <h2>{step === 'username' ? 'Welcome back' : `Hello, ${displayName || username}`}</h2>
+            <p>
+              {step === 'username'
+                ? 'Enter your credentials to access your account'
+                : pendingGateSession
+                  ? `Signing in for ${gateSelectionLabel(pendingGateSession)}`
+                  : 'Enter your password to continue'}
             </p>
-            <div className="form-group">
-              <label htmlFor="login-password">Password</label>
-              <div className="password-input-wrap">
+          </div>
+
+          {/* Steps */}
+          <LoginSteps step={step} flow={flow} />
+
+          {/* Form */}
+          <form onSubmit={step === 'username' ? handleUsernameContinue : handlePasswordSubmit}>
+            {step === 'username' && (
+              <div className="form-group">
+                <label htmlFor="login-username">Username</label>
                 <input
-                  id="login-password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
-                  autoComplete="current-password"
+                  id="login-username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter your username"
+                  autoComplete="username"
                   autoFocus
                   required
                 />
+              </div>
+            )}
+
+            {step === 'password' && (
+              <>
+                <div className="form-group">
+                  <label htmlFor="login-password">Password</label>
+                  <div className="password-input-wrap">
+                    <input
+                      id="login-password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      autoComplete="current-password"
+                      autoFocus
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-btn"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      title={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <EyeIcon open={showPassword} />
+                    </button>
+                  </div>
+                </div>
+
                 <button
                   type="button"
-                  className="password-toggle-btn"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  title={showPassword ? 'Hide password' : 'Show password'}
+                  className="btn-secondary"
+                  style={{ width: '100%', marginBottom: '0.75rem' }}
+                  onClick={() => {
+                    if (flow === 'gate') {
+                      setPassword('');
+                      setPendingGateSession(null);
+                      setStep('gate-select');
+                    } else {
+                      resetToUsername();
+                    }
+                  }}
                 >
-                  <EyeIcon open={showPassword} />
+                  {flow === 'gate' ? '← Back to gate selection' : '← Change username'}
                 </button>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn-secondary"
-              style={{ width: '100%', marginBottom: '0.75rem' }}
-              onClick={() => {
-                if (flow === 'gate') {
-                  setPassword('');
-                  setPendingGateSession(null);
-                  setStep('gate-select');
-                } else {
-                  resetToUsername();
-                }
-              }}
-            >
-              {flow === 'gate' ? 'Back to gate selection' : 'Change username'}
+              </>
+            )}
+
+            {error && (
+              <p className="login-error" role="alert">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                {error}
+              </p>
+            )}
+
+            <button type="submit" className="btn-primary login-submit" disabled={submitting}>
+              {submitting
+                ? 'Please wait…'
+                : step === 'username'
+                  ? 'Continue →'
+                  : 'Sign In'}
             </button>
-          </>
-        )}
+          </form>
 
-        {error && <p className="error-msg">{error}</p>}
 
-        <button type="submit" className="btn-primary login-submit" disabled={submitting}>
-          {submitting
-            ? 'Please wait...'
-            : step === 'username'
-              ? 'Continue'
-              : 'Sign In'}
-        </button>
-
-        {step === 'username' && (
-          <p className="login-hint">
-            Super admin: <code>superadmin</code> / <code>superadmin123</code>
-          </p>
-        )}
-      </form>
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<p className="login-loading">Loading...</p>}>
+    <Suspense fallback={<p className="login-loading">Loading…</p>}>
       <LoginForm />
     </Suspense>
   );

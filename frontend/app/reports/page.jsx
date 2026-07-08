@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
@@ -1052,57 +1053,43 @@ function ExportCenterTab() {
 /* ═══════════════════════════════════════════════════════════════
    MAIN PAGE — REPORT CENTER
 ════════════════════════════════════════════════════════════════ */
-const TABS = [
-  { id: 'today',     label: "Today's Activity",   icon: '📅' },
-  { id: 'history',  label: 'Attendance History',  icon: '📆' },
-  { id: 'analytics',label: 'Analytics',           icon: '📊' },
-  { id: 'export',   label: 'Export Center',       icon: '📄' },
+const REPORT_TABS = [
+  { id: 'today',    label: "Today's Activity" },
+  { id: 'history', label: 'Attendance History' },
+  { id: 'analytics', label: 'Analytics' },
+  { id: 'export',  label: 'Export Center' },
 ];
 
-export default function ReportsPage() {
+function ReportsContent() {
   const now = useNow();
-  const [tab, setTab] = useState('today');
-  const [selectedId, setSelectedId] = useState(null);
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab = REPORT_TABS.find(t => t.id === tabParam) ? tabParam : 'today';
 
-  // Data for analytics tab
+  const [selectedId, setSelectedId] = useState(null);
   const [gateLogs, setGateLogs] = useState([]);
   const [registrations, setRegistrations] = useState([]);
-  const [summaryData, setSummaryData] = useState(null);
-  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
-  const loadAnalyticsData = useCallback(async () => {
-    setSummaryLoading(true);
+  const loadData = useCallback(async () => {
     try {
-      const [logs, regs, daily] = await Promise.all([
+      const [logs, regs] = await Promise.all([
         api.gate.logs({ limit: 200 }).catch(() => []),
         api.reports.listRegistrations({ limit: 500 }).catch(() => []),
-        api.reports.dailyPasses().catch(() => null),
       ]);
       setGateLogs(Array.isArray(logs) ? logs : []);
       setRegistrations(Array.isArray(regs) ? regs : []);
-      setSummaryData(daily);
     } finally {
-      setSummaryLoading(false);
+      setDataLoaded(true);
     }
   }, []);
 
-  useEffect(() => { loadAnalyticsData(); }, [loadAnalyticsData]);
-
-  // Compute summary card data
-  const today = new Date().toDateString();
-  const todayLogs = gateLogs.filter(l => new Date(l.createdAt).toDateString() === today);
-  const todayEntry = todayLogs.filter(l => l.eventType === 'entry' && l.matched).length;
-  const todayExit  = todayLogs.filter(l => l.eventType === 'exit'  && l.matched).length;
-  const insideNow  = Math.max(todayEntry - todayExit, 0);
-
-  const allPeople = (summaryData?.roles || []).flatMap(r => r.people || []);
-  const insideCount = allPeople.filter(p => p.divisionInside).length;
-  const totalRegistered = registrations.length;
-
-  const sparkBase = [4, 7, 5, 9, 8, 12, 10, 14, 11, 16, todayEntry];
+  useEffect(() => { loadData(); }, [loadData]);
 
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  const tabLabel = REPORT_TABS.find(t => t.id === tab)?.label ?? 'Reports';
 
   return (
     <div className="page-shell admin-fade-in" style={{ overflow: 'hidden' }}>
@@ -1115,7 +1102,7 @@ export default function ReportsPage() {
             </svg>
           </div>
           <div>
-            <h1 className="rc-page-header__title">Report Center</h1>
+            <h1 className="rc-page-header__title">Report Center — {tabLabel}</h1>
             <p className="rc-page-header__subtitle">Monitor attendance, access history, analytics and export reports.</p>
           </div>
         </div>
@@ -1124,7 +1111,7 @@ export default function ReportsPage() {
             <span className="rc-page-header__date">{dateStr}</span>
             <span className="rc-page-header__time">{timeStr}</span>
           </div>
-          <button className="btn-secondary btn-sm" onClick={loadAnalyticsData} title="Refresh all data" aria-label="Refresh">
+          <button className="btn-secondary btn-sm" onClick={loadData} title="Refresh all data" aria-label="Refresh">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -1141,45 +1128,15 @@ export default function ReportsPage() {
       </div>
 
       <div className="rc-body">
-        {/* ── Summary Cards ── */}
-        <div className="rc-summary-grid">
-          <SummaryCard icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></svg>}
-            label="Today's Entries" value={todayEntry} trend={8} trendUp sparkData={sparkBase} color="primary" loading={summaryLoading} />
-          <SummaryCard icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>}
-            label="Today's Exits" value={todayExit} sparkData={sparkBase.map(v => v * 0.7)} color="success" loading={summaryLoading} />
-          <SummaryCard icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-            label="Currently Inside" value={insideNow || insideCount} trend={5} trendUp sparkData={[3,5,4,7,6,8,insideNow || insideCount]} color="primary" loading={summaryLoading} />
-          <SummaryCard icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>}
-            label="Total Registered" value={totalRegistered} sparkData={[10,14,18,22,25,30,totalRegistered]} color="success" loading={summaryLoading} />
-          <SummaryCard icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>}
-            label="AI Accuracy" value={(() => { const s = gateLogs.filter(l => l.matched && l.matchScore); return s.length ? Math.round(s.reduce((a,l) => a + l.matchScore * 100, 0) / s.length) : 99; })()}
-            sparkData={[88,91,89,93,92,96,99]} color="warning" loading={summaryLoading} />
-          <SummaryCard icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>}
-            label="Gate Logs Total" value={gateLogs.length} sparkData={[5,8,12,15,20,25,gateLogs.length]} color="primary" loading={summaryLoading} />
-        </div>
-
-        {/* ── Tab Navigation ── */}
-        <div className="rc-tab-nav">
-          {TABS.map(t => (
-            <button key={t.id} type="button"
-              className={`rc-tab-btn ${tab === t.id ? 'rc-tab-btn--active' : ''}`}
-              onClick={() => setTab(t.id)}>
-              <span className="rc-tab-btn__icon">{t.icon}</span>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ── Tab Content ── */}
+        {/* ── Tab Content — driven by URL ?tab= param ── */}
         <div className="rc-tab-content admin-fade-in" key={tab}>
           {tab === 'today'    && <TodayActivityTab onViewPerson={setSelectedId} />}
           {tab === 'history'  && <AttendanceHistoryTab onViewPerson={setSelectedId} />}
-          {tab === 'analytics'&& <AnalyticsTab gateLogs={gateLogs} registrations={registrations} />}
+          {tab === 'analytics' && <AnalyticsTab gateLogs={gateLogs} registrations={registrations} />}
           {tab === 'export'   && <ExportCenterTab />}
         </div>
       </div>
 
-      {/* ── Person Detail Dialog ── */}
       {selectedId && (
         <PersonDetailDialog
           registrationId={selectedId}
@@ -1187,5 +1144,13 @@ export default function ReportsPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ReportsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ReportsContent />
+    </Suspense>
   );
 }

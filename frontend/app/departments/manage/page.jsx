@@ -7,6 +7,179 @@ import { formatDate } from '@/lib/formatDate';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
 
+function PlusIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function NewDepartmentModal({ onClose, onComplete, preselectedDivision }) {
+  const [divisions, setDivisions] = useState([]);
+  const [divisionIds, setDivisionIds] = useState(preselectedDivision ? [preselectedDivision] : []);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api.divisions
+      .list({ isActive: 'true' })
+      .then(setDivisions)
+      .catch((e) => setError(e.message));
+  }, []);
+
+  useEffect(() => {
+    if (preselectedDivision) {
+      setDivisionIds((prev) =>
+        prev.includes(preselectedDivision) ? prev : [...prev, preselectedDivision]
+      );
+    }
+  }, [preselectedDivision]);
+
+  function toggleDivision(id) {
+    setDivisionIds((prev) =>
+      prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]
+    );
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (divisionIds.length === 0) {
+      setError('Please select at least one division');
+      return;
+    }
+    if (!name.trim()) {
+      setError('Department name is required');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const department = await api.departments.create({
+        divisionIds,
+        name: name.trim(),
+        description: description.trim(),
+      });
+      onComplete(department);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div
+      className="pass-modal-overlay reg-details-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="New Department"
+    >
+      <div
+        className="reg-details-modal"
+        style={{ maxWidth: 550, width: '95vw' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="reg-details-modal__header no-print">
+          <div className="reg-details-modal__title-wrap">
+            <div>
+              <h3 className="reg-details-modal__title">New Department</h3>
+              <p className="reg-details-modal__sub">Create a department and link it to divisions</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="reg-details-modal__close"
+            onClick={onClose}
+            title="Close"
+            aria-label="Close"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="reg-details-modal__body">
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label htmlFor="dept-name">
+                Department Name <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+              <input
+                id="dept-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. HR, IT, Security, Finance"
+                autoFocus
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="dept-description">Description</label>
+              <input
+                id="dept-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Optional description"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>
+                Divisions <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+              <p className="field-hint">
+                Select all divisions this department belongs to
+              </p>
+              {divisions.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                  No divisions yet.{' '}
+                  <Link href="/divisions/create" onClick={onClose}>Create a division first</Link>
+                  {' '}before adding departments.
+                </p>
+              ) : (
+                <div className="checkbox-group">
+                  {divisions.map((d) => (
+                    <label key={d._id} className="checkbox-option">
+                      <input
+                        type="checkbox"
+                        checked={divisionIds.includes(d._id)}
+                        onChange={() => toggleDivision(d._id)}
+                      />
+                      <span>{d.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {error && <p className="error-msg">{error}</p>}
+
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+              <button type="submit" className="btn-primary" disabled={loading || divisions.length === 0}>
+                {loading ? 'Creating...' : 'Create Department'}
+              </button>
+              <button type="button" className="btn-secondary" onClick={onClose}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ManageDepartmentsPage() {
   const { can } = useAuth();
   const canWrite = can('departments', 'write');
@@ -15,6 +188,7 @@ export default function ManageDepartmentsPage() {
   const [divisionFilter, setDivisionFilter] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showNewDepartmentModal, setShowNewDepartmentModal] = useState(false);
 
   useEffect(() => {
     api.divisions.list().then(setDivisions).catch(() => {});
@@ -57,6 +231,11 @@ export default function ManageDepartmentsPage() {
     }
   }
 
+  function handleDepartmentCreated() {
+    setShowNewDepartmentModal(false);
+    loadDepartments();
+  }
+
   if (loading && departments.length === 0) {
     return <p style={{ color: 'var(--text-muted)' }}>Loading departments...</p>;
   }
@@ -65,7 +244,7 @@ export default function ManageDepartmentsPage() {
     <div>
       <div className="reports-section-header" style={{ marginBottom: '1rem' }}>
         <div>
-          <h3 className="section-title">All Departments</h3>
+          <h3 className="section-title">All Departments ({departments.length})</h3>
           <p className="section-desc">Departments linked to their divisions</p>
         </div>
         <div className="reports-section-actions">
@@ -79,11 +258,18 @@ export default function ManageDepartmentsPage() {
               <option key={d._id} value={d._id}>{d.name}</option>
             ))}
           </select>
-          <Link href="/departments/create">
-            <WriteAccess module="departments">
-              <button type="button" className="btn-primary">+ New Department</button>
-            </WriteAccess>
-          </Link>
+          {canWrite && (
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              onClick={() => setShowNewDepartmentModal(true)}
+              aria-label="New Department"
+            >
+              <PlusIcon />
+              New
+            </button>
+          )}
         </div>
       </div>
 
@@ -96,13 +282,16 @@ export default function ManageDepartmentsPage() {
       {departments.length === 0 ? (
         <div className="empty-state card">
           <p>No departments yet.</p>
-          <WriteAccess module="departments">
-            <Link href="/departments/create">
-              <button type="button" className="btn-primary" style={{ marginTop: '1rem' }}>
-                Create Department
-              </button>
-            </Link>
-          </WriteAccess>
+          {canWrite && (
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ marginTop: '1rem' }}
+              onClick={() => setShowNewDepartmentModal(true)}
+            >
+              Create Department
+            </button>
+          )}
         </div>
       ) : (
         <div className="card">
@@ -156,6 +345,13 @@ export default function ManageDepartmentsPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {showNewDepartmentModal && (
+        <NewDepartmentModal
+          onClose={() => setShowNewDepartmentModal(false)}
+          onComplete={handleDepartmentCreated}
+        />
       )}
     </div>
   );

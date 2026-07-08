@@ -594,3 +594,155 @@
 /* ── Mobile sidebar bar ── */
 .sidebar-mobile-bar { display: contents; }
 .sidebar-mobile-toggle { display: none; }
+
+/* ── Nav group (parent with children) ── */
+.admin-sidebar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Parent trigger button — same look as a regular link */
+.admin-sidebar__group-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: 500;
+  text-decoration: none;
+  border: none;
+  background: transparent;
+  width: 100%;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+  overflow: visible;
+  position: relative;
+  min-height: 38px;
+}
+
+.admin-sidebar__group-trigger:hover {
+  background: var(--surface-inset);
+  color: var(--text-primary);
+}
+
+/* Active state when any child is active */
+.admin-sidebar__group-trigger--active {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.admin-sidebar__group-trigger--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--color-primary);
+}
+
+/* Chevron icon on the right */
+.admin-sidebar__group-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.admin-sidebar__group-chevron--open {
+  transform: rotate(90deg);
+}
+
+/* Sub-items container */
+.admin-sidebar__sub-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 2px;
+  padding-left: 32px;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.22s ease, opacity 0.18s ease;
+}
+
+.admin-sidebar__sub-nav--open {
+  max-height: 300px;
+  opacity: 1;
+}
+
+/* Sub-item link */
+.admin-sidebar__sub-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-12);
+  font-weight: 500;
+  text-decoration: none;
+  border: none;
+  background: transparent;
+  width: 100%;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+  position: relative;
+}
+
+.admin-sidebar__sub-link::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.admin-sidebar__sub-link:hover {
+  background: var(--surface-inset);
+  color: var(--text-primary);
+}
+
+.admin-sidebar__sub-link--active {
+  color: var(--color-primary);
+  font-weight: 600;
+  background: transparent;
+}
+
+.admin-sidebar__sub-link--active::before {
+  opacity: 1;
+}
+
+/* Collapsed: hide sub-nav entirely, show only icon for group */
+.admin-sidebar--collapsed .admin-sidebar__group-trigger {
+  justify-content: center;
+  padding: 9px 0;
+  gap: 0;
+}
+
+.admin-sidebar--collapsed .admin-sidebar__group-trigger > span:not(.admin-sidebar__icon):not(.admin-icon) {
+  display: none;
+}
+
+.admin-sidebar--collapsed .admin-sidebar__group-chevron {
+  display: none;
+}
+
+.admin-sidebar--collapsed .admin-sidebar__sub-nav {
+  display: none;
+}
+
+.admin-sidebar--collapsed .admin-sidebar__group-trigger--active::before {
+  display: none;
+}

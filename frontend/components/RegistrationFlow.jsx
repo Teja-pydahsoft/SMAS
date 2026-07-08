@@ -22,20 +22,17 @@ function resolveStage(registration) {
     return 'review';
   }
   if (registration.currentStage === 'photo' || registration.status === 'in_progress') {
-    // photo step is now part of the combined form+photo step
     return registration.photoPath ? 'review' : 'form';
   }
   if (registration.status === 'rejected') {
     return 'form';
   }
   const s = registration.currentStage || 'form';
-  // map old 'photo' stage to 'form' (merged step)
   return s === 'photo' ? 'form' : s;
 }
 
 function photoUrlFromPath(photoPath) {
   if (!photoPath) return null;
-  // Cloudinary and other full URLs — return as-is
   if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
     return photoPath;
   }
@@ -44,13 +41,19 @@ function photoUrlFromPath(photoPath) {
 }
 
 export default function RegistrationFlow({
-  roleId,
+  roleId: initialRoleId,
+  roles: availableRoles,
   registrationId,
   onComplete,
   onCancel,
   onRegisterAnother,
   fromGate = false,
 }) {
+  const [selectedRoleId, setSelectedRoleId] = useState(initialRoleId || '');
+
+  // Derive the effective roleId
+  const roleId = availableRoles ? selectedRoleId : initialRoleId;
+  const activeRoles = availableRoles ? availableRoles.filter((r) => r.isActive) : null;
   const [role, setRole] = useState(null);
   const [form, setForm] = useState(null);
   const [registration, setRegistration] = useState(null);
@@ -64,7 +67,7 @@ export default function RegistrationFlow({
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [pass, setPass] = useState(null);
-  const [duplicateWarning, setDuplicateWarning] = useState(null); // { faceMatch, formMatches }
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
 
   const isEditMode = Boolean(registrationId || registration?._id);
 
@@ -79,23 +82,22 @@ export default function RegistrationFlow({
 
     if (registrationId) {
       loadExisting(registrationId);
-    } else if (roleId) {
+    } else if (selectedRoleId) {
       setRegistration(null);
       setFormData({});
       setStage('form');
-      loadNew(roleId);
+      loadNew(selectedRoleId);
     } else {
       setRole(null);
       setForm(null);
       setRegistration(null);
       setInitialLoading(false);
     }
-  }, [roleId, registrationId]);
+  }, [selectedRoleId, registrationId]);
 
   useEffect(() => {
     if (!fromGate || registrationId || (stage !== 'form' && stage !== 'photo') || photoBlob) return;
     let cancelled = false;
-
     loadGatePhotoForRegistration()
       .then((blob) => {
         if (!cancelled && blob) {
@@ -104,10 +106,7 @@ export default function RegistrationFlow({
         }
       })
       .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [fromGate, registrationId, stage, photoBlob]);
 
   useEffect(() => {
@@ -189,7 +188,6 @@ export default function RegistrationFlow({
         setRegistration(reg);
       }
 
-      // Upload new photo if one was captured
       if (photoBlob) {
         const result = await api.registrations.uploadPhoto(reg._id, photoBlob);
         reg = result.registration;
@@ -206,11 +204,10 @@ export default function RegistrationFlow({
         }
       }
 
-      // Duplicate check — only for new registrations (not edits of existing ones)
       if (!registrationId) {
         try {
           const dupResult = await api.registrations.checkDuplicate({
-            photoBlob: photoBlob || null, // already uploaded, but we pass formData for text check
+            photoBlob: photoBlob || null,
             formData,
             roleId,
             excludeId: reg._id,
@@ -218,10 +215,10 @@ export default function RegistrationFlow({
           if (dupResult.hasDuplicate) {
             setDuplicateWarning({ faceMatch: dupResult.faceMatch, formMatches: dupResult.formMatches });
             setLoading(false);
-            return; // stay on form step, show warning
+            return;
           }
         } catch {
-          // Duplicate check failure is non-fatal — proceed to review
+          // non-fatal
         }
       }
 
@@ -261,12 +258,15 @@ export default function RegistrationFlow({
   }
 
   if (!roleId && !registrationId) {
-    return (
-      <p style={{ color: 'var(--text-muted)' }}>Select a role above to start registration.</p>
-    );
+    // When availableRoles is passed, we show an inline role selector — don't bail out
+    if (!availableRoles) {
+      return (
+        <p style={{ color: 'var(--text-muted)' }}>Select a role above to start registration.</p>
+      );
+    }
   }
 
-  if (initialLoading) {
+  if (initialLoading && (selectedRoleId || registrationId || !availableRoles)) {
     return <p style={{ color: 'var(--text-muted)' }}>Loading registration...</p>;
   }
 
@@ -284,16 +284,21 @@ export default function RegistrationFlow({
   }
 
   if (!form) {
-    return (
-      <div>
-        <p className="error-msg">No registration form configured for {role?.name}.</p>
-        <Link href={`/roles/${role?._id || roleId}/form`}>
-          <button type="button" className="btn-primary" style={{ marginTop: '0.75rem' }}>
-            Create Form
-          </button>
-        </Link>
-      </div>
-    );
+    // In role-selector mode (availableRoles passed), no role chosen yet — fall through to render
+    if (availableRoles && !selectedRoleId) {
+      // handled in the JSX below
+    } else {
+      return (
+        <div>
+          <p className="error-msg">No registration form configured for {role?.name}.</p>
+          <Link href={`/roles/${role?._id || roleId}/form`}>
+            <button type="button" className="btn-primary" style={{ marginTop: '0.75rem' }}>
+              Create Form
+            </button>
+          </Link>
+        </div>
+      );
+    }
   }
 
   const currentStageIndex = stage === 'edit' ? STAGES.length : STAGES.findIndex((s) => s.key === stage);
@@ -301,35 +306,39 @@ export default function RegistrationFlow({
 
   return (
     <div>
-      <div style={{ marginBottom: '1.25rem' }}>
-        <h3 style={{ marginBottom: '0.25rem' }}>
-          {isEditMode ? 'Update' : 'Register'} — {role?.name} — {form.title}
-        </h3>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-          {isEditMode
-            ? `Editing registration ${registration?.registrationCode || `#${registration?._id?.slice(-6)}`}`
-            : form.description || 'Complete all steps to register'}
-        </p>
-      </div>
+      {/* Title + stage bar — only shown when not managed externally via availableRoles modal */}
+      {!availableRoles && (
+        <>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <h3 style={{ marginBottom: '0.25rem' }}>
+              {isEditMode ? 'Update' : 'Register'} — {role?.name} — {form?.title}
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+              {isEditMode
+                ? `Editing registration ${registration?.registrationCode || `#${registration?._id?.slice(-6)}`}`
+                : form?.description || 'Complete all steps to register'}
+            </p>
+          </div>
 
-      {stage !== 'edit' && (
-        <div className="stage-indicator">
-          {STAGES.map((s, i) => (
-            <div
-              key={s.key}
-              className={`stage ${i === currentStageIndex ? 'active' : ''} ${i < currentStageIndex || stage === 'completed' ? 'done' : ''}`}
-            >
-              {s.label}
+          {stage !== 'edit' && (
+            <div className="stage-indicator">
+              {STAGES.map((s, i) => (
+                <div
+                  key={s.key}
+                  className={`stage ${i === currentStageIndex ? 'active' : ''} ${i < currentStageIndex || stage === 'completed' ? 'done' : ''}`}
+                >
+                  {s.label}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
 
       {(stage === 'form' || stage === 'edit') && (
         <form onSubmit={submitForm}>
-          {/* Two-column layout: camera on left, form on right */}
           <div className={stage === 'form' ? 'reg-flow-layout' : undefined}>
-            {/* Left: Camera capture */}
+            {/* Left: Camera */}
             {stage === 'form' && (
               <div className="reg-flow-layout__camera">
                 <h4 className="reg-flow-section-title">Photo Capture</h4>
@@ -348,20 +357,13 @@ export default function RegistrationFlow({
                   <div className="reg-flow-layout__photo-preview">
                     <img src={photoPreviewUrl} alt="Captured" />
                     <div className="camera-actions">
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => setPhotoBlob(null)}
-                      >
+                      <button type="button" className="btn-secondary" onClick={() => setPhotoBlob(null)}>
                         Retake Photo
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <CameraCapture
-                    onCapture={setPhotoBlob}
-                    label="Capture Photo"
-                  />
+                  <CameraCapture onCapture={setPhotoBlob} label="Capture Photo" />
                 )}
                 {existingPhotoUrl && isEditMode && !photoPreviewUrl && (
                   <div style={{ marginTop: '0.75rem' }}>
@@ -376,12 +378,34 @@ export default function RegistrationFlow({
               </div>
             )}
 
-            {/* Right: Form fields (or full-width in edit mode) */}
+            {/* Right: Form fields — role selector at top when availableRoles passed */}
             <div className={stage === 'form' ? 'reg-flow-layout__fields' : undefined}>
               {stage === 'form' && <h4 className="reg-flow-section-title">Registration Details</h4>}
-              <DynamicFormFields fields={form.fields} values={formData} onChange={setFormData} />
 
-              {/* Duplicate warning */}
+              {/* Role selector — only when availableRoles is provided (modal mode) */}
+              {stage === 'form' && availableRoles && (
+                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                  <label htmlFor="reg-flow-role-select">Role</label>
+                  <select
+                    id="reg-flow-role-select"
+                    value={selectedRoleId}
+                    onChange={(e) => {
+                      setSelectedRoleId(e.target.value);
+                      setFormData({});
+                      setError('');
+                    }}
+                  >
+                    <option value="">Choose a role…</option>
+                    {activeRoles.map((r) => (
+                      <option key={r._id} value={r._id}>{r.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Form fields — only once a role is loaded */}
+              {form && <DynamicFormFields fields={form.fields} values={formData} onChange={setFormData} />}
+
               {duplicateWarning && (
                 <div className="reg-duplicate-warning">
                   <div className="reg-duplicate-warning__header">
@@ -395,7 +419,6 @@ export default function RegistrationFlow({
                   <p className="reg-duplicate-warning__desc">
                     An existing registration may match this person. Please review before proceeding.
                   </p>
-
                   {duplicateWarning.faceMatch && (
                     <div className="reg-duplicate-match">
                       <span className="reg-duplicate-match__badge reg-duplicate-match__badge--face">Face Match</span>
@@ -413,7 +436,6 @@ export default function RegistrationFlow({
                       </div>
                     </div>
                   )}
-
                   {duplicateWarning.formMatches?.length > 0 && (
                     <div style={{ marginTop: '0.5rem' }}>
                       <p className="reg-duplicate-warning__desc" style={{ marginBottom: '0.4rem' }}>
@@ -438,13 +460,8 @@ export default function RegistrationFlow({
                       ))}
                     </div>
                   )}
-
                   <div className="reg-duplicate-warning__actions">
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => setDuplicateWarning(null)}
-                    >
+                    <button type="button" className="btn-secondary" onClick={() => setDuplicateWarning(null)}>
                       Edit Details / Photo
                     </button>
                     <button
@@ -463,18 +480,10 @@ export default function RegistrationFlow({
               {!duplicateWarning && (
                 <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', flexWrap: 'wrap' }}>
                   <button type="submit" className="btn-primary" disabled={loading}>
-                    {loading
-                      ? 'Saving...'
-                      : stage === 'edit'
-                        ? 'Save Details'
-                        : 'Continue to Review'}
+                    {loading ? 'Saving...' : stage === 'edit' ? 'Save Details' : 'Continue to Review'}
                   </button>
                   {stage === 'edit' && (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => setStage('form')}
-                    >
+                    <button type="button" className="btn-secondary" onClick={() => setStage('form')}>
                       Update Photo
                     </button>
                   )}
@@ -502,7 +511,6 @@ export default function RegistrationFlow({
               />
             </div>
           )}
-
           {registration?.status === 'verified' && (
             <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)' }}>
               <h4 style={{ marginBottom: '0.75rem' }}>Registration Pass</h4>
@@ -570,7 +578,6 @@ export default function RegistrationFlow({
           <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
             Registration pass has been generated. Print or save it for the employee.
           </p>
-
           {pass ? (
             <PassCard pass={pass} />
           ) : (
@@ -593,7 +600,6 @@ export default function RegistrationFlow({
               </button>
             </p>
           )}
-
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem', flexWrap: 'wrap' }} className="no-print">
             <Link href="/gate">
               <button type="button" className="btn-primary">Go to Gate</button>

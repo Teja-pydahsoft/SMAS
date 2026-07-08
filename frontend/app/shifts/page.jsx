@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
 export default function ShiftsIndexPage() {
-  redirect('/shifts/manage');
+  redirect('/organization');
 }

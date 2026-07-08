@@ -7,9 +7,5 @@ export default async function RegistrationsIndexPage({ searchParams }) {
     redirect(`/registrations/manage?edit=${params.edit}`);
   }
 
-  if (params?.role) {
-    redirect(`/registrations/register?role=${params.role}`);
-  }
-
-  redirect('/registrations/register');
+  redirect('/registrations/manage');
 }

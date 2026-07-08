@@ -19,6 +19,75 @@ function DetailsIcon() {
   );
 }
 
+function PlusIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function NewRegistrationModal({ roles, onClose, onComplete }) {
+  const [flowKey, setFlowKey] = useState(0);
+
+  function handleRegistrationComplete(reg) {
+    onComplete?.(reg);
+  }
+
+  function handleRegisterAnother() {
+    setFlowKey((k) => k + 1);
+  }
+
+  return (
+    <div
+      className="pass-modal-overlay reg-details-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="New Registration"
+    >
+      <div
+        className="reg-details-modal"
+        style={{ maxWidth: 860, width: '95vw' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="reg-details-modal__header no-print">
+          <div className="reg-details-modal__title-wrap">
+            <div>
+              <h3 className="reg-details-modal__title">New Registration</h3>
+              <p className="reg-details-modal__sub">Select a role and complete the registration</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="reg-details-modal__close"
+            onClick={onClose}
+            title="Close"
+            aria-label="Close"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="reg-details-modal__body">
+          <RegistrationFlow
+            key={`new-modal-${flowKey}`}
+            roles={roles}
+            onComplete={handleRegistrationComplete}
+            onCancel={onClose}
+            onRegisterAnother={handleRegisterAnother}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ManageRegistrationsContent() {
   const { can } = useAuth();
   const canWrite = can('registrations', 'write');
@@ -34,6 +103,7 @@ function ManageRegistrationsContent() {
   const [error, setError] = useState('');
   const [listLoading, setListLoading] = useState(true);
   const [detailsRegistration, setDetailsRegistration] = useState(null);
+  const [showNewRegistrationModal, setShowNewRegistrationModal] = useState(false);
 
   const loadRegistrations = useCallback(async (roleId = filterRoleId) => {
     setListLoading(true);
@@ -99,6 +169,7 @@ function ManageRegistrationsContent() {
   }
 
   function handleRegistrationComplete() {
+    setShowNewRegistrationModal(false);
     loadRegistrations(filterRoleId);
   }
 
@@ -125,14 +196,30 @@ function ManageRegistrationsContent() {
               </p>
             )}
           </div>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 200 }}>
-            <label>Filter by Role</label>
-            <select value={filterRoleId} onChange={(e) => setFilterRoleId(e.target.value)}>
-              <option value="">All roles</option>
-              {roles.map((role) => (
-                <option key={role._id} value={role._id}>{role.name}</option>
-              ))}
-            </select>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 200 }}>
+              <label>Filter by Role</label>
+              <select value={filterRoleId} onChange={(e) => setFilterRoleId(e.target.value)}>
+                <option value="">All roles</option>
+                {roles.map((role) => (
+                  <option key={role._id} value={role._id}>{role.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {canWrite && (
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', alignSelf: 'flex-end', marginBottom: '0' }}
+                onClick={() => setShowNewRegistrationModal(true)}
+                aria-label="New Registration"
+              >
+                <PlusIcon />
+                New
+              </button>
+            )}
           </div>
         </div>
 
@@ -256,6 +343,14 @@ function ManageRegistrationsContent() {
         <RegistrationDetailsModal
           registration={detailsRegistration}
           onClose={() => setDetailsRegistration(null)}
+        />
+      )}
+
+      {showNewRegistrationModal && (
+        <NewRegistrationModal
+          roles={roles}
+          onClose={() => setShowNewRegistrationModal(false)}
+          onComplete={handleRegistrationComplete}
         />
       )}
     </>

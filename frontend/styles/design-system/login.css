@@ -4,7 +4,8 @@
 
 /* ── Shell ── */
 .login-shell {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 580px;
   width: 100%;
   display: flex;
   align-items: stretch;
@@ -25,7 +26,8 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 3rem 4rem 3rem 3rem;
+  align-items: center;
+  padding: 2rem 5rem 2rem 3rem;
   background: linear-gradient(135deg, #1e40af 0%, #2563eb 45%, #3b82f6 100%);
   overflow: hidden;
 }
@@ -90,12 +92,13 @@
     radial-gradient(1px 1px at 88% 45%, rgba(255,255,255,0.4) 0%, transparent 100%);
 }
 
-/* Hero content — centered inside left half, capped so it doesn't go edge-to-edge */
+/* Hero content — centered inside left half, text stays left-aligned */
 .login-hero__content {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 400px;
+  max-width: clamp(300px, 38vw, 460px);
+  text-align: left;
 }
 
 .login-hero__badge {
@@ -105,14 +108,14 @@
   background: rgba(255, 255, 255, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(8px);
-  padding: 6px 14px;
+  padding: 8px 18px;
   border-radius: var(--radius-full);
-  font-size: var(--text-12);
+  font-size: clamp(0.7rem, 1.1vw, 0.85rem);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .login-hero__badge-dot {
@@ -124,12 +127,12 @@
 }
 
 .login-hero__title {
-  font-size: clamp(1.75rem, 3vw, 2.6rem);
+  font-size: clamp(2.4rem, 4vw, 3.6rem);
   font-weight: 800;
   color: #fff;
-  line-height: 1.15;
-  margin: 0 0 1rem;
-  letter-spacing: -0.02em;
+  line-height: 1.12;
+  margin: 0 0 1.1rem;
+  letter-spacing: -0.03em;
 }
 
 .login-hero__title span {
@@ -137,54 +140,56 @@
 }
 
 .login-hero__subtitle {
-  font-size: var(--text-14);
-  color: rgba(255, 255, 255, 0.75);
+  font-size: clamp(0.95rem, 1.5vw, 1.15rem);
+  color: rgba(255, 255, 255, 0.78);
   line-height: 1.65;
-  margin: 0 0 2rem;
+  margin: 0 0 1.75rem;
 }
 
 /* Feature list */
 .login-hero__features {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
 .login-hero__feature {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: var(--text-13);
-  color: rgba(255, 255, 255, 0.85);
+  gap: 12px;
+  font-size: clamp(0.9rem, 1.4vw, 1.05rem);
+  color: rgba(255, 255, 255, 0.9);
   font-weight: 500;
 }
 
 .login-hero__feature-icon {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  font-size: 15px;
+  font-size: 17px;
 }
 
-/* Illustration */
+/* Illustration — bigger, bottom-center */
 .login-hero__illustration {
   position: absolute;
-  bottom: 0;
-  right: 72px;
-  width: 200px;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-5deg);
+  width: clamp(220px, 28vw, 320px);
   pointer-events: none;
   z-index: 1;
+  opacity: 0.92;
   animation: loginRocketFloat 4s ease-in-out infinite;
 }
 
 @keyframes loginRocketFloat {
-  0%, 100% { transform: translateY(0) rotate(-5deg); }
-  50%       { transform: translateY(-18px) rotate(-5deg); }
+  0%, 100% { transform: translateX(-50%) translateY(0)     rotate(-5deg); }
+  50%       { transform: translateX(-50%) translateY(-20px) rotate(-5deg); }
 }
 
 /* ══════════════════════════════════════════
@@ -195,28 +200,28 @@
   width: 50%;
   display: flex;
   align-items: center;
-  justify-content: center;   /* horizontal + vertical center */
-  padding: 3rem 2rem;
+  justify-content: center;
+  padding: 2rem 3rem;
   background: #fff;
 }
 
-/* Card is capped so it never stretches to the full 50% on wide screens */
+/* Card scales with screen — no tiny fixed max-width */
 .login-card {
   width: 100%;
-  max-width: 400px;
+  max-width: clamp(320px, 36vw, 480px);
   animation: modal-in 0.3s ease both;
 }
 
-/* Brand inside form */
+/* Brand */
 .login-brand {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .login-brand h1 {
-  font-size: var(--text-20);
+  font-size: clamp(1.1rem, 1.6vw, 1.4rem);
   font-weight: 800;
   margin: 0;
   color: var(--text-primary);
@@ -225,24 +230,24 @@
 .login-brand p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: var(--text-13);
+  font-size: clamp(0.75rem, 1.1vw, 0.9rem);
 }
 
-/* Heading block */
+/* Heading */
 .login-heading {
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .login-heading h2 {
-  font-size: var(--text-24);
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
   font-weight: 800;
   color: var(--text-primary);
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   letter-spacing: -0.02em;
 }
 
 .login-heading p {
-  font-size: var(--text-13);
+  font-size: clamp(0.82rem, 1.2vw, 0.95rem);
   color: var(--text-secondary);
   margin: 0;
 }
@@ -282,9 +287,9 @@
 /* Submit button */
 .login-submit {
   width: 100%;
-  margin-top: 8px;
-  padding: 0.75rem 1.25rem;
-  font-size: var(--text-15);
+  margin-top: 10px;
+  padding: 0.85rem 1.5rem;
+  font-size: clamp(0.9rem, 1.3vw, 1.05rem);
   font-weight: 700;
   border-radius: var(--radius-md);
   letter-spacing: 0.01em;
@@ -360,17 +365,17 @@
   .login-hero {
     flex: 0 0 50%;
     width: 50%;
-    padding: 2.5rem 3rem 2.5rem 2rem;
+    padding: 2rem 4rem 2rem 2rem;
   }
 
   .login-form-panel {
     flex: 0 0 50%;
     width: 50%;
-    padding: 2.5rem 1.5rem;
+    padding: 2rem 1.5rem;
   }
 
   .login-card {
-    max-width: 340px;
+    max-width: 320px;
   }
 }
 

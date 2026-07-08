@@ -165,6 +165,24 @@ const icons = {
       <path d="M9 18v0" />
     </svg>
   ),
+  shifts: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  ),
+  organization: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="6" height="5" rx="1" />
+      <rect x="9" y="2" width="6" height="5" rx="1" />
+      <rect x="16" y="7" width="6" height="5" rx="1" />
+      <path d="M5 12v3" />
+      <path d="M12 7V5" />
+      <path d="M19 12v3" />
+      <path d="M5 15h14" />
+      <rect x="9" y="15" width="6" height="5" rx="1" />
+    </svg>
+  ),
   system: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 15v2" />

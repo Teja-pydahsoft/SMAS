@@ -1,11 +1,126 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { api } from '@/lib/api/client';
 import { formatDate } from '@/lib/formatDate';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
+
+function PlusIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function NewShiftModal({ onClose, onComplete }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError('Shift name is required');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const shift = await api.shifts.create({
+        name: name.trim(),
+        description: description.trim(),
+      });
+      onComplete(shift);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div
+      className="pass-modal-overlay reg-details-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="New Shift"
+    >
+      <div
+        className="reg-details-modal"
+        style={{ maxWidth: 500, width: '95vw' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="reg-details-modal__header no-print">
+          <div className="reg-details-modal__title-wrap">
+            <div>
+              <h3 className="reg-details-modal__title">New Shift</h3>
+              <p className="reg-details-modal__sub">Create a new shift for role-based scheduling</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="reg-details-modal__close"
+            onClick={onClose}
+            title="Close"
+            aria-label="Close"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="reg-details-modal__body">
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label htmlFor="shift-name">
+                Shift Name <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+              <input
+                id="shift-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Morning Shift, Afternoon Shift, Night Shift"
+                autoFocus
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="shift-description">Description</label>
+              <input
+                id="shift-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g. 6:00 AM – 2:00 PM"
+              />
+            </div>
+
+            {error && <p className="error-msg">{error}</p>}
+
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+              <button type="submit" className="btn-primary" disabled={loading}>
+                {loading ? 'Creating...' : 'Create Shift'}
+              </button>
+              <button type="button" className="btn-secondary" onClick={onClose}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ManageShiftsPage() {
   const { can } = useAuth();
@@ -14,6 +129,7 @@ export default function ManageShiftsPage() {
   const [shifts, setShifts] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showNewShiftModal, setShowNewShiftModal] = useState(false);
 
   useEffect(() => {
     loadShifts();
@@ -50,6 +166,11 @@ export default function ManageShiftsPage() {
     }
   }
 
+  function handleShiftCreated() {
+    setShowNewShiftModal(false);
+    loadShifts();
+  }
+
   if (loading && shifts.length === 0) {
     return <p style={{ color: 'var(--text-muted)' }}>Loading shifts...</p>;
   }
@@ -58,15 +179,22 @@ export default function ManageShiftsPage() {
     <div>
       <div className="reports-section-header" style={{ marginBottom: '1rem' }}>
         <div>
-          <h3 className="section-title">All Shifts</h3>
+          <h3 className="section-title">All Shifts ({shifts.length})</h3>
           <p className="section-desc">Shifts available for role-based scheduling</p>
         </div>
         <div className="reports-section-actions">
-          <WriteAccess module="shifts">
-            <Link href="/shifts/create">
-              <button type="button" className="btn-primary">+ New Shift</button>
-            </Link>
-          </WriteAccess>
+          {canWrite && (
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              onClick={() => setShowNewShiftModal(true)}
+              aria-label="New Shift"
+            >
+              <PlusIcon />
+              New
+            </button>
+          )}
         </div>
       </div>
 
@@ -79,13 +207,16 @@ export default function ManageShiftsPage() {
       {shifts.length === 0 ? (
         <div className="empty-state card">
           <p>No shifts created yet.</p>
-          <WriteAccess module="shifts">
-            <Link href="/shifts/create">
-              <button type="button" className="btn-primary" style={{ marginTop: '1rem' }}>
-                Create Your First Shift
-              </button>
-            </Link>
-          </WriteAccess>
+          {canWrite && (
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ marginTop: '1rem' }}
+              onClick={() => setShowNewShiftModal(true)}
+            >
+              Create Your First Shift
+            </button>
+          )}
         </div>
       ) : (
         <div className="card">
@@ -137,6 +268,13 @@ export default function ManageShiftsPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {showNewShiftModal && (
+        <NewShiftModal
+          onClose={() => setShowNewShiftModal(false)}
+          onComplete={handleShiftCreated}
+        />
       )}
     </div>
   );

@@ -90,30 +90,26 @@ export default function RoleFormBuilderPage() {
 
       <form onSubmit={handleSave}>
         <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <h3 className="section-title">Role Settings</h3>
-          <div className="form-group">
-            <label>Shift Breakdown Selection</label>
-            <label className="checkbox-option">
-              <input
-                type="checkbox"
-                checked={isShiftBased}
-                onChange={(e) => setIsShiftBased(e.target.checked)}
-              />
-              <span>Shift breakdown required for this role</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="card" style={{ marginBottom: '1.5rem' }}>
           <h3 className="section-title">Form Settings</h3>
-          <div className="form-two-col-grid">
-            <div className="form-group">
+          <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ flex: 1, minWidth: '180px' }}>
               <label>Form Title</label>
               <input value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
-            <div className="form-group">
+            <div className="form-group" style={{ flex: 1, minWidth: '180px' }}>
               <label>Description</label>
               <input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ flex: 1, minWidth: '180px' }}>
+              <label>Shift Breakdown Selection</label>
+              <label className="checkbox-option" style={{ marginTop: '0.4rem' }}>
+                <input
+                  type="checkbox"
+                  checked={isShiftBased}
+                  onChange={(e) => setIsShiftBased(e.target.checked)}
+                />
+                <span>Shift breakdown required for this role</span>
+              </label>
             </div>
           </div>
         </div>

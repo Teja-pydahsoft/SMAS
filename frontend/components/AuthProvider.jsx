@@ -13,7 +13,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const refreshUser = useCallback(async () => {
+  const refreshUser = useCallback(async (options = {}) => {
     const token = getToken();
     if (!token) {
       setUser(null);
@@ -21,24 +21,36 @@ export function AuthProvider({ children }) {
       return null;
     }
 
+    // Silent refresh: don't set loading, don't wipe user on failure
+    if (!options.silent) setLoading(true);
+
     try {
       const me = await api.auth.me();
       setUser(me);
       setSession(token, me);
       return me;
     } catch {
-      clearSession();
-      setUser(null);
+      if (!options.silent) {
+        clearSession();
+        setUser(null);
+      }
       return null;
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     const stored = getStoredUser();
-    if (stored) setUser(stored);
-    refreshUser();
+    if (stored) {
+      // Immediately use cached user — no loading flash
+      setUser(stored);
+      setLoading(false);
+      // Silently re-validate in background (don't block UI)
+      refreshUser({ silent: true });
+    } else {
+      refreshUser();
+    }
   }, [refreshUser]);
 
   const login = useCallback(async (username, password, options = {}) => {

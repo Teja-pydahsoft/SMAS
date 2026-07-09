@@ -83,35 +83,34 @@ export default function CreateRolePage() {
         <h3 className="section-title">1. Role Details</h3>
         <p className="section-desc">Define the role name and description</p>
 
-        <div className="form-group">
-          <label>Role Name <span style={{ color: 'var(--danger)' }}>*</span></label>
-          <input
-            value={roleName}
-            onChange={(e) => handleRoleNameChange(e.target.value)}
-            placeholder="e.g. Student, Staff, Visitor, Labour"
-          />
-        </div>
-        <div className="form-group">
-          <label>Role Description</label>
-          <input
-            value={roleDescription}
-            onChange={(e) => setRoleDescription(e.target.value)}
-            placeholder="Optional description for this role"
-          />
-        </div>
-
-        <div className="form-group">
-          <label className="checkbox-option">
+        <div className="role-details-grid">
+          <div className="form-group">
+            <label>Role Name <span style={{ color: 'var(--danger)' }}>*</span></label>
             <input
-              type="checkbox"
-              checked={isShiftBased}
-              onChange={(e) => setIsShiftBased(e.target.checked)}
+              value={roleName}
+              onChange={(e) => handleRoleNameChange(e.target.value)}
+              placeholder="e.g. Student, Staff, Visitor, Labour"
             />
-            <span>Shift breakdown required for this role</span>
-          </label>
-          <p className="field-hint">
-            When enabled, users with this role must select a shift at check-in time.
-          </p>
+          </div>
+          <div className="form-group">
+            <label>Role Description</label>
+            <input
+              value={roleDescription}
+              onChange={(e) => setRoleDescription(e.target.value)}
+              placeholder="Optional description for this role"
+            />
+          </div>
+          <div className="form-group">
+            <label>Shift Breakdown Selection</label>
+            <label className="checkbox-option">
+              <input
+                type="checkbox"
+                checked={isShiftBased}
+                onChange={(e) => setIsShiftBased(e.target.checked)}
+              />
+              <span>Shift breakdown required for this role</span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -119,21 +118,23 @@ export default function CreateRolePage() {
         <h3 className="section-title">2. Registration Form</h3>
         <p className="section-desc">Design the dynamic registration form for this role</p>
 
-        <div className="form-group">
-          <label>Form Title</label>
-          <input
-            value={formTitle}
-            onChange={(e) => setFormTitle(e.target.value)}
-            placeholder="e.g. Staff Registration"
-          />
-        </div>
-        <div className="form-group">
-          <label>Form Description</label>
-          <input
-            value={formDescription}
-            onChange={(e) => setFormDescription(e.target.value)}
-            placeholder="Optional form description"
-          />
+        <div className="form-two-col-grid">
+          <div className="form-group">
+            <label>Form Title</label>
+            <input
+              value={formTitle}
+              onChange={(e) => setFormTitle(e.target.value)}
+              placeholder="e.g. Staff Registration"
+            />
+          </div>
+          <div className="form-group">
+            <label>Form Description</label>
+            <input
+              value={formDescription}
+              onChange={(e) => setFormDescription(e.target.value)}
+              placeholder="Optional form description"
+            />
+          </div>
         </div>
 
         <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>Form Fields</h4>

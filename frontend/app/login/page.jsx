@@ -177,7 +177,37 @@ function gateSelectionLabel(session) {
   return eventActionLabel('gate', session.eventType);
 }
 
-/* ── Main login form ────────────────────────────────────────── */
+/* ── Spinner dots animation ─────────────────────────────────── */
+function LoadingDots() {
+  return (
+    <span className="login-loading-dots" aria-hidden>
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
+/* ── Animated submit button state ───────────────────────────── */
+function SubmitButton({ submitting, step }) {
+  return (
+    <button type="submit" className={`btn-primary login-submit${submitting ? ' login-submit--loading' : ''}`} disabled={submitting}>
+      {submitting ? (
+        <span className="login-submit__inner">
+          <span className="login-spinner" aria-hidden>
+            <span /><span /><span /><span />
+          </span>
+          <span>{step === 'username' ? 'Checking…' : 'Signing in…'}</span>
+        </span>
+      ) : (
+        <span className="login-submit__inner">
+          <span>{step === 'username' ? 'Continue' : 'Sign In'}</span>
+          <span className="login-submit__arrow">{step === 'username' ? '→' : '🔓'}</span>
+        </span>
+      )}
+    </button>
+  );
+}
 function LoginForm() {
   const router = useRouter();
   const { login, user, loading: authLoading } = useAuth();
@@ -309,7 +339,7 @@ function LoginForm() {
 
       {/* ── Right form panel ── */}
       <div className="login-form-panel">
-        <div className="login-card">
+        <div className={`login-card${submitting ? ' login-card--loading' : ''}`}>
           {/* Brand */}
           <div className="login-brand">
             <span className="brand-icon">S</span>
@@ -408,13 +438,7 @@ function LoginForm() {
               </p>
             )}
 
-            <button type="submit" className="btn-primary login-submit" disabled={submitting}>
-              {submitting
-                ? 'Please wait…'
-                : step === 'username'
-                  ? 'Continue →'
-                  : 'Sign In'}
-            </button>
+            <SubmitButton submitting={submitting} step={step} />
           </form>
 
 

@@ -92,6 +92,7 @@ export default function RoleFormBuilderPage() {
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <h3 className="section-title">Role Settings</h3>
           <div className="form-group">
+            <label>Shift Breakdown Selection</label>
             <label className="checkbox-option">
               <input
                 type="checkbox"
@@ -100,21 +101,20 @@ export default function RoleFormBuilderPage() {
               />
               <span>Shift breakdown required for this role</span>
             </label>
-            <p className="field-hint">
-              When enabled, users with this role must select a shift at check-in time.
-            </p>
           </div>
         </div>
 
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <h3 className="section-title">Form Settings</h3>
-          <div className="form-group">
-            <label>Form Title</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Description</label>
-            <input value={description} onChange={(e) => setDescription(e.target.value)} />
+          <div className="form-two-col-grid">
+            <div className="form-group">
+              <label>Form Title</label>
+              <input value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
           </div>
         </div>
 

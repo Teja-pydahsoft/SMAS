@@ -1,4 +1,5 @@
 const BASE = '/api';
+const AUTH_TIMEOUT_MS = 12_000; // 12 s hard cap for auth requests on hosted
 
 function getAuthHeaders(extra = {}) {
   if (typeof window === 'undefined') return extra;
@@ -7,34 +8,57 @@ function getAuthHeaders(extra = {}) {
   return { ...extra, Authorization: `Bearer ${token}` };
 }
 
+function withTimeout(ms) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  return { signal: ctrl.signal, clear: () => clearTimeout(id) };
+}
+
 async function request(path, options = {}) {
   const isFormData = options.body instanceof FormData;
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: getAuthHeaders(
-      isFormData ? {} : { 'Content-Type': 'application/json', ...(options.headers || {}) }
-    ),
-  });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/login')) {
-      const isPublicVerify = path.startsWith('/passes/verify/');
-      if (!isPublicVerify) {
-        localStorage.removeItem('smas_token');
-        localStorage.removeItem('smas_user');
-        document.cookie = 'smas_token=; path=/; max-age=0';
-        if (!window.location.pathname.startsWith('/login')) {
-          window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+  // Apply a timeout for auth endpoints to avoid indefinite hangs on hosted cold-starts
+  const isAuthPath = path.startsWith('/auth/');
+  const timeout = isAuthPath ? withTimeout(AUTH_TIMEOUT_MS) : null;
+
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      ...options,
+      signal: timeout?.signal ?? options.signal ?? undefined,
+      headers: getAuthHeaders(
+        isFormData ? {} : { 'Content-Type': 'application/json', ...(options.headers || {}) }
+      ),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/login')) {
+        const isPublicVerify = path.startsWith('/passes/verify/');
+        if (!isPublicVerify) {
+          localStorage.removeItem('smas_token');
+          localStorage.removeItem('smas_user');
+          document.cookie = 'smas_token=; path=/; max-age=0';
+          if (!window.location.pathname.startsWith('/login')) {
+            window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+          }
         }
       }
+      const err = new Error(data.message || data.error || data.detail || `Request failed: ${res.status}`);
+      err.status = res.status;
+      err.data = data;
+      throw err;
     }
-    const err = new Error(data.message || data.error || data.detail || `Request failed: ${res.status}`);
-    err.status = res.status;
-    err.data = data;
+    return data;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error('Request timed out. Please check your connection and try again.');
+      timeoutErr.status = 408;
+      throw timeoutErr;
+    }
     throw err;
+  } finally {
+    timeout?.clear();
   }
-  return data;
 }
 
 export const api = {

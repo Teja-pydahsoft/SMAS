@@ -41,5 +41,8 @@
 /* 10. Login page */
 @import '../styles/design-system/login.css';
 
-/* 11. Responsive (must be last) */
+/* 11. Bot / session loader */
+@import '../styles/design-system/loader.css';
+
+/* 12. Responsive (must be last) */
 @import '../styles/design-system/responsive.css';

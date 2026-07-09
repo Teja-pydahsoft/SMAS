@@ -9,6 +9,7 @@ import { getPostLoginRoute } from '@/lib/auth/routing';
 import { getToken } from '@/lib/auth/session';
 import { buildEntryExitUrl, eventActionLabel } from '@/lib/entryExit';
 import { getGateSession, normalizeGateSession, setGateSession } from '@/lib/gateSession';
+import BotLoader from '@/components/BotLoader';
 
 /* ── Icons ──────────────────────────────────────────────────── */
 function EyeIcon({ open }) {
@@ -450,7 +451,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<p className="login-loading">Loading…</p>}>
+    <Suspense fallback={<BotLoader message="Preparing login…" />}>
       <LoginForm />
     </Suspense>
   );

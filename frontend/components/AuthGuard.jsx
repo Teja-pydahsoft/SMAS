@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { getToken } from '@/lib/auth/session';
+import BotLoader from '@/components/BotLoader';
 
 const PUBLIC_PATHS = ['/login', '/registrations/register', '/register', '/pass/verify'];
 
@@ -29,7 +30,7 @@ export default function AuthGuard({ children }) {
   if (isPublic) return children;
 
   if (loading || (!user && getToken())) {
-    return <p style={{ color: 'var(--text-muted)', padding: '2rem' }}>Loading session...</p>;
+    return <BotLoader message="Loading session…" />;
   }
 
   if (!user) return null;

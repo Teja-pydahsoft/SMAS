@@ -27,9 +27,9 @@ body {
   line-height: 1.6;
   background: var(--surface-bg);
   background-image:
-    radial-gradient(ellipse at 10% 5%, rgba(37, 99, 235, 0.035) 0%, transparent 40%),
-    radial-gradient(ellipse at 90% 0%, rgba(59, 130, 246, 0.025) 0%, transparent 35%),
-    linear-gradient(180deg, #F5F7FB 0%, #F1F5F9 100%);
+    radial-gradient(ellipse at 10% 5%, rgba(78, 125, 99, 0.035) 0%, transparent 40%),
+    radial-gradient(ellipse at 90% 0%, rgba(125, 175, 148, 0.025) 0%, transparent 35%),
+    linear-gradient(180deg, #F5F7F5 0%, #EFF4F0 100%);
   overflow: hidden;
 }
 

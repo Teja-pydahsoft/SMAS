@@ -1,17 +1,18 @@
 import { hasAssignedEntryExitScope } from '@/lib/auth/routing';
 
 export const APP_NAV_ITEMS = [
-  { path: '/', label: 'Dashboard', icon: 'dashboard', module: null },
-  { path: '/access-scope', label: 'Gate Access', icon: 'gateAccess', module: 'gate', gateOnly: true },
-  { path: '/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate' },
-  { path: '/roles', label: 'Roles', icon: 'roles', module: 'registration_roles' },
-  { path: '/registrations', label: 'Registrations', icon: 'registrations', module: 'registrations' },
+  { path: '/', label: 'Dashboard', icon: 'dashboard', module: null, section: 'GENERAL' },
+  { path: '/access-scope', label: 'Gate Access', icon: 'gateAccess', module: 'gate', gateOnly: true, section: 'GENERAL' },
+  { path: '/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate', section: 'GENERAL' },
+  { path: '/roles', label: 'Roles', icon: 'roles', module: 'registration_roles', section: 'MANAGEMENT' },
+  { path: '/registrations', label: 'Registrations', icon: 'registrations', module: 'registrations', section: 'MANAGEMENT' },
   {
     path: '/organization',
     label: 'Organization',
     icon: 'organization',
     module: 'divisions',
     altModule: 'departments',
+    section: 'MANAGEMENT',
     children: [
       { path: '/organization?tab=divisions', label: 'Divisions', module: 'divisions' },
       { path: '/organization?tab=departments', label: 'Departments', module: 'departments' },
@@ -23,6 +24,7 @@ export const APP_NAV_ITEMS = [
     label: 'Reports',
     icon: 'reports',
     module: 'reports',
+    section: 'MANAGEMENT',
     children: [
       { path: '/reports?tab=today', label: "Today's Activity", module: 'reports' },
       { path: '/reports?tab=history', label: 'Attendance History', module: 'reports' },
@@ -36,6 +38,7 @@ export const APP_NAV_ITEMS = [
     icon: 'system',
     module: 'system_users',
     altModule: 'system_roles',
+    section: 'SETTINGS',
     children: [
       { path: '/system/roles/manage', label: 'Manage Roles', module: 'system_roles' },
       { path: '/system/users/manage', label: 'Manage Users', module: 'system_users' },

@@ -105,7 +105,7 @@
 
 .admin-topnav__search:focus-within {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(78, 125, 99, 0.1);
 }
 
 .admin-topnav__search input {
@@ -304,9 +304,9 @@
   padding: 1.5rem 1rem 2.5rem;
   background: var(--surface-bg);
   background-image:
-    radial-gradient(circle at 10% 10%, rgba(59, 130, 246, 0.06), transparent 32%),
-    radial-gradient(circle at 90% 0%, rgba(37, 99, 235, 0.04), transparent 28%),
-    linear-gradient(180deg, #F5F7FB 0%, #EEF2F7 100%);
+    radial-gradient(circle at 10% 10%, rgba(78, 125, 99, 0.06), transparent 32%),
+    radial-gradient(circle at 90% 0%, rgba(78, 125, 99, 0.04), transparent 28%),
+    linear-gradient(180deg, #F5F7F5 0%, #EFF4F0 100%);
 }
 
 .gate-landing {

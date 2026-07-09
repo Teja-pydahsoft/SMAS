@@ -28,7 +28,7 @@
   justify-content: center;
   align-items: center;
   padding: 2rem 5rem 2rem 3rem;
-  background: linear-gradient(135deg, #1e40af 0%, #2563eb 45%, #3b82f6 100%);
+  background: linear-gradient(135deg, #2F4F3E 0%, #4E7D63 45%, #7DAF94 100%);
   overflow: hidden;
 }
 
@@ -56,14 +56,14 @@
   height: 320px;
   top: -80px;
   right: 60px;
-  background: radial-gradient(circle, rgba(96, 165, 250, 0.35) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(125, 175, 148, 0.35) 0%, transparent 70%);
 }
 .login-hero__orb--2 {
   width: 200px;
   height: 200px;
   bottom: 40px;
   left: -50px;
-  background: radial-gradient(circle, rgba(30, 64, 175, 0.5) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(47, 79, 62, 0.5) 0%, transparent 70%);
 }
 .login-hero__orb--3 {
   width: 140px;
@@ -71,7 +71,7 @@
   top: 50%;
   right: 110px;
   transform: translateY(-50%);
-  background: radial-gradient(circle, rgba(147, 197, 253, 0.25) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(141, 192, 165, 0.25) 0%, transparent 70%);
 }
 
 /* Star particles */
@@ -122,7 +122,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #93c5fd;
+  background: #a8d5b8;
   animation: adminPulse 2s ease-in-out infinite;
 }
 
@@ -136,7 +136,7 @@
 }
 
 .login-hero__title span {
-  color: #93c5fd;
+  color: #a8d5b8;
 }
 
 .login-hero__subtitle {
@@ -275,7 +275,7 @@
 .login-steps__item--active {
   color: var(--color-primary);
   background: var(--color-primary-light);
-  border-color: rgba(37, 99, 235, 0.2);
+  border-color: rgba(78, 125, 99, 0.2);
 }
 
 .login-steps__item--done {
@@ -579,7 +579,7 @@
   height: 3px;
   width: 0;
   border-radius: 2px 2px 0 0;
-  background: linear-gradient(90deg, var(--color-primary), #60a5fa);
+  background: linear-gradient(90deg, var(--color-primary), #7DAF94);
   transition: width 0.3s ease;
   opacity: 0;
 }

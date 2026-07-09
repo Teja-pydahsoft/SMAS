@@ -56,7 +56,9 @@ function NavGroup({ item, collapsed, pathname, searchParams }) {
         title={item.label}
         onClick={() => setOpen((o) => !o)}
       >
-        <AdminIcon name={item.icon} className="admin-icon admin-sidebar__icon" />
+        <span className="admin-sidebar__icon-wrap">
+          <AdminIcon name={item.icon} className="admin-icon admin-sidebar__icon" />
+        </span>
       </button>
     );
   }
@@ -69,8 +71,10 @@ function NavGroup({ item, collapsed, pathname, searchParams }) {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
-        <AdminIcon name={item.icon} className="admin-icon admin-sidebar__icon" />
-        <span>{item.label}</span>
+        <span className="admin-sidebar__icon-wrap">
+          <AdminIcon name={item.icon} className="admin-icon admin-sidebar__icon" />
+        </span>
+        <span className="nav-label">{item.label}</span>
         <ChevronIcon open={open} />
       </button>
 
@@ -154,70 +158,98 @@ function AppSidebarInner({ user, can, logout, gateSessionUrl }) {
               <span>Smart Access Management</span>
             </div>
           )}
+          <button
+            type="button"
+            className="admin-sidebar__collapse"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              {collapsed ? <polyline points="9 18 15 12 9 6" /> : <polyline points="15 18 9 12 15 6" />}
+            </svg>
+          </button>
         </div>
 
         <nav className="admin-sidebar__nav">
-          {visibleNavItems.map((item) => {
-            if (item.children?.length) {
-              const visibleChildren = item.children.filter((child) =>
-                !child.module || can(child.module, 'read')
-              );
-              if (!visibleChildren.length) return null;
-              return (
-                <NavGroup
-                  key={item.path + item.label}
-                  item={{ ...item, children: visibleChildren }}
-                  collapsed={collapsed}
-                  pathname={pathname}
-                  searchParams={searchParams}
-                />
-              );
-            }
+          {(() => {
+            let lastSection = null;
+            return visibleNavItems.map((item) => {
+              const showLabel = !collapsed && item.section && item.section !== lastSection;
+              if (showLabel) lastSection = item.section;
 
-            const href = item.path === '/entry-exit' && gateSessionUrl ? gateSessionUrl : item.path;
-            const active = isPathActive(pathname, searchParams, item.path);
-            return (
-              <Link
-                key={item.path}
-                href={href}
-                className={`admin-sidebar__link ${active ? 'admin-sidebar__link--active' : ''}`}
-                title={collapsed ? item.label : undefined}
-              >
-                <AdminIcon name={item.icon} className="admin-icon admin-sidebar__icon" />
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
-            );
-          })}
+              if (item.children?.length) {
+                const visibleChildren = item.children.filter((child) =>
+                  !child.module || can(child.module, 'read')
+                );
+                if (!visibleChildren.length) return null;
+                return (
+                  <div key={item.path + item.label}>
+                    {showLabel && (
+                      <div className="admin-sidebar__section-label">{item.section}</div>
+                    )}
+                    <NavGroup
+                      item={{ ...item, children: visibleChildren }}
+                      collapsed={collapsed}
+                      pathname={pathname}
+                      searchParams={searchParams}
+                    />
+                  </div>
+                );
+              }
+
+              const href = item.path === '/entry-exit' && gateSessionUrl ? gateSessionUrl : item.path;
+              const active = isPathActive(pathname, searchParams, item.path);
+              return (
+                <div key={item.path}>
+                  {showLabel && (
+                    <div className="admin-sidebar__section-label">{item.section}</div>
+                  )}
+                  <Link
+                    href={href}
+                    className={`admin-sidebar__link ${active ? 'admin-sidebar__link--active' : ''}`}
+                    title={collapsed ? item.label : undefined}
+                  >
+                    <span className="admin-sidebar__icon-wrap">
+                      <AdminIcon name={item.icon} className="admin-icon admin-sidebar__icon" />
+                    </span>
+                    {!collapsed && <span className="nav-label">{item.label}</span>}
+                  </Link>
+                </div>
+              );
+            });
+          })()}
         </nav>
 
         <div className="admin-sidebar__footer">
+          {!collapsed && user && (
+            <div className="admin-sidebar__profile-card">
+              <div className="admin-sidebar__profile-avatar">
+                {(user.displayName || 'U').charAt(0).toUpperCase()}
+                <span className="admin-sidebar__online-dot" aria-hidden="true" />
+              </div>
+              <div className="admin-sidebar__profile-info">
+                <strong>{user.displayName}</strong>
+                <span>{roleLabel}</span>
+                <span className="admin-sidebar__profile-status">
+                  <span className="admin-sidebar__status-dot" aria-hidden="true" />
+                  Online
+                </span>
+              </div>
+            </div>
+          )}
           <button
             type="button"
-            className="admin-sidebar__link admin-sidebar__logout"
+            className="admin-sidebar__logout"
             onClick={logout}
             title={collapsed ? 'Sign Out' : undefined}
           >
-            <AdminIcon name="logout" className="admin-icon admin-sidebar__icon" />
-            {!collapsed && <span>Sign Out</span>}
+            <span className="admin-sidebar__icon-wrap admin-sidebar__icon-wrap--logout">
+              <AdminIcon name="logout" className="admin-icon admin-sidebar__icon" />
+            </span>
+            {!collapsed && <span className="nav-label">Sign Out</span>}
           </button>
-          {!collapsed && user && (
-            <div className="admin-sidebar__user">
-              <strong>{user.displayName}</strong>
-              <span>{roleLabel}</span>
-            </div>
-          )}
         </div>
 
-        <button
-          type="button"
-          className="admin-sidebar__collapse"
-          onClick={toggleCollapsed}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            {collapsed ? <polyline points="9 18 15 12 9 6" /> : <polyline points="15 18 9 12 15 6" />}
-          </svg>
-        </button>
       </aside>
     </>
   );

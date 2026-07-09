@@ -44,15 +44,15 @@ function RocketIllustration() {
       {/* Rocket body */}
       <ellipse cx="130" cy="180" rx="28" ry="65" fill="url(#rocketBody)" />
       {/* Nose */}
-      <path d="M102 155 Q130 90 158 155Z" fill="#E0F2FE" />
+      <path d="M102 155 Q130 90 158 155Z" fill="#DCE9E2" />
       {/* Window */}
       <circle cx="130" cy="170" r="12" fill="#fff" opacity="0.9" />
-      <circle cx="130" cy="170" r="8" fill="#93C5FD" />
+      <circle cx="130" cy="170" r="8" fill="#7DAF94" />
       <circle cx="127" cy="167" r="3" fill="#fff" opacity="0.7" />
       {/* Left fin */}
-      <path d="M102 215 Q88 240 100 245 L102 230Z" fill="#60A5FA" />
+      <path d="M102 215 Q88 240 100 245 L102 230Z" fill="#4E7D63" />
       {/* Right fin */}
-      <path d="M158 215 Q172 240 160 245 L158 230Z" fill="#60A5FA" />
+      <path d="M158 215 Q172 240 160 245 L158 230Z" fill="#4E7D63" />
       {/* Exhaust outer */}
       <ellipse cx="130" cy="252" rx="18" ry="8" fill="rgba(251,191,36,0.5)" />
       {/* Exhaust flame */}
@@ -61,11 +61,11 @@ function RocketIllustration() {
       <path d="M122 248 Q127 278 130 292 Q133 278 138 248Z" fill="url(#flameInner)" />
 
       {/* Small planet top right */}
-      <circle cx="210" cy="80" r="28" fill="rgba(147,197,253,0.3)" />
-      <circle cx="210" cy="80" r="20" fill="rgba(147,197,253,0.2)" />
+      <circle cx="210" cy="80" r="28" fill="rgba(125,175,148,0.3)" />
+      <circle cx="210" cy="80" r="20" fill="rgba(125,175,148,0.2)" />
 
       {/* Small planet bottom left */}
-      <circle cx="48" cy="290" r="18" fill="rgba(96,165,250,0.25)" />
+      <circle cx="48" cy="290" r="18" fill="rgba(78,125,99,0.25)" />
 
       {/* Stars */}
       <circle cx="60" cy="60" r="2" fill="white" opacity="0.7" />
@@ -77,8 +77,8 @@ function RocketIllustration() {
 
       <defs>
         <linearGradient id="rocketBody" x1="102" y1="115" x2="158" y2="245" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#F1F5F9" />
-          <stop offset="100%" stopColor="#CBD5E1" />
+          <stop offset="0%" stopColor="#EFF4F0" />
+          <stop offset="100%" stopColor="#C4D0C7" />
         </linearGradient>
         <linearGradient id="flame" x1="130" y1="248" x2="130" y2="310" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#FBBF24" />

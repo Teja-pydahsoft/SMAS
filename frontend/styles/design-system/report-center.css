@@ -25,8 +25,8 @@
   width: 40px;
   height: 40px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, #DBEAFE, #EFF6FF);
-  border: 1px solid rgba(37, 99, 235, 0.12);
+  background: linear-gradient(135deg, #DCE9E2, #EFF4F0);
+  border: 1px solid rgba(78, 125, 99, 0.12);
   display: grid;
   place-items: center;
   color: var(--color-primary);
@@ -121,11 +121,11 @@
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 
-.rc-summary-card--primary::before { background: linear-gradient(90deg, #3B82F6, #2563EB); }
+.rc-summary-card--primary::before { background: linear-gradient(90deg, #7DAF94, #4E7D63); }
 .rc-summary-card--success::before { background: linear-gradient(90deg, #34D399, #10B981); }
 .rc-summary-card--warning::before { background: linear-gradient(90deg, #FCD34D, #F59E0B); }
 .rc-summary-card--danger::before  { background: linear-gradient(90deg, #F87171, #EF4444); }
-.rc-summary-card--info::before    { background: linear-gradient(90deg, #60A5FA, #3B82F6); }
+.rc-summary-card--info::before    { background: linear-gradient(90deg, #a8d5b8, #4E7D63); }
 
 .rc-summary-card:hover {
   box-shadow: var(--shadow-lg);

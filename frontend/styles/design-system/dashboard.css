@@ -174,7 +174,7 @@
 }
 
 .admin-metric-card__icon--primary   { background: var(--color-primary-subtle); color: var(--color-primary); }
-.admin-metric-card__icon--secondary { background: rgba(96, 165, 250, 0.1);     color: var(--color-secondary); }
+.admin-metric-card__icon--secondary { background: rgba(125, 175, 148, 0.12);   color: var(--color-secondary); }
 .admin-metric-card__icon--accent    { background: var(--color-info-subtle);     color: var(--color-info); }
 .admin-metric-card__icon--success   { background: var(--color-success-subtle);  color: var(--color-success); }
 .admin-metric-card__icon--warning   { background: var(--color-warning-subtle);  color: var(--color-warning); }

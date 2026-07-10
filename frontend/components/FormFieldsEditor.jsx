@@ -29,6 +29,32 @@ export default function FormFieldsEditor({ fields, onChange }) {
     onChange(fields.map((f, i) => (i === index ? { ...f, [key]: value } : f)));
   }
 
+  function updateFieldType(index, type) {
+    if (type === 'select' && !(fields[index].options || []).length) {
+      onChange(
+        fields.map((f, i) => (i === index ? { ...f, type, options: [''] } : f))
+      );
+      return;
+    }
+    updateField(index, 'type', type);
+  }
+
+  function updateOption(fieldIndex, optionIndex, value) {
+    const options = [...(fields[fieldIndex].options || [])];
+    options[optionIndex] = value;
+    updateField(fieldIndex, 'options', options);
+  }
+
+  function addOption(fieldIndex) {
+    const options = [...(fields[fieldIndex].options || []), ''];
+    updateField(fieldIndex, 'options', options);
+  }
+
+  function removeOption(fieldIndex, optionIndex) {
+    const options = (fields[fieldIndex].options || []).filter((_, i) => i !== optionIndex);
+    updateField(fieldIndex, 'options', options);
+  }
+
   function addField() {
     onChange([...fields, { ...emptyFormField(fields.length), order: fields.length }]);
   }
@@ -58,7 +84,7 @@ export default function FormFieldsEditor({ fields, onChange }) {
             />
             <select
               value={field.type}
-              onChange={(e) => updateField(index, 'type', e.target.value)}
+              onChange={(e) => updateFieldType(index, e.target.value)}
               aria-label="Field type"
             >
               {FIELD_TYPES.map((t) => (
@@ -95,19 +121,38 @@ export default function FormFieldsEditor({ fields, onChange }) {
           </div>
 
           {field.type === 'select' && (
-            <div className="form-field-options">
-              <label className="form-field-options-label">Options (comma-separated)</label>
-              <input
-                value={(field.options || []).join(', ')}
-                onChange={(e) =>
-                  updateField(
-                    index,
-                    'options',
-                    e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                  )
-                }
-                placeholder="Option 1, Option 2"
-              />
+            <div className="form-field-options form-field-options--inline">
+              <label className="form-field-options-label">Options</label>
+              <div className="form-field-options-list">
+                {(field.options || []).map((opt, optIndex) => (
+                  <div key={`option-${index}-${optIndex}`} className="form-field-option-cell">
+                    <input
+                      value={opt}
+                      onChange={(e) => updateOption(index, optIndex, e.target.value)}
+                      placeholder={`Option ${optIndex + 1}`}
+                      aria-label={`Option ${optIndex + 1}`}
+                    />
+                    <button
+                      type="button"
+                      className="form-field-option-remove"
+                      onClick={() => removeOption(index, optIndex)}
+                      title="Remove option"
+                      aria-label="Remove option"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="form-field-option-add"
+                  onClick={() => addOption(index)}
+                  title="Add option"
+                  aria-label="Add option"
+                >
+                  +
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -127,6 +172,6 @@ export function normalizeFormFields(fields) {
       ...f,
       fieldId: f.fieldId?.startsWith('__draft__') ? undefined : f.fieldId,
       order: i,
-      options: f.type === 'select' ? f.options : [],
+      options: f.type === 'select' ? (f.options || []).map((s) => s.trim()).filter(Boolean) : [],
     }));
 }

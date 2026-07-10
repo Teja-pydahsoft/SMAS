@@ -278,12 +278,122 @@ input[type='radio']:focus {
 
 .form-field-options { padding: 0 0 0.75rem 0; }
 
+.form-field-options--inline {
+  padding-top: 4px;
+}
+
 .form-field-options-label {
   display: block;
   font-size: var(--text-11);
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 5px;
+}
+
+.form-field-options-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  align-items: stretch;
+  padding: 10px;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-secondary);
+}
+
+.form-field-option-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.form-field-option-cell input {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+  padding: 0.5rem 0.65rem;
+  font-size: var(--text-13);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition),
+    background var(--transition);
+}
+
+.form-field-option-cell input:hover:not(:focus) {
+  border-color: var(--border-strong);
+}
+
+.form-field-option-cell input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(78, 125, 99, 0.12);
+  background: var(--surface-base);
+}
+
+.form-field-option-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color var(--transition),
+    background var(--transition),
+    color var(--transition),
+    box-shadow var(--transition);
+}
+
+.form-field-option-remove:hover {
+  border-color: var(--color-danger);
+  background: var(--color-danger-light);
+  color: var(--color-danger);
+  box-shadow: none;
+}
+
+.form-field-option-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--color-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color var(--transition),
+    background var(--transition),
+    color var(--transition),
+    box-shadow var(--transition);
+}
+
+.form-field-option-add:hover {
+  border-color: var(--color-primary);
+  border-style: solid;
+  background: var(--color-primary-light);
+  color: var(--color-primary-hover);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ── Read-only banner ── */

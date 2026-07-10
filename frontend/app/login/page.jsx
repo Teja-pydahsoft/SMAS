@@ -347,6 +347,15 @@ function LoginForm() {
       {/* ── Right form panel ── */}
       <div className="login-form-panel">
         <div className={`login-card${submitting ? ' login-card--loading' : ''}`}>
+          {submitting && (
+            <div className="login-card__loader" role="status" aria-live="polite">
+              <BotLoader
+                compact
+                message={step === 'username' ? 'Connecting…' : 'Signing in…'}
+              />
+            </div>
+          )}
+
           {/* Brand */}
           <div className="login-brand">
             <span className="brand-icon">S</span>

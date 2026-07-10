@@ -328,6 +328,27 @@
   animation: botMessageFade 1.8s ease-in-out infinite;
 }
 
+/* Compact variant — used inside login card overlay */
+.bot-loader--compact {
+  min-height: 0;
+  width: 100%;
+  background: transparent;
+  gap: 0.5rem;
+  padding: 0;
+}
+
+.bot-loader--compact .bot-loader__scene {
+  width: 170px;
+  height: 170px;
+  transform: scale(0.72);
+  margin: -20px 0 -12px;
+}
+
+.bot-loader--compact .bot-loader__message {
+  font-size: var(--text-14);
+  margin: 0;
+}
+
 /* ════════════════════════════════
    KEYFRAMES
 ════════════════════════════════ */

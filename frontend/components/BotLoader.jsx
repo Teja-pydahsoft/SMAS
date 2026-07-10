@@ -4,9 +4,13 @@
  * BotLoader — full-screen friendly robot loading animation.
  * Used on the login page Suspense fallback and during session loading in AuthGuard.
  */
-export default function BotLoader({ message = 'Loading…' }) {
+export default function BotLoader({ message = 'Loading…', compact = false }) {
   return (
-    <div className="bot-loader" role="status" aria-label={message}>
+    <div
+      className={`bot-loader${compact ? ' bot-loader--compact' : ''}`}
+      role="status"
+      aria-label={message}
+    >
       <div className="bot-loader__scene">
         {/* Floating bubbles */}
         <div className="bot-loader__bubble bot-loader__bubble--chat-left" aria-hidden="true">

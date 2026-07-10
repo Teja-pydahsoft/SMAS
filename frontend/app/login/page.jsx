@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, warmBackend } from '@/lib/api/client';
+import { api, ensureBackendReady, warmBackend } from '@/lib/api/client';
 import { useAuth } from '@/components/AuthProvider';
 import GateScopePicker from '@/components/GateScopePicker';
 import { getPostLoginRoute } from '@/lib/auth/routing';
@@ -257,6 +257,7 @@ function LoginForm() {
     setSubmitting(true);
     setError('');
     try {
+      await ensureBackendReady();
       const result = await api.auth.precheck(username.trim());
       setDisplayName(result.displayName || username.trim());
 
@@ -288,6 +289,7 @@ function LoginForm() {
     const gateSession = pendingGateSession ? normalizeGateSession(pendingGateSession) : null;
 
     try {
+      await ensureBackendReady();
       const loggedInUser = await login(username.trim(), password, { keepGateSession: Boolean(gateSession) });
 
       if (gateSession) {

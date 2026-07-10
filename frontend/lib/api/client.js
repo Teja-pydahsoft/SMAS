@@ -1,9 +1,14 @@
 const BASE = '/api';
-// Render free tier can take 30–60 s to wake; retry instead of failing on the first hit.
-const AUTH_TIMEOUT_MS = 30_000;
-const AUTH_MAX_RETRIES = 4;
-const AUTH_RETRY_BASE_MS = 2_000;
+// Hosted backends can sleep; use fast pings + short retries so login feels responsive.
+const AUTH_TIMEOUT_MS = 25_000;
+const AUTH_MAX_RETRIES = 5;
+const AUTH_RETRY_BASE_MS = 350;
+const WARMUP_INTERVAL_MS = 350;
+const WARMUP_MAX_ATTEMPTS = 12;
 const TRANSIENT_STATUSES = new Set([404, 408, 429, 502, 503, 504]);
+
+let backendReady = false;
+let warmupPromise = null;
 
 function getAuthHeaders(extra = {}) {
   if (typeof window === 'undefined') return extra;
@@ -72,8 +77,51 @@ async function requestOnce(path, options = {}, { timeoutMs = null } = {}) {
   }
 }
 
+async function pingBackend(timeoutMs = 10_000) {
+  return requestOnce('/ping', {}, { timeoutMs });
+}
+
+async function runWarmup(options = {}) {
+  const maxAttempts = options.maxAttempts ?? WARMUP_MAX_ATTEMPTS;
+  const intervalMs = options.intervalMs ?? WARMUP_INTERVAL_MS;
+
+  await Promise.allSettled([
+    pingBackend().catch(() => {}),
+    sleep(150).then(() => pingBackend()).catch(() => {}),
+    sleep(400).then(() => pingBackend()).catch(() => {}),
+  ]);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      await pingBackend();
+      backendReady = true;
+      return true;
+    } catch {
+      if (attempt < maxAttempts - 1) {
+        await sleep(intervalMs);
+      }
+    }
+  }
+
+  return false;
+}
+
+/** Wait until the API responds (or give up after quick retries). */
+export async function ensureBackendReady(options = {}) {
+  if (backendReady) return true;
+
+  if (!warmupPromise) {
+    warmupPromise = runWarmup(options).finally(() => {
+      warmupPromise = null;
+    });
+  }
+
+  await warmupPromise;
+  return backendReady;
+}
+
 async function request(path, options = {}) {
-  const isAuthPath = path.startsWith('/auth/') || path === '/health';
+  const isAuthPath = path.startsWith('/auth/') || path === '/health' || path === '/ping';
   if (!isAuthPath) {
     return requestOnce(path, options);
   }
@@ -81,7 +129,9 @@ async function request(path, options = {}) {
   let lastErr;
   for (let attempt = 0; attempt < AUTH_MAX_RETRIES; attempt += 1) {
     try {
-      return await requestOnce(path, options, { timeoutMs: AUTH_TIMEOUT_MS });
+      const data = await requestOnce(path, options, { timeoutMs: AUTH_TIMEOUT_MS });
+      backendReady = true;
+      return data;
     } catch (err) {
       lastErr = err;
       const canRetry = attempt < AUTH_MAX_RETRIES - 1 && isTransientFailure(err);
@@ -98,10 +148,10 @@ async function request(path, options = {}) {
   throw lastErr;
 }
 
-/** Fire-and-forget ping to wake a sleeping Render backend before the user submits login. */
+/** Start waking a sleeping hosted backend as soon as the login page loads. */
 export function warmBackend() {
-  if (typeof window === 'undefined') return;
-  requestOnce('/health').catch(() => {});
+  if (typeof window === 'undefined' || backendReady) return;
+  return ensureBackendReady();
 }
 
 export const api = {

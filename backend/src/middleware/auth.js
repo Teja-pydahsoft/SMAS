@@ -42,6 +42,7 @@ const PUBLIC_API_ROUTES = [
   { method: 'POST', path: '/api/auth/login' },
   { method: 'POST', path: '/api/auth/precheck' },
   { method: 'GET',  path: '/api/health' },
+  { method: 'GET',  path: '/api/ping' },
   { method: 'GET',  prefix: '/api/passes/verify/' },
   { method: 'GET',  path: '/api/roles' },
   { method: 'GET',  prefix: '/api/forms/role/' },

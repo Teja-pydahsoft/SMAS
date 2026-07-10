@@ -54,6 +54,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadDir));
 
+// Instant wake-up probe for login — no DB or AI calls (used before auth on cold hosts).
+app.get('/api/ping', (req, res) => {
+  res.json({ ok: true });
+});
+
 app.get('/api/health', async (req, res) => {
   const aiOnline = await checkAiServerHealth();
   let faceIndex = null;

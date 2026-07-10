@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api/client';
+import { api, warmBackend } from '@/lib/api/client';
 import { useAuth } from '@/components/AuthProvider';
 import GateScopePicker from '@/components/GateScopePicker';
 import { getPostLoginRoute } from '@/lib/auth/routing';
@@ -198,7 +198,7 @@ function SubmitButton({ submitting, step }) {
           <span className="login-spinner" aria-hidden>
             <span /><span /><span /><span />
           </span>
-          <span>{step === 'username' ? 'Checking…' : 'Signing in…'}</span>
+          <span>{step === 'username' ? 'Connecting…' : 'Signing in…'}</span>
         </span>
       ) : (
         <span className="login-submit__inner">
@@ -223,6 +223,10 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    warmBackend();
+  }, []);
 
   useEffect(() => {
     if (authLoading) return;

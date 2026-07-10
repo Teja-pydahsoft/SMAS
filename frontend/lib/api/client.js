@@ -1,5 +1,9 @@
 const BASE = '/api';
-const AUTH_TIMEOUT_MS = 12_000; // 12 s hard cap for auth requests on hosted
+// Render free tier can take 30–60 s to wake; retry instead of failing on the first hit.
+const AUTH_TIMEOUT_MS = 30_000;
+const AUTH_MAX_RETRIES = 4;
+const AUTH_RETRY_BASE_MS = 2_000;
+const TRANSIENT_STATUSES = new Set([404, 408, 429, 502, 503, 504]);
 
 function getAuthHeaders(extra = {}) {
   if (typeof window === 'undefined') return extra;
@@ -14,12 +18,19 @@ function withTimeout(ms) {
   return { signal: ctrl.signal, clear: () => clearTimeout(id) };
 }
 
-async function request(path, options = {}) {
-  const isFormData = options.body instanceof FormData;
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  // Apply a timeout for auth endpoints to avoid indefinite hangs on hosted cold-starts
-  const isAuthPath = path.startsWith('/auth/');
-  const timeout = isAuthPath ? withTimeout(AUTH_TIMEOUT_MS) : null;
+function isTransientFailure(err) {
+  if (!err) return false;
+  if (err.name === 'AbortError' || err.name === 'TypeError') return true;
+  return TRANSIENT_STATUSES.has(err.status);
+}
+
+async function requestOnce(path, options = {}, { timeoutMs = null } = {}) {
+  const isFormData = options.body instanceof FormData;
+  const timeout = timeoutMs ? withTimeout(timeoutMs) : null;
 
   try {
     const res = await fetch(`${BASE}${path}`, {
@@ -59,6 +70,38 @@ async function request(path, options = {}) {
   } finally {
     timeout?.clear();
   }
+}
+
+async function request(path, options = {}) {
+  const isAuthPath = path.startsWith('/auth/') || path === '/health';
+  if (!isAuthPath) {
+    return requestOnce(path, options);
+  }
+
+  let lastErr;
+  for (let attempt = 0; attempt < AUTH_MAX_RETRIES; attempt += 1) {
+    try {
+      return await requestOnce(path, options, { timeoutMs: AUTH_TIMEOUT_MS });
+    } catch (err) {
+      lastErr = err;
+      const canRetry = attempt < AUTH_MAX_RETRIES - 1 && isTransientFailure(err);
+      if (!canRetry) break;
+      await sleep(AUTH_RETRY_BASE_MS * (attempt + 1));
+    }
+  }
+
+  if (isTransientFailure(lastErr)) {
+    const warmupErr = new Error('Server is waking up. Please wait a moment and try again.');
+    warmupErr.status = lastErr.status || 503;
+    throw warmupErr;
+  }
+  throw lastErr;
+}
+
+/** Fire-and-forget ping to wake a sleeping Render backend before the user submits login. */
+export function warmBackend() {
+  if (typeof window === 'undefined') return;
+  requestOnce('/health').catch(() => {});
 }
 
 export const api = {

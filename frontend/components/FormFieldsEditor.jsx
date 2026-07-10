@@ -1,6 +1,18 @@
 'use client';
 
-export const FIELD_TYPES = ['text', 'number', 'email', 'phone', 'date', 'select', 'textarea', 'checkbox'];
+export const FIELD_TYPES = ['text', 'number', 'email', 'phone', 'date', 'select', 'textarea', 'checkbox', 'media'];
+
+const FIELD_TYPE_LABELS = {
+  text: 'text',
+  number: 'number',
+  email: 'email',
+  phone: 'phone',
+  date: 'date',
+  select: 'select',
+  textarea: 'textarea',
+  checkbox: 'checkbox',
+  media: 'media upload',
+};
 
 export const emptyFormField = (order = 0) => ({
   fieldId: `__draft__${order}`,
@@ -50,7 +62,7 @@ export default function FormFieldsEditor({ fields, onChange }) {
               aria-label="Field type"
             >
               {FIELD_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>{FIELD_TYPE_LABELS[t] || t}</option>
               ))}
             </select>
             <select

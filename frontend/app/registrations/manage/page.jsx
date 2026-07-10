@@ -10,15 +10,6 @@ import { STATUS_BADGE, actionLabel, photoUrlFromPath } from '../shared';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
 
-function DetailsIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4M12 8h.01" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function PlusIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -28,36 +19,24 @@ function PlusIcon() {
   );
 }
 
-function NewRegistrationModal({ roles, onClose, onComplete }) {
-  const [flowKey, setFlowKey] = useState(0);
-
-  function handleRegistrationComplete(reg) {
-    onComplete?.(reg);
-  }
-
-  function handleRegisterAnother() {
-    setFlowKey((k) => k + 1);
-  }
-
+function RegistrationFlowModal({ title, subtitle, onClose, children, ariaLabel }) {
   return (
     <div
       className="pass-modal-overlay reg-details-overlay"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="New Registration"
+      aria-label={ariaLabel || title}
     >
       <div
-        className="reg-details-modal"
-        style={{ maxWidth: 860, width: '95vw' }}
+        className="reg-details-modal reg-details-modal--flow"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="reg-details-modal__header no-print">
           <div className="reg-details-modal__title-wrap">
             <div>
-              <h3 className="reg-details-modal__title">New Registration</h3>
-              <p className="reg-details-modal__sub">Select a role and complete the registration</p>
+              <h3 className="reg-details-modal__title">{title}</h3>
+              {subtitle && <p className="reg-details-modal__sub">{subtitle}</p>}
             </div>
           </div>
           <button
@@ -74,17 +53,66 @@ function NewRegistrationModal({ roles, onClose, onComplete }) {
           </button>
         </div>
 
-        <div className="reg-details-modal__body">
-          <RegistrationFlow
-            key={`new-modal-${flowKey}`}
-            roles={roles}
-            onComplete={handleRegistrationComplete}
-            onCancel={onClose}
-            onRegisterAnother={handleRegisterAnother}
-          />
-        </div>
+        <div className="reg-details-modal__body">{children}</div>
       </div>
     </div>
+  );
+}
+
+function NewRegistrationModal({ roles, onClose, onComplete }) {
+  const [flowKey, setFlowKey] = useState(0);
+
+  function handleRegistrationComplete(reg) {
+    onComplete?.(reg);
+  }
+
+  function handleRegisterAnother() {
+    setFlowKey((k) => k + 1);
+  }
+
+  return (
+    <RegistrationFlowModal
+      title="New Registration"
+      subtitle="Select a role and complete the registration"
+      onClose={onClose}
+      ariaLabel="New Registration"
+    >
+      <RegistrationFlow
+        key={`new-modal-${flowKey}`}
+        roles={roles}
+        onComplete={handleRegistrationComplete}
+        onCancel={onClose}
+        onRegisterAnother={handleRegisterAnother}
+        inModal
+      />
+    </RegistrationFlowModal>
+  );
+}
+
+function EditRegistrationModal({ registration, registrationId, onClose, onComplete }) {
+  const title = registration ? `${actionLabel(registration)} Details` : 'Edit Registration';
+  const subtitle = registration
+    ? `${registration.displayName || 'Unnamed'} · ${registration.roleId?.name || '—'}`
+    : 'Update registration information';
+
+  return (
+    <RegistrationFlowModal
+      title={title}
+      subtitle={subtitle}
+      onClose={onClose}
+      ariaLabel="Edit registration"
+    >
+      <RegistrationFlow
+        key={`edit-flow-${registrationId}`}
+        roleId={registration?.roleId?._id || registration?.roleId}
+        registrationId={registrationId}
+        onComplete={() => {
+          onComplete?.();
+        }}
+        onCancel={onClose}
+        inModal
+      />
+    </RegistrationFlowModal>
   );
 }
 
@@ -145,13 +173,13 @@ function ManageRegistrationsContent() {
     setDetailsRegistration(null);
     setEditingRegistrationId(reg._id);
     setFlowKey((k) => k + 1);
-    setTimeout(() => {
-      document.getElementById('registration-edit-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
   }
 
   function handleViewDetails(reg) {
     setDetailsRegistration(reg);
+    api.registrations.get(reg._id)
+      .then(setDetailsRegistration)
+      .catch((e) => setError(e.message));
   }
 
   async function handleDeleteRegistration(reg) {
@@ -170,6 +198,7 @@ function ManageRegistrationsContent() {
 
   function handleRegistrationComplete() {
     setShowNewRegistrationModal(false);
+    setEditingRegistrationId(null);
     loadRegistrations(filterRoleId);
   }
 
@@ -186,7 +215,7 @@ function ManageRegistrationsContent() {
 
   return (
     <>
-      <div className="card" style={{ marginBottom: editingRegistrationId ? '1.5rem' : 0 }}>
+      <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
           <div>
             <h3>All Registrations ({registrations.length})</h3>
@@ -294,12 +323,10 @@ function ManageRegistrationsContent() {
                       <td className="actions-cell">
                         <button
                           type="button"
-                          className="icon-btn details"
+                          className="btn-secondary btn-sm"
                           onClick={() => handleViewDetails(reg)}
-                          title="View details & registration pass"
-                          aria-label="View details and registration pass"
                         >
-                          <DetailsIcon />
+                          View Details
                         </button>
                         <WriteAccess module="registrations">
                           <button
@@ -328,15 +355,13 @@ function ManageRegistrationsContent() {
       </div>
 
       {canWrite && editingRegistrationId && (
-        <div id="registration-edit-panel" className="card" style={{ marginTop: '1.5rem' }}>
-          <RegistrationFlow
-            key={`edit-${flowKey}-${editingRegistrationId}`}
-            roleId={editingRegistration?.roleId?._id || editingRegistration?.roleId}
-            registrationId={editingRegistrationId}
-            onComplete={handleRegistrationComplete}
-            onCancel={handleCloseEdit}
-          />
-        </div>
+        <EditRegistrationModal
+          key={`edit-modal-${flowKey}-${editingRegistrationId}`}
+          registration={editingRegistration}
+          registrationId={editingRegistrationId}
+          onClose={handleCloseEdit}
+          onComplete={handleRegistrationComplete}
+        />
       )}
 
       {detailsRegistration && (

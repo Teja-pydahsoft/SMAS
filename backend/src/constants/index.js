@@ -1,4 +1,4 @@
-export const FIELD_TYPES = ['text', 'number', 'email', 'phone', 'date', 'select', 'textarea', 'checkbox'];
+export const FIELD_TYPES = ['text', 'number', 'email', 'phone', 'date', 'select', 'textarea', 'checkbox', 'media'];
 
 export const REGISTRATION_STAGES = {
   FORM: 'form',

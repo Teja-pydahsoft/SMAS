@@ -14,13 +14,15 @@ import {
   removeRegistrationFromFaceIndex,
 } from '../services/faceIndexService.js';
 import { createRegistrationPass } from '../services/passService.js';
-import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
+import { buildDisplayInfo, photoUrlFromPath, mediaUrlFromPath } from '../utils/displayInfo.js';
 import { PASS_TYPES } from '../constants/index.js';
-import { createMulter } from '../utils/storage.js';
+import { createMulter, createMediaMulter, uploadDir } from '../utils/storage.js';
 import {
   isCloudinaryEnabled,
   uploadToCloudinary,
+  uploadMediaToCloudinary,
   deleteFromCloudinary,
+  deleteMediaFromCloudinary,
   extractPublicId,
 } from '../services/cloudinaryService.js';
 
@@ -30,13 +32,57 @@ const upload = createMulter('registrations', (req, file) => {
   return `${req.params.id || uuidv4()}-${Date.now()}${path.extname(file.originalname) || '.jpg'}`;
 });
 
+const mediaUpload = createMediaMulter('registrations-media', (req, file) => {
+  const ext = path.extname(file.originalname) || '';
+  return `${req.params.id || uuidv4()}-${req.params.fieldId || 'media'}-${Date.now()}${ext}`;
+});
+
+function enrichRegistrationResponse(obj, fields = []) {
+  const display = buildDisplayInfo(obj.formData, fields);
+  return {
+    ...obj,
+    displayName: display.displayName,
+    displayPhone: display.displayPhone,
+    formDetails: display.details,
+    mediaDetails: display.mediaDetails,
+    hasMediaFields: display.hasMediaFields,
+    photoUrl: photoUrlFromPath(obj.photoPath),
+  };
+}
+
+function hasMediaValue(value) {
+  if (!value) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (typeof value === 'object') return Boolean(value.path || value.url);
+  return false;
+}
+
 function generateRegistrationCode() {
   return `SAMS-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
 
-function validateFormData(form, formData) {
+function validateFormData(form, formData, { skipMediaRequired = false } = {}) {
   for (const field of form.fields) {
-    if (field.required && (formData?.[field.fieldId] === undefined || formData[field.fieldId] === '')) {
+    if (!field.required) continue;
+    const value = formData?.[field.fieldId];
+    if (field.type === 'media') {
+      if (skipMediaRequired) continue;
+      if (!hasMediaValue(value)) {
+        return `Field "${field.label}" is required`;
+      }
+      continue;
+    }
+    if (value === undefined || value === '') {
+      return `Field "${field.label}" is required`;
+    }
+  }
+  return null;
+}
+
+function validateMediaComplete(form, formData) {
+  for (const field of form.fields) {
+    if (field.type !== 'media' || !field.required) continue;
+    if (!hasMediaValue(formData?.[field.fieldId])) {
       return `Field "${field.label}" is required`;
     }
   }
@@ -73,14 +119,10 @@ router.get(
     res.json(
       registrations.map((reg) => {
         const obj = reg.toObject();
-        const display = buildDisplayInfo(obj.formData, obj.formId?.fields || []);
+        const enriched = enrichRegistrationResponse(obj, obj.formId?.fields || []);
         const regId = reg._id.toString();
         return {
-          ...obj,
-          displayName: display.displayName,
-          displayPhone: display.displayPhone,
-          formDetails: display.details,
-          photoUrl: photoUrlFromPath(obj.photoPath),
+          ...enriched,
           hasRegistrationPass: passByRegistration.has(regId),
           passCode: passByRegistration.get(regId) || null,
         };
@@ -97,18 +139,14 @@ router.get(
       .populate('formId', 'fields');
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
     const obj = registration.toObject();
-    const display = buildDisplayInfo(obj.formData, obj.formId?.fields || []);
+    const enriched = enrichRegistrationResponse(obj, obj.formId?.fields || []);
     const pass = await Pass.findOne({
       registrationId: registration._id,
       passType: PASS_TYPES.REGISTRATION,
       isActive: true,
     }).select('passCode');
     res.json({
-      ...obj,
-      displayName: display.displayName,
-      displayPhone: display.displayPhone,
-      formDetails: display.details,
-      photoUrl: photoUrlFromPath(obj.photoPath),
+      ...enriched,
       hasRegistrationPass: Boolean(pass),
       passCode: pass?.passCode || null,
     });
@@ -260,7 +298,7 @@ router.post(
     const form = await RegistrationForm.findOne({ roleId, isActive: true });
     if (!form) return res.status(404).json({ error: 'No active registration form for this role' });
 
-    const validationError = validateFormData(form, formData);
+    const validationError = validateFormData(form, formData, { skipMediaRequired: true });
     if (validationError) return res.status(400).json({ error: validationError });
 
     const registration = await Registration.create({
@@ -283,7 +321,7 @@ router.put(
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
 
     const form = await RegistrationForm.findById(registration.formId);
-    const validationError = validateFormData(form, req.body.formData);
+    const validationError = validateFormData(form, req.body.formData, { skipMediaRequired: true });
     if (validationError) return res.status(400).json({ error: validationError });
 
     registration.formData = req.body.formData;
@@ -322,6 +360,10 @@ router.post(
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
 
     if (!req.file) return res.status(400).json({ error: 'Photo is required' });
+
+    const form = await RegistrationForm.findById(registration.formId);
+    const mediaError = validateMediaComplete(form, registration.formData);
+    if (mediaError) return res.status(400).json({ error: mediaError });
 
     const imageBuffer = req.file.buffer || fs.readFileSync(req.file.path);
     const { embedding, face_detected } = await extractFaceEmbedding(
@@ -387,6 +429,101 @@ router.post(
     res.json({
       registration: updated,
       photoUrl: photoUrlFromPath(photoUrl),
+    });
+  })
+);
+
+// Upload media/document for a dynamic form field
+router.post(
+  '/:id/media/:fieldId',
+  mediaUpload.single('file'),
+  asyncHandler(async (req, res) => {
+    const registration = await Registration.findById(req.params.id);
+    if (!registration) return res.status(404).json({ error: 'Registration not found' });
+
+    const form = await RegistrationForm.findById(registration.formId);
+    if (!form) return res.status(404).json({ error: 'Registration form not found' });
+
+    const field = form.fields.find((f) => f.fieldId === req.params.fieldId);
+    if (!field) return res.status(404).json({ error: 'Form field not found' });
+    if (field.type !== 'media') {
+      return res.status(400).json({ error: 'Field is not a media upload field' });
+    }
+
+    if (!req.file) return res.status(400).json({ error: 'File is required' });
+
+    const fileBuffer = req.file.buffer || fs.readFileSync(req.file.path);
+    const extension = path.extname(req.file.originalname) || '';
+    const originalName = req.file.originalname || `file${extension}`;
+
+    const existingMedia = registration.formData?.[field.fieldId];
+    if (existingMedia) {
+      const existingPath = typeof existingMedia === 'string' ? existingMedia : existingMedia.path;
+      if (existingPath) {
+        if (existingPath.includes('cloudinary.com')) {
+          const publicId = extractPublicId(existingPath);
+          const resourceType = typeof existingMedia === 'object' ? existingMedia.resourceType : 'image';
+          await deleteMediaFromCloudinary(publicId, resourceType);
+        } else if (fs.existsSync(existingPath)) {
+          fs.unlinkSync(existingPath);
+        }
+      }
+    }
+
+    let storedPath;
+    let resourceType = null;
+    if (isCloudinaryEnabled()) {
+      const filename = `${req.params.id}-${req.params.fieldId}-${Date.now()}${extension}`;
+      try {
+        const result = await uploadMediaToCloudinary(
+          fileBuffer,
+          'registrations-media',
+          filename
+        );
+        storedPath = result.url;
+        resourceType = result.resourceType;
+        if (req.file.path && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+      } catch (cloudErr) {
+        console.error('Cloudinary media upload failed, falling back to local:', cloudErr.message);
+        const localDir = path.join(uploadDir, 'registrations-media');
+        if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
+        const localName = `${req.params.id}-${req.params.fieldId}-${Date.now()}${extension}`;
+        const localPath = path.join(localDir, localName);
+        fs.writeFileSync(localPath, fileBuffer);
+        storedPath = localPath;
+      }
+    } else {
+      storedPath = req.file.path;
+    }
+
+    const publicUrl = storedPath.startsWith('http') ? storedPath : mediaUrlFromPath(storedPath);
+    const mediaValue = {
+      path: storedPath,
+      url: publicUrl || storedPath,
+      originalName,
+      mimetype: req.file.mimetype,
+      extension: extension.toLowerCase(),
+      size: req.file.size,
+      ...(resourceType ? { resourceType } : {}),
+    };
+
+    registration.formData = {
+      ...(registration.formData || {}),
+      [field.fieldId]: mediaValue,
+    };
+    await registration.save();
+
+    const updated = await Registration.findById(registration._id)
+      .populate('roleId', 'name slug')
+      .populate('formId', 'fields');
+    const obj = updated.toObject();
+    const enriched = enrichRegistrationResponse(obj, obj.formId?.fields || []);
+
+    res.json({
+      registration: enriched,
+      media: mediaValue,
     });
   })
 );

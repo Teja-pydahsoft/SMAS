@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api/client';
 import { clearGatePhotoForRegistration, loadGatePhotoForRegistration } from '@/lib/gateRegistration';
-import DynamicFormFields from '@/components/DynamicFormFields';
+import DynamicFormFields, { validateMediaFields } from '@/components/DynamicFormFields';
 import CameraCapture from '@/components/CameraCapture';
 import PassCard from '@/components/PassCard';
 
@@ -48,6 +48,7 @@ export default function RegistrationFlow({
   onCancel,
   onRegisterAnother,
   fromGate = false,
+  inModal = false,
 }) {
   const [selectedRoleId, setSelectedRoleId] = useState(initialRoleId || '');
 
@@ -58,6 +59,7 @@ export default function RegistrationFlow({
   const [form, setForm] = useState(null);
   const [registration, setRegistration] = useState(null);
   const [formData, setFormData] = useState({});
+  const [pendingMediaFiles, setPendingMediaFiles] = useState({});
   const [photoBlob, setPhotoBlob] = useState(null);
   const [gatePhotoLoaded, setGatePhotoLoaded] = useState(false);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
@@ -85,6 +87,7 @@ export default function RegistrationFlow({
     } else if (selectedRoleId) {
       setRegistration(null);
       setFormData({});
+      setPendingMediaFiles({});
       setStage('form');
       loadNew(selectedRoleId);
     } else {
@@ -139,6 +142,7 @@ export default function RegistrationFlow({
       const reg = await api.registrations.get(id);
       setRegistration(reg);
       setFormData(reg.formData || {});
+      setPendingMediaFiles({});
       setStage(resolveStage(reg));
 
       const roleRef = reg.roleId?._id || reg.roleId;
@@ -146,15 +150,6 @@ export default function RegistrationFlow({
       setRole(r);
       const f = await api.forms.getByRole(roleRef);
       setForm(f);
-
-      if (reg.status === 'verified') {
-        try {
-          const existingPass = await api.passes.getRegistrationPass(id);
-          setPass(existingPass);
-        } catch {
-          setPass(null);
-        }
-      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -162,10 +157,49 @@ export default function RegistrationFlow({
     }
   }
 
+  function handleMediaChange(fieldId, file) {
+    if (file) {
+      setPendingMediaFiles((prev) => ({ ...prev, [fieldId]: file }));
+      return;
+    }
+    setPendingMediaFiles((prev) => {
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+    setFormData((prev) => {
+      const next = { ...prev };
+      delete next[fieldId];
+      return next;
+    });
+  }
+
+  async function uploadPendingMedia(reg) {
+    let updated = reg;
+    const mediaFields = (form?.fields || []).filter((f) => f.type === 'media');
+    for (const field of mediaFields) {
+      const file = pendingMediaFiles[field.fieldId];
+      if (!file) continue;
+      const result = await api.registrations.uploadMedia(updated._id, field.fieldId, file);
+      updated = result.registration || updated;
+    }
+    if (mediaFields.some((f) => pendingMediaFiles[f.fieldId])) {
+      setPendingMediaFiles({});
+      setFormData(updated.formData || {});
+      setRegistration(updated);
+    }
+    return updated;
+  }
+
   async function submitForm(e) {
     e.preventDefault();
     if (!photoBlob && !registration?.photoPath) {
       setError('Please capture a photo before continuing');
+      return;
+    }
+    const mediaError = validateMediaFields(form?.fields || [], formData, pendingMediaFiles);
+    if (mediaError) {
+      setError(mediaError);
       return;
     }
     setLoading(true);
@@ -177,6 +211,7 @@ export default function RegistrationFlow({
       if (reg) {
         reg = await api.registrations.updateForm(reg._id, formData);
         setRegistration(reg);
+        reg = await uploadPendingMedia(reg);
         if (stage === 'edit') {
           setSuccess('Registration details updated successfully');
           onComplete?.(reg);
@@ -186,6 +221,7 @@ export default function RegistrationFlow({
       } else {
         reg = await api.registrations.create({ roleId, formData });
         setRegistration(reg);
+        reg = await uploadPendingMedia(reg);
       }
 
       if (photoBlob) {
@@ -304,10 +340,12 @@ export default function RegistrationFlow({
   const currentStageIndex = stage === 'edit' ? STAGES.length : STAGES.findIndex((s) => s.key === stage);
   const existingPhotoUrl = registration?.photoUrl || photoUrlFromPath(registration?.photoPath);
 
+  const showFlowHeader = !availableRoles && !inModal;
+  const useFlowLayout = stage === 'form' || stage === 'edit';
+
   return (
-    <div>
-      {/* Title + stage bar — only shown when not managed externally via availableRoles modal */}
-      {!availableRoles && (
+    <div className={inModal ? 'reg-flow-in-modal' : undefined}>
+      {showFlowHeader && (
         <>
           <div style={{ marginBottom: '1.25rem' }}>
             <h3 style={{ marginBottom: '0.25rem' }}>
@@ -336,51 +374,67 @@ export default function RegistrationFlow({
       )}
 
       {(stage === 'form' || stage === 'edit') && (
-        <form onSubmit={submitForm}>
-          <div className={stage === 'form' ? 'reg-flow-layout' : undefined}>
-            {/* Left: Camera */}
-            {stage === 'form' && (
+        <form onSubmit={submitForm} className="reg-flow-form">
+          <div className={useFlowLayout ? 'reg-flow-layout' : undefined}>
+            {(stage === 'form' || stage === 'edit') && (
               <div className="reg-flow-layout__camera">
-                <h4 className="reg-flow-section-title">Photo Capture</h4>
-                {fromGate && gatePhotoLoaded && photoBlob && (
-                  <div className="gate-result gate-result--not-found" style={{ marginBottom: '1rem' }}>
-                    <p className="gate-not-found__title">Gate photo loaded</p>
-                    <p className="gate-not-found__text">
-                      We saved the photo from the gate scan. You can use it below or retake a new one.
+                {stage === 'form' ? (
+                  <>
+                    <h4 className="reg-flow-section-title">Photo Capture</h4>
+                    {fromGate && gatePhotoLoaded && photoBlob && (
+                      <div className="gate-result gate-result--not-found" style={{ marginBottom: '1rem' }}>
+                        <p className="gate-not-found__title">Gate photo loaded</p>
+                        <p className="gate-not-found__text">
+                          We saved the photo from the gate scan. You can use it below or retake a new one.
+                        </p>
+                      </div>
+                    )}
+                    <p className="reg-flow-hint">
+                      Face will be processed by the AI server for gate access.
                     </p>
-                  </div>
-                )}
-                <p style={{ color: 'var(--text-muted)', marginBottom: '0.75rem', fontSize: '0.875rem' }}>
-                  Face will be processed by the AI server for gate access.
-                </p>
-                {photoPreviewUrl ? (
-                  <div className="reg-flow-layout__photo-preview">
-                    <img src={photoPreviewUrl} alt="Captured" />
-                    <div className="camera-actions">
-                      <button type="button" className="btn-secondary" onClick={() => setPhotoBlob(null)}>
-                        Retake Photo
-                      </button>
-                    </div>
-                  </div>
+                    {photoPreviewUrl ? (
+                      <div className="reg-flow-layout__photo-preview">
+                        <img src={photoPreviewUrl} alt="Captured" />
+                        <div className="camera-actions">
+                          <button type="button" className="btn-secondary" onClick={() => setPhotoBlob(null)}>
+                            Retake Photo
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <CameraCapture onCapture={setPhotoBlob} label="Capture Photo" />
+                    )}
+                    {existingPhotoUrl && isEditMode && !photoPreviewUrl && (
+                      <div className="reg-flow-current-photo">
+                        <label>Current Photo</label>
+                        <img src={existingPhotoUrl} alt="Current" className="reg-flow-edit-photo" />
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <CameraCapture onCapture={setPhotoBlob} label="Capture Photo" />
-                )}
-                {existingPhotoUrl && isEditMode && !photoPreviewUrl && (
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Current Photo</label>
-                    <img
-                      src={existingPhotoUrl}
-                      alt="Current"
-                      style={{ maxWidth: 200, borderRadius: 'var(--radius)', marginTop: '0.4rem', border: '1px solid var(--border)' }}
-                    />
-                  </div>
+                  <>
+                    <h4 className="reg-flow-section-title">Current Photo</h4>
+                    {existingPhotoUrl ? (
+                      <img src={existingPhotoUrl} alt="Registered" className="reg-flow-edit-photo" />
+                    ) : (
+                      <div className="reg-flow-edit-photo reg-flow-edit-photo--empty">No photo on file</div>
+                    )}
+                    <button
+                      type="button"
+                      className="btn-secondary reg-flow-update-photo-btn"
+                      onClick={() => setStage('form')}
+                    >
+                      Update Photo
+                    </button>
+                  </>
                 )}
               </div>
             )}
 
-            {/* Right: Form fields — role selector at top when availableRoles passed */}
-            <div className={stage === 'form' ? 'reg-flow-layout__fields' : undefined}>
-              {stage === 'form' && <h4 className="reg-flow-section-title">Registration Details</h4>}
+            <div className="reg-flow-layout__fields">
+              <h4 className="reg-flow-section-title">
+                {stage === 'edit' ? 'Edit Details' : 'Registration Details'}
+              </h4>
 
               {/* Role selector — only when availableRoles is provided (modal mode) */}
               {stage === 'form' && availableRoles && (
@@ -392,6 +446,7 @@ export default function RegistrationFlow({
                     onChange={(e) => {
                       setSelectedRoleId(e.target.value);
                       setFormData({});
+                      setPendingMediaFiles({});
                       setError('');
                     }}
                   >
@@ -404,7 +459,15 @@ export default function RegistrationFlow({
               )}
 
               {/* Form fields — only once a role is loaded */}
-              {form && <DynamicFormFields fields={form.fields} values={formData} onChange={setFormData} />}
+              {form && (
+                <DynamicFormFields
+                  fields={form.fields}
+                  values={formData}
+                  onChange={setFormData}
+                  pendingMediaFiles={pendingMediaFiles}
+                  onMediaChange={handleMediaChange}
+                />
+              )}
 
               {duplicateWarning && (
                 <div className="reg-duplicate-warning">
@@ -478,15 +541,10 @@ export default function RegistrationFlow({
               {error && <p className="error-msg">{error}</p>}
               {success && <p className="success-msg">{success}</p>}
               {!duplicateWarning && (
-                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                <div className="reg-flow-form__actions">
                   <button type="submit" className="btn-primary" disabled={loading}>
                     {loading ? 'Saving...' : stage === 'edit' ? 'Save Details' : 'Continue to Review'}
                   </button>
-                  {stage === 'edit' && (
-                    <button type="button" className="btn-secondary" onClick={() => setStage('form')}>
-                      Update Photo
-                    </button>
-                  )}
                   {onCancel && (
                     <button type="button" className="btn-secondary" onClick={onCancel}>
                       Close
@@ -497,44 +555,6 @@ export default function RegistrationFlow({
             </div>
           </div>
         </form>
-      )}
-
-      {stage === 'edit' && (
-        <>
-          {existingPhotoUrl && (
-            <div style={{ marginTop: '1.5rem' }}>
-              <label>Current Photo</label>
-              <img
-                src={existingPhotoUrl}
-                alt="Registered"
-                style={{ maxWidth: 240, borderRadius: 'var(--radius)', marginTop: '0.5rem', border: '1px solid var(--border)' }}
-              />
-            </div>
-          )}
-          {registration?.status === 'verified' && (
-            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border)' }}>
-              <h4 style={{ marginBottom: '0.75rem' }}>Registration Pass</h4>
-              {pass ? (
-                <PassCard pass={pass} />
-              ) : (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={async () => {
-                    try {
-                      const p = await api.passes.getRegistrationPass(registration._id);
-                      setPass(p);
-                    } catch (e) {
-                      setError(e.message);
-                    }
-                  }}
-                >
-                  Load Registration Pass
-                </button>
-              )}
-            </div>
-          )}
-        </>
       )}
 
       {stage === 'review' && registration && (

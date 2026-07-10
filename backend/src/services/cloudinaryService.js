@@ -37,14 +37,20 @@ export function isCloudinaryEnabled() {
  * @returns {Promise<{url: string, publicId: string}>}
  */
 export async function uploadToCloudinary(buffer, folder, filename = null) {
+  return uploadMediaToCloudinary(buffer, folder, filename);
+}
+
+/**
+ * Upload any file type (images, PDFs, documents) to Cloudinary.
+ */
+export async function uploadMediaToCloudinary(buffer, folder, filename = null) {
   return new Promise((resolve, reject) => {
     const options = {
       folder: `smas/${folder}`,
-      resource_type: 'image',
+      resource_type: 'auto',
     };
 
     if (filename) {
-      // Strip extension — public_id must not include a file extension
       options.public_id = filename.replace(/\.[^.]+$/, '');
     }
 
@@ -53,6 +59,7 @@ export async function uploadToCloudinary(buffer, folder, filename = null) {
       resolve({
         url: result.secure_url,
         publicId: result.public_id,
+        resourceType: result.resource_type || 'auto',
       });
     });
 
@@ -65,12 +72,27 @@ export async function uploadToCloudinary(buffer, folder, filename = null) {
  * @param {string} publicId - Cloudinary public_id (e.g., "smas/registrations/abc123")
  * @returns {Promise<void>}
  */
-export async function deleteFromCloudinary(publicId) {
+export async function deleteFromCloudinary(publicId, resourceType = 'image') {
   if (!publicId) return;
   try {
-    await cloudinary.uploader.destroy(publicId);
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
   } catch (err) {
     console.error('Failed to delete from Cloudinary:', err.message);
+  }
+}
+
+export async function deleteMediaFromCloudinary(publicId, resourceType = 'image') {
+  if (!publicId) return;
+  const types = [resourceType, 'image', 'raw', 'video'].filter(
+    (type, index, arr) => arr.indexOf(type) === index
+  );
+  for (const type of types) {
+    try {
+      const result = await cloudinary.uploader.destroy(publicId, { resource_type: type });
+      if (result.result === 'ok' || result.result === 'not found') return;
+    } catch {
+      // try next resource type
+    }
   }
 }
 

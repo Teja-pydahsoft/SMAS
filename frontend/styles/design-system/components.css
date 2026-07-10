@@ -1121,6 +1121,63 @@
   margin-bottom: 0.75rem;
 }
 
+.reg-flow-hint {
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+  font-size: var(--text-13);
+}
+
+.reg-flow-edit-photo {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  background: var(--surface-inset);
+}
+
+.reg-flow-edit-photo--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  color: var(--text-muted);
+  font-size: var(--text-12);
+}
+
+.reg-flow-current-photo label {
+  display: block;
+  font-size: var(--text-12);
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.reg-flow-update-photo-btn {
+  margin-top: 0.75rem;
+  width: 100%;
+  max-width: 220px;
+}
+
+.reg-flow-form__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+  padding-top: 0.25rem;
+}
+
+.reg-flow-in-modal .reg-flow-layout {
+  gap: 1.25rem;
+}
+
+.reg-flow-in-modal .reg-flow-form__actions {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 1rem;
+  margin-top: 1rem;
+}
+
 /* ── Registration duplicate warning ── */
 .reg-duplicate-warning {
   margin-top: 1rem;

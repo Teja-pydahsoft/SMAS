@@ -168,6 +168,11 @@ export const api = {
       form.append('photo', photoBlob, 'photo.jpg');
       return request(`/registrations/${id}/photo`, { method: 'POST', body: form });
     },
+    uploadMedia: (id, fieldId, file) => {
+      const form = new FormData();
+      form.append('file', file, file.name);
+      return request(`/registrations/${id}/media/${fieldId}`, { method: 'POST', body: form });
+    },
     checkDuplicate: ({ photoBlob, formData, roleId, excludeId } = {}) => {
       const form = new FormData();
       if (photoBlob) form.append('photo', photoBlob, 'photo.jpg');

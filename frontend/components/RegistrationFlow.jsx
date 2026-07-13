@@ -7,6 +7,12 @@ import { clearGatePhotoForRegistration, loadGatePhotoForRegistration } from '@/l
 import DynamicFormFields, { validateMediaFields } from '@/components/DynamicFormFields';
 import CameraCapture from '@/components/CameraCapture';
 import PassCard from '@/components/PassCard';
+import {
+  formatPayFrequency,
+  buildCombinedPayFrequencyOptions,
+  parsePayFrequencySelection,
+  serializePayFrequencySelection,
+} from '@/lib/payFrequency';
 
 const STAGES = [
   { key: 'form', label: '1. Details & Photo' },
@@ -59,6 +65,8 @@ export default function RegistrationFlow({
   const [form, setForm] = useState(null);
   const [registration, setRegistration] = useState(null);
   const [formData, setFormData] = useState({});
+  const [payFrequencySelection, setPayFrequencySelection] = useState('');
+  const [payAmount, setPayAmount] = useState('');
   const [pendingMediaFiles, setPendingMediaFiles] = useState({});
   const [photoBlob, setPhotoBlob] = useState(null);
   const [gatePhotoLoaded, setGatePhotoLoaded] = useState(false);
@@ -87,6 +95,8 @@ export default function RegistrationFlow({
     } else if (selectedRoleId) {
       setRegistration(null);
       setFormData({});
+      setPayFrequencySelection('');
+      setPayAmount('');
       setPendingMediaFiles({});
       setStage('form');
       loadNew(selectedRoleId);
@@ -142,6 +152,10 @@ export default function RegistrationFlow({
       const reg = await api.registrations.get(id);
       setRegistration(reg);
       setFormData(reg.formData || {});
+      setPayFrequencySelection(
+        serializePayFrequencySelection(reg.payFrequency, reg.customPayDays)
+      );
+      setPayAmount(reg.payAmount != null ? String(reg.payAmount) : '');
       setPendingMediaFiles({});
       setStage(resolveStage(reg));
 
@@ -202,14 +216,35 @@ export default function RegistrationFlow({
       setError(mediaError);
       return;
     }
+    if (role?.payFrequencies?.length) {
+      if (!payFrequencySelection) {
+        setError('Please select a pay frequency');
+        return;
+      }
+      const amount = Number(payAmount);
+      if (!Number.isFinite(amount) || amount < 0) {
+        setError('Please enter a valid pay amount');
+        return;
+      }
+    }
     setLoading(true);
     setError('');
     setSuccess('');
     setDuplicateWarning(null);
     try {
+      const { payFrequency, customPayDays } = parsePayFrequencySelection(payFrequencySelection);
+      const registrationPayload = {
+        formData,
+        payFrequency: role?.payFrequencies?.length ? payFrequency : undefined,
+        customPayDays:
+          role?.payFrequencies?.length && payFrequency === 'custom_days'
+            ? customPayDays
+            : undefined,
+        payAmount: role?.payFrequencies?.length ? Number(payAmount) : undefined,
+      };
       let reg = registration;
       if (reg) {
-        reg = await api.registrations.updateForm(reg._id, formData);
+        reg = await api.registrations.updateForm(reg._id, registrationPayload);
         setRegistration(reg);
         reg = await uploadPendingMedia(reg);
         if (stage === 'edit') {
@@ -219,7 +254,10 @@ export default function RegistrationFlow({
           return;
         }
       } else {
-        reg = await api.registrations.create({ roleId, formData });
+        reg = await api.registrations.create({
+          roleId,
+          ...registrationPayload,
+        });
         setRegistration(reg);
         reg = await uploadPendingMedia(reg);
       }
@@ -337,6 +375,11 @@ export default function RegistrationFlow({
     }
   }
 
+  const payFrequencyOptions = buildCombinedPayFrequencyOptions(
+    role?.payFrequencies || [],
+    role?.customPayDaysOptions || []
+  );
+  const showPayFrequency = payFrequencyOptions.length > 0;
   const currentStageIndex = stage === 'edit' ? STAGES.length : STAGES.findIndex((s) => s.key === stage);
   const existingPhotoUrl = registration?.photoUrl || photoUrlFromPath(registration?.photoPath);
 
@@ -446,6 +489,8 @@ export default function RegistrationFlow({
                     onChange={(e) => {
                       setSelectedRoleId(e.target.value);
                       setFormData({});
+                      setPayFrequencySelection('');
+                      setPayAmount('');
                       setPendingMediaFiles({});
                       setError('');
                     }}
@@ -459,6 +504,47 @@ export default function RegistrationFlow({
               )}
 
               {/* Form fields — only once a role is loaded */}
+              {form && showPayFrequency && (
+                <div className="reg-flow-pay-section">
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label htmlFor="reg-flow-pay-frequency">
+                      Pay Frequency <span style={{ color: 'var(--danger)' }}>*</span>
+                    </label>
+                    <select
+                      id="reg-flow-pay-frequency"
+                      value={payFrequencySelection}
+                      onChange={(e) => setPayFrequencySelection(e.target.value)}
+                    >
+                      <option value="">Choose pay frequency…</option>
+                      {payFrequencyOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {payFrequencySelection && (
+                    <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                      <label htmlFor="reg-flow-pay-amount">
+                        Pay Amount (per day) <span style={{ color: 'var(--danger)' }}>*</span>
+                      </label>
+                      <input
+                        id="reg-flow-pay-amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={payAmount}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        placeholder="Enter amount per present day"
+                      />
+                      <p className="field-hint" style={{ marginTop: '0.35rem', marginBottom: 0 }}>
+                        This amount is multiplied by present days on the attendance report.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {form && (
                 <DynamicFormFields
                   fields={form.fields}
@@ -559,6 +645,22 @@ export default function RegistrationFlow({
 
       {stage === 'review' && registration && (
         <div>
+          {showPayFrequency && (
+            <>
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label>Pay Frequency</label>
+                <p style={{ margin: 0 }}>
+                  {formatPayFrequency(registration.payFrequency, registration.customPayDays)}
+                </p>
+              </div>
+              {registration.payAmount != null && (
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label>Pay Amount (per day)</label>
+                  <p style={{ margin: 0 }}>{registration.payAmount}</p>
+                </div>
+              )}
+            </>
+          )}
           <DynamicFormFields fields={form.fields} values={registration.formData} onChange={() => {}} readOnly />
           {registration.photoPath && (
             <div style={{ marginTop: '1rem' }}>

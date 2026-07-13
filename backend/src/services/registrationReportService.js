@@ -9,6 +9,7 @@ import {
   getPassSessionState,
   todayDateString,
 } from './attendanceService.js';
+import { calculatePaymentSummary, formatPayFrequencyLabel } from '../utils/paymentCalculation.js';
 
 function logDateKey(date) {
   return new Date(date).toISOString().slice(0, 10);
@@ -394,6 +395,12 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
       dateTo,
       days,
       summary: summarizeAttendanceDays(days),
+      payment: calculatePaymentSummary({
+        payFrequency: registration.payFrequency,
+        customPayDays: registration.customPayDays,
+        payAmount: registration.payAmount,
+        days,
+      }),
     };
   }
 
@@ -430,6 +437,13 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
       totalScans: logs.length,
       divisionsVisited: divisionNames,
       lastScanAt: logs[0]?.createdAt || null,
+      payFrequency: registration.payFrequency || null,
+      customPayDays: registration.customPayDays || null,
+      payAmount: registration.payAmount ?? null,
+      payFrequencyLabel: formatPayFrequencyLabel(
+        registration.payFrequency,
+        registration.customPayDays
+      ),
     },
     todayActive,
     todayEntries,
@@ -653,7 +667,17 @@ export async function getAttendanceHistoryGrid({
         roleName: reg.roleId?.name || '—',
         photoUrl: photoUrlFromPath(reg.photoPath),
         registeredAt: registeredAt?.toISOString?.() || registeredAt,
+        payFrequency: reg.payFrequency || null,
+        customPayDays: reg.customPayDays || null,
+        payAmount: reg.payAmount ?? null,
+        payFrequencyLabel: formatPayFrequencyLabel(reg.payFrequency, reg.customPayDays),
         summary: summarizeAttendanceDays(days),
+        payment: calculatePaymentSummary({
+          payFrequency: reg.payFrequency,
+          customPayDays: reg.customPayDays,
+          payAmount: reg.payAmount,
+          days,
+        }),
         days,
       };
     })

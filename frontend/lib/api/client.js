@@ -211,8 +211,8 @@ export const api = {
     },
     get: (id) => request(`/registrations/${id}`),
     create: (data) => request('/registrations', { method: 'POST', body: JSON.stringify(data) }),
-    updateForm: (id, formData) =>
-      request(`/registrations/${id}/form`, { method: 'PUT', body: JSON.stringify({ formData }) }),
+    updateForm: (id, data) =>
+      request(`/registrations/${id}/form`, { method: 'PUT', body: JSON.stringify(data) }),
     uploadPhoto: (id, photoBlob) => {
       const form = new FormData();
       form.append('photo', photoBlob, 'photo.jpg');

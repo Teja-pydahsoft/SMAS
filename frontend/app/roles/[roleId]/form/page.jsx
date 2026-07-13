@@ -5,12 +5,16 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import FormFieldsEditor, { emptyFormField, normalizeFormFields } from '@/components/FormFieldsEditor';
+import PayFrequencySettings from '@/components/PayFrequencySettings';
 
 export default function RoleFormBuilderPage() {
   const params = useParams();
   const roleId = params.roleId;
   const [role, setRole] = useState(null);
   const [isShiftBased, setIsShiftBased] = useState(false);
+  const [payFrequencies, setPayFrequencies] = useState([]);
+  const [customPayDaysOptions, setCustomPayDaysOptions] = useState([]);
+  const [customDayInput, setCustomDayInput] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [fields, setFields] = useState([emptyFormField(0)]);
@@ -30,6 +34,8 @@ export default function RoleFormBuilderPage() {
       const r = await api.roles.get(roleId);
       setRole(r);
       setIsShiftBased(Boolean(r.isShiftBased));
+      setPayFrequencies(Array.isArray(r.payFrequencies) ? r.payFrequencies : []);
+      setCustomPayDaysOptions(Array.isArray(r.customPayDaysOptions) ? r.customPayDaysOptions : []);
       try {
         const form = await api.forms.getByRole(roleId);
         setFormId(form._id);
@@ -46,6 +52,36 @@ export default function RoleFormBuilderPage() {
     }
   }
 
+  function togglePayFrequency(value) {
+    setPayFrequencies((prev) => {
+      const next = prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value];
+      if (value === 'custom_days' && !next.includes('custom_days')) {
+        setCustomPayDaysOptions([]);
+        setCustomDayInput('');
+      }
+      return next;
+    });
+  }
+
+  function addCustomDayOption() {
+    const days = Number(customDayInput);
+    if (!Number.isInteger(days) || days < 1) {
+      setError('Enter a valid number of days (1 or more)');
+      return;
+    }
+    if (customPayDaysOptions.includes(days)) {
+      setCustomDayInput('');
+      return;
+    }
+    setError('');
+    setCustomPayDaysOptions((prev) => [...prev, days].sort((a, b) => a - b));
+    setCustomDayInput('');
+  }
+
+  function removeCustomDayOption(days) {
+    setCustomPayDaysOptions((prev) => prev.filter((item) => item !== days));
+  }
+
   async function handleSave(e) {
     e.preventDefault();
     setLoading(true);
@@ -59,9 +95,19 @@ export default function RoleFormBuilderPage() {
       return;
     }
 
+    if (payFrequencies.includes('custom_days') && customPayDaysOptions.length === 0) {
+      setError('Add at least one custom day option, or unselect "Custom Days"');
+      setLoading(false);
+      return;
+    }
+
     try {
       // Save shift setting back to the role
-      await api.roles.update(roleId, { isShiftBased });
+      await api.roles.update(roleId, {
+        isShiftBased,
+        payFrequencies,
+        customPayDaysOptions: payFrequencies.includes('custom_days') ? customPayDaysOptions : [],
+      });
 
       if (formId) {
         await api.forms.update(formId, { title, description, fields: validFields });
@@ -91,18 +137,18 @@ export default function RoleFormBuilderPage() {
       <form onSubmit={handleSave}>
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <h3 className="section-title">Form Settings</h3>
-          <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div className="form-group" style={{ flex: 1, minWidth: '180px' }}>
+          <div className="role-form-settings-grid">
+            <div className="form-group">
               <label>Form Title</label>
               <input value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
-            <div className="form-group" style={{ flex: 1, minWidth: '180px' }}>
+            <div className="form-group">
               <label>Description</label>
               <input value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
-            <div className="form-group" style={{ flex: 1, minWidth: '180px' }}>
+            <div className="form-group role-form-settings-grid__full">
               <label>Shift Breakdown Selection</label>
-              <label className="checkbox-option" style={{ marginTop: '0.4rem' }}>
+              <label className="checkbox-option" style={{ marginTop: '0.4rem', maxWidth: '420px' }}>
                 <input
                   type="checkbox"
                   checked={isShiftBased}
@@ -110,6 +156,17 @@ export default function RoleFormBuilderPage() {
                 />
                 <span>Shift breakdown required for this role</span>
               </label>
+            </div>
+            <div className="form-group role-form-settings-grid__full">
+              <PayFrequencySettings
+                payFrequencies={payFrequencies}
+                customPayDaysOptions={customPayDaysOptions}
+                customDayInput={customDayInput}
+                onTogglePayFrequency={togglePayFrequency}
+                onCustomDayInputChange={setCustomDayInput}
+                onAddCustomDayOption={addCustomDayOption}
+                onRemoveCustomDayOption={removeCustomDayOption}
+              />
             </div>
           </div>
         </div>

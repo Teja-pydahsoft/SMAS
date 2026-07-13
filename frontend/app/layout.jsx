@@ -31,6 +31,13 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" data-theme="light" suppressHydrationWarning>
       <head>
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){if(typeof window==='undefined')return;window.__SMAS_DEFERRED_PWA_PROMPT__=null;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__SMAS_DEFERRED_PWA_PROMPT__=e;window.dispatchEvent(new Event('sams-pwa-installable'));});window.addEventListener('appinstalled',function(){window.__SMAS_DEFERRED_PWA_PROMPT__=null;window.dispatchEvent(new Event('sams-pwa-installable'));});})();`,
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

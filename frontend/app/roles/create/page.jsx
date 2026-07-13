@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import FormFieldsEditor, { emptyFormField, normalizeFormFields } from '@/components/FormFieldsEditor';
 import useRequireWrite from '@/hooks/useRequireWrite';
+import PayFrequencySettings from '@/components/PayFrequencySettings';
 
 export default function CreateRolePage() {
   const router = useRouter();
@@ -12,6 +13,9 @@ export default function CreateRolePage() {
   const [roleName, setRoleName] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
   const [isShiftBased, setIsShiftBased] = useState(false);
+  const [payFrequencies, setPayFrequencies] = useState([]);
+  const [customPayDaysOptions, setCustomPayDaysOptions] = useState([]);
+  const [customDayInput, setCustomDayInput] = useState('');
   const [formTitle, setFormTitle] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [fields, setFields] = useState([emptyFormField(0)]);
@@ -24,6 +28,36 @@ export default function CreateRolePage() {
     if (!formTitle || formTitle.endsWith(' Registration')) {
       setFormTitle(value.trim() ? `${value.trim()} Registration` : '');
     }
+  }
+
+  function togglePayFrequency(value) {
+    setPayFrequencies((prev) => {
+      const next = prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value];
+      if (value === 'custom_days' && !next.includes('custom_days')) {
+        setCustomPayDaysOptions([]);
+        setCustomDayInput('');
+      }
+      return next;
+    });
+  }
+
+  function addCustomDayOption() {
+    const days = Number(customDayInput);
+    if (!Number.isInteger(days) || days < 1) {
+      setError('Enter a valid number of days (1 or more)');
+      return;
+    }
+    if (customPayDaysOptions.includes(days)) {
+      setCustomDayInput('');
+      return;
+    }
+    setError('');
+    setCustomPayDaysOptions((prev) => [...prev, days].sort((a, b) => a - b));
+    setCustomDayInput('');
+  }
+
+  function removeCustomDayOption(days) {
+    setCustomPayDaysOptions((prev) => prev.filter((item) => item !== days));
   }
 
   async function handleSubmit(e) {
@@ -39,6 +73,11 @@ export default function CreateRolePage() {
       return;
     }
 
+    if (payFrequencies.includes('custom_days') && customPayDaysOptions.length === 0) {
+      setError('Add at least one custom day option, or unselect "Custom Days"');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setSuccess('');
@@ -48,6 +87,8 @@ export default function CreateRolePage() {
         name: roleName.trim(),
         description: roleDescription.trim(),
         isShiftBased,
+        payFrequencies,
+        customPayDaysOptions: payFrequencies.includes('custom_days') ? customPayDaysOptions : [],
       });
 
       await api.forms.create({
@@ -61,6 +102,9 @@ export default function CreateRolePage() {
       setRoleName('');
       setRoleDescription('');
       setIsShiftBased(false);
+      setPayFrequencies([]);
+      setCustomPayDaysOptions([]);
+      setCustomDayInput('');
       setFormTitle('');
       setFormDescription('');
       setFields([emptyFormField(0)]);
@@ -110,6 +154,17 @@ export default function CreateRolePage() {
               />
               <span>Shift breakdown required for this role</span>
             </label>
+          </div>
+          <div className="form-group role-form-settings-grid__full">
+            <PayFrequencySettings
+              payFrequencies={payFrequencies}
+              customPayDaysOptions={customPayDaysOptions}
+              customDayInput={customDayInput}
+              onTogglePayFrequency={togglePayFrequency}
+              onCustomDayInputChange={setCustomDayInput}
+              onAddCustomDayOption={addCustomDayOption}
+              onRemoveCustomDayOption={removeCustomDayOption}
+            />
           </div>
         </div>
       </div>

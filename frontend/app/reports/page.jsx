@@ -4,6 +4,7 @@ import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 're
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
+import { formatCurrency } from '@/lib/payFrequency';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -424,6 +425,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
   const entriesByDate = data?.entriesByDate || [];
   const session = data?.sessionState || {};
   const rangeSummary = data?.attendanceRange?.summary;
+  const paymentSummary = data?.attendanceRange?.payment;
   const periodDays = (data?.attendanceRange?.days || []).filter((day) => day.status === 'P');
   const entriesByDateMap = Object.fromEntries(entriesByDate.map((g) => [g.date, g.entries]));
   const rangeLabel = hasDateRange
@@ -533,6 +535,28 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
                         <span className="rc-person-profile__stat-label">Last Activity</span>
                         <span className="rc-person-profile__stat-value">{formatDateTime(details.lastScanAt)}</span>
                       </div>
+                      {paymentSummary && (
+                        <>
+                          <div className="rc-person-profile__stat">
+                            <span className="rc-person-profile__stat-label">Pay Frequency</span>
+                            <span className="rc-person-profile__stat-value">{paymentSummary.payFrequencyLabel}</span>
+                          </div>
+                          <div className="rc-person-profile__stat">
+                            <span className="rc-person-profile__stat-label">Per Day Amount</span>
+                            <span className="rc-person-profile__stat-value">{formatCurrency(paymentSummary.payAmount)}</span>
+                          </div>
+                          <div className="rc-person-profile__stat">
+                            <span className="rc-person-profile__stat-label">Payment Days</span>
+                            <span className="rc-person-profile__stat-value">{paymentSummary.paymentDays}</span>
+                          </div>
+                          <div className="rc-person-profile__stat">
+                            <span className="rc-person-profile__stat-label">Calculated Amount</span>
+                            <span className="rc-person-profile__stat-value rc-color-success">
+                              {formatCurrency(paymentSummary.totalAmount)}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </>
                   ) : (
                     <>
@@ -642,6 +666,8 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
                     { label: 'Total Scans', value: details.totalScans },
                     { label: 'Divisions Visited', value: (details.divisionsVisited || []).join(', ') || '—' },
                     { label: 'Shift', value: details.shiftName || '—' },
+                    { label: 'Pay Frequency', value: details.payFrequencyLabel || '—' },
+                    { label: 'Pay Amount (per day)', value: details.payAmount != null ? formatCurrency(details.payAmount) : '—' },
                   ].map(row => (
                     <div key={row.label} className="rc-detail-row">
                       <span className="rc-detail-row__label">{row.label}</span>
@@ -871,19 +897,15 @@ function currentMonthValue() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function currentIsoWeekValue() {
-  const date = new Date();
-  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const day = utc.getUTCDay() || 7;
-  utc.setUTCDate(utc.getUTCDate() + 4 - day);
-  const isoYear = utc.getUTCFullYear();
-  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
-  const week = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
-  return `${isoYear}-W${String(week).padStart(2, '0')}`;
+function normalizeIsoWeekValue(weekValue) {
+  const match = /^(\d{4})-W(\d{1,2})$/.exec(weekValue || '');
+  if (!match) return '';
+  return `${match[1]}-W${String(Number(match[2])).padStart(2, '0')}`;
 }
 
 function getWeekRange(weekValue) {
-  const match = /^(\d{4})-W(\d{2})$/.exec(weekValue || '');
+  const normalized = normalizeIsoWeekValue(weekValue);
+  const match = /^(\d{4})-W(\d{2})$/.exec(normalized);
   if (!match) return { dateFrom: '', dateTo: '' };
 
   const year = Number(match[1]);
@@ -903,20 +925,34 @@ function getWeekRange(weekValue) {
   return { dateFrom: toIso(monday), dateTo: toIso(sunday) };
 }
 
+function isoWeekFromDate(date) {
+  const local = date instanceof Date ? date : new Date(date);
+  const utc = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate()));
+  const day = utc.getUTCDay() || 7;
+  const monday = new Date(utc);
+  monday.setUTCDate(utc.getUTCDate() - day + 1);
+
+  const thursday = new Date(monday);
+  thursday.setUTCDate(monday.getUTCDate() + 3);
+  const isoYear = thursday.getUTCFullYear();
+
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const weekOneMonday = new Date(jan4);
+  weekOneMonday.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
+
+  const week = Math.floor((monday.getTime() - weekOneMonday.getTime()) / (7 * 86400000)) + 1;
+  return `${isoYear}-W${String(week).padStart(2, '0')}`;
+}
+
+function currentIsoWeekValue() {
+  return isoWeekFromDate(new Date());
+}
+
 function formatWeekLabel(weekValue) {
   const { dateFrom, dateTo } = getWeekRange(weekValue);
   if (!dateFrom || !dateTo) return '';
   return `${formatDate(dateFrom)} — ${formatDate(dateTo)}`;
-}
-
-function dateToIsoWeekValue(date) {
-  const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = utc.getUTCDay() || 7;
-  utc.setUTCDate(utc.getUTCDate() + 4 - day);
-  const isoYear = utc.getUTCFullYear();
-  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
-  const week = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
-  return `${isoYear}-W${String(week).padStart(2, '0')}`;
 }
 
 function shiftWeek(weekValue, delta) {
@@ -924,35 +960,52 @@ function shiftWeek(weekValue, delta) {
   if (!dateFrom) return weekValue;
   const next = new Date(`${dateFrom}T12:00:00.000Z`);
   next.setUTCDate(next.getUTCDate() + delta * 7);
-  return dateToIsoWeekValue(next);
+  return isoWeekFromDate(next);
 }
 
 function WeekRangePicker({ value, onChange }) {
-  const weekNumber = value?.match(/W(\d{2})$/)?.[1];
-  const label = formatWeekLabel(value);
+  const normalizedValue = normalizeIsoWeekValue(value) || currentIsoWeekValue();
+  const weekNumber = normalizedValue.match(/W(\d{2})$/)?.[1];
+  const label = formatWeekLabel(normalizedValue);
+
+  useEffect(() => {
+    if (normalizedValue && normalizedValue !== value) {
+      onChange(normalizedValue);
+    }
+  }, [normalizedValue, value, onChange]);
 
   return (
     <div className="rc-week-picker">
       <button
         type="button"
         className="rc-week-picker__btn"
-        onClick={() => onChange(shiftWeek(value, -1))}
+        onClick={() => onChange(shiftWeek(normalizedValue, -1))}
         aria-label="Previous week"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <polyline points="15 18 9 12 15 6" />
         </svg>
       </button>
-      <div className="rc-week-picker__display">
+      <label className="rc-week-picker__display">
         <span className="rc-week-picker__title">
           {weekNumber ? `Week ${Number(weekNumber)}` : 'Week'}
         </span>
         {label && <span className="rc-week-picker__range">{label}</span>}
-      </div>
+        <input
+          type="week"
+          className="rc-week-picker__input"
+          value={normalizedValue}
+          onChange={(e) => {
+            const next = normalizeIsoWeekValue(e.target.value);
+            if (next) onChange(next);
+          }}
+          aria-label={`Choose week. ${label || 'No week selected'}`}
+        />
+      </label>
       <button
         type="button"
         className="rc-week-picker__btn"
-        onClick={() => onChange(shiftWeek(value, 1))}
+        onClick={() => onChange(shiftWeek(normalizedValue, 1))}
         aria-label="Next week"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -1079,6 +1132,10 @@ function AttendanceAbstractTable({ employees, onViewPerson }) {
             <th>Total Days</th>
             <th>Present Days</th>
             <th>Absent Days</th>
+            <th>Pay Frequency</th>
+            <th>Pay Amount (per day)</th>
+            <th>Payment Days</th>
+            <th>Calculated Amount</th>
           </tr>
         </thead>
         <tbody>
@@ -1101,6 +1158,12 @@ function AttendanceAbstractTable({ employees, onViewPerson }) {
               <td className="rc-att-abstract-table__num">{emp.summary.totalDays}</td>
               <td className="rc-att-abstract-table__num rc-att-abstract-table__num--present">{emp.summary.present}</td>
               <td className="rc-att-abstract-table__num rc-att-abstract-table__num--absent">{emp.summary.absent}</td>
+              <td className="rc-table__muted">{emp.payFrequencyLabel || '—'}</td>
+              <td className="rc-att-abstract-table__num">{emp.payAmount != null ? formatCurrency(emp.payAmount) : '—'}</td>
+              <td className="rc-att-abstract-table__num">{emp.payment?.paymentDays ?? '—'}</td>
+              <td className="rc-att-abstract-table__num rc-att-abstract-table__num--pay">
+                {emp.payment ? formatCurrency(emp.payment.totalAmount) : '—'}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -1302,6 +1365,9 @@ function AttendanceHistoryTab({ onViewPerson }) {
                   ))}
                   <th className="rc-att-grid__summary rc-att-grid__summary--present">Present</th>
                   <th className="rc-att-grid__summary rc-att-grid__summary--absent">Absent</th>
+                  <th className="rc-att-grid__summary rc-att-grid__summary--pay">Per Day</th>
+                  <th className="rc-att-grid__summary rc-att-grid__summary--pay">Pay Days</th>
+                  <th className="rc-att-grid__summary rc-att-grid__summary--pay">Amount</th>
                 </tr>
               </thead>
               <tbody>
@@ -1333,6 +1399,15 @@ function AttendanceHistoryTab({ onViewPerson }) {
                     ))}
                     <td className="rc-att-grid__total rc-att-grid__total--present">{emp.summary.present}</td>
                     <td className="rc-att-grid__total rc-att-grid__total--absent">{emp.summary.absent}</td>
+                    <td className="rc-att-grid__total rc-att-grid__total--pay">
+                      {emp.payAmount != null ? formatCurrency(emp.payAmount) : '—'}
+                    </td>
+                    <td className="rc-att-grid__total rc-att-grid__total--pay">
+                      {emp.payment?.paymentDays ?? '—'}
+                    </td>
+                    <td className="rc-att-grid__total rc-att-grid__total--pay">
+                      {emp.payment ? formatCurrency(emp.payment.totalAmount) : '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

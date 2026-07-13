@@ -1,7 +1,7 @@
 'use client';
 
-import { PWA_APP_NAME } from '@/lib/pwa/constants';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
+import { PWA_APP_NAME } from '@/lib/pwa/constants';
 
 function DownloadIcon() {
   return (

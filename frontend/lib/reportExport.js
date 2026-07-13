@@ -6,6 +6,11 @@ const PASS_PHOTO_HEIGHT = 106;
 const PASS_PHOTO_PDF_WIDTH = 65;
 const PASS_PHOTO_PDF_HEIGHT = 80;
 
+/** Scan photo size matching report timeline (72×72 CSS px). */
+const SCAN_PHOTO_WIDTH = 72;
+const SCAN_PHOTO_HEIGHT = 72;
+const SCAN_PHOTO_ROW_HEIGHT = 58;
+
 function safeFilePart(value) {
   return String(value || 'report')
     .replace(/[^\w.-]+/g, '_')
@@ -71,6 +76,61 @@ function calcExportDuration(entryAt, exitAt) {
 
 function excelImageExtension(format) {
   return format === 'PNG' ? 'png' : 'jpeg';
+}
+
+function getDayScanPhotos(entries) {
+  if (!entries?.length) {
+    return { checkInPhotoUrl: null, checkOutPhotoUrl: null };
+  }
+
+  const sorted = [...entries].sort(
+    (a, b) => new Date(a.at || a.entryAt || 0) - new Date(b.at || b.entryAt || 0)
+  );
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+
+  return {
+    checkInPhotoUrl: first.photoUrl || null,
+    checkOutPhotoUrl: sorted.length > 1 ? (last.photoUrl || null) : null,
+  };
+}
+
+async function buildPhotoCache(urls) {
+  const unique = [...new Set(urls.filter(Boolean))];
+  const cache = new Map();
+
+  await Promise.all(
+    unique.map(async (url) => {
+      const photo = await loadPhotoForExport(url);
+      cache.set(url, photo);
+    })
+  );
+
+  return cache;
+}
+
+function addExcelScanPhoto(workbook, sheet, photo, colIndex, rowIndex) {
+  if (!photo?.dataUrl) return;
+
+  const base64 = photo.dataUrl.split(',')[1];
+  const imageId = workbook.addImage({
+    base64,
+    extension: excelImageExtension(photo.format),
+  });
+
+  sheet.addImage(imageId, {
+    tl: { col: colIndex, row: rowIndex },
+    ext: { width: SCAN_PHOTO_WIDTH, height: SCAN_PHOTO_HEIGHT },
+  });
+}
+
+function styleExcelHeaderRow(sheet, rowNumber) {
+  sheet.getRow(rowNumber).fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF1A56FF' },
+  };
+  sheet.getRow(rowNumber).font = { bold: true, color: { argb: 'FFFFFFFF' } };
 }
 
 async function loadImageElement(url, useCrossOrigin = true) {
@@ -326,6 +386,22 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
   const photo = await loadPhotoForExport(payload.holderPhotoUrl);
   const details = payload.details;
   const summaryRows = buildSummaryRows(reportData, options, { includeIdentity: false });
+  const hasDateRange = Boolean(options.dateFrom && options.dateTo);
+
+  const periodDays = hasDateRange
+    ? (reportData?.attendanceRange?.days || []).filter((day) => day.status === 'P')
+    : [];
+  const entriesByDateMap = Object.fromEntries(
+    (reportData?.entriesByDate || []).map((group) => [group.date, group.entries || []])
+  );
+
+  const photoUrls = payload.entries.map((entry) => entry.photoUrl).filter(Boolean);
+  for (const day of periodDays) {
+    const dayPhotos = getDayScanPhotos(entriesByDateMap[day.date] || []);
+    if (dayPhotos.checkInPhotoUrl) photoUrls.push(dayPhotos.checkInPhotoUrl);
+    if (dayPhotos.checkOutPhotoUrl) photoUrls.push(dayPhotos.checkOutPhotoUrl);
+  }
+  const photoCache = await buildPhotoCache(photoUrls);
 
   const workbook = new ExcelJS.Workbook();
   const summarySheet = workbook.addWorksheet('Summary');
@@ -384,12 +460,7 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
   const tableStartRow = profileStartRow + 6;
   summarySheet.getCell(`A${tableStartRow}`).value = 'Field';
   summarySheet.getCell(`B${tableStartRow}`).value = 'Value';
-  summarySheet.getRow(tableStartRow).fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FF1A56FF' },
-  };
-  summarySheet.getRow(tableStartRow).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  styleExcelHeaderRow(summarySheet, tableStartRow);
 
   summaryRows.forEach((row, index) => {
     const excelRow = tableStartRow + 1 + index;
@@ -397,6 +468,56 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
     summarySheet.getCell(`B${excelRow}`).value = row[1];
     summarySheet.getCell(`A${excelRow}`).font = { bold: true };
   });
+
+  if (hasDateRange && periodDays.length > 0) {
+    const periodSheet = workbook.addWorksheet('Period History');
+    const periodHeaders = [
+      'Date',
+      'Status',
+      'Check-In',
+      'Check-In Photo',
+      'Last Activity',
+      'Activity Type',
+      'Check-Out Photo',
+      'Sessions',
+    ];
+    periodSheet.addRow(periodHeaders);
+    styleExcelHeaderRow(periodSheet, 1);
+
+    const sortedPeriodDays = [...periodDays].sort((a, b) => b.date.localeCompare(a.date));
+    for (const day of sortedPeriodDays) {
+      const entries = entriesByDateMap[day.date] || [];
+      const { checkInPhotoUrl, checkOutPhotoUrl } = getDayScanPhotos(entries);
+      const lastActivityLabel = day.lastActivityType === 'exit' ? 'Check-Out' : 'Check-In';
+      const rowNumber = periodSheet.rowCount + 1;
+
+      periodSheet.addRow([
+        formatExportDate(day.date),
+        day.code || day.status || '—',
+        formatExportTime(day.checkIn),
+        checkInPhotoUrl ? '' : '—',
+        formatExportTime(day.lastActivityAt),
+        lastActivityLabel,
+        checkOutPhotoUrl ? '' : '—',
+        entries.length,
+      ]);
+
+      periodSheet.getRow(rowNumber).height = SCAN_PHOTO_ROW_HEIGHT;
+      addExcelScanPhoto(workbook, periodSheet, photoCache.get(checkInPhotoUrl), 3, rowNumber - 1);
+      addExcelScanPhoto(workbook, periodSheet, photoCache.get(checkOutPhotoUrl), 6, rowNumber - 1);
+    }
+
+    periodSheet.columns = [
+      { width: 14 },
+      { width: 10 },
+      { width: 12 },
+      { width: 14 },
+      { width: 14 },
+      { width: 14 },
+      { width: 14 },
+      { width: 10 },
+    ];
+  }
 
   const eventsSheet = workbook.addWorksheet('Activity');
   eventsSheet.addRow([
@@ -409,17 +530,27 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
     'Department',
     'Match Score',
     'Description',
+    'Photo',
   ]);
-  eventsSheet.getRow(1).font = { bold: true };
-  eventsSheet.getRow(1).fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FF1A56FF' },
-  };
-  eventsSheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  styleExcelHeaderRow(eventsSheet, 1);
 
-  for (const row of payload.eventRows) {
-    eventsSheet.addRow(row);
+  for (const entry of payload.entries) {
+    const at = entry.at || entry.entryAt;
+    const rowNumber = eventsSheet.rowCount + 1;
+    eventsSheet.addRow([
+      formatExportDate(entry.date || at),
+      formatExportTime(at),
+      eventTypeLabel(entry),
+      scanTypeLabel(entry),
+      locationLabel(entry),
+      entry.divisionName || '—',
+      entry.departmentName || '—',
+      entry.matchScore != null ? `${Math.round(entry.matchScore * 100)}%` : '—',
+      entry.label || '—',
+      entry.photoUrl ? '' : '—',
+    ]);
+    eventsSheet.getRow(rowNumber).height = entry.photoUrl ? SCAN_PHOTO_ROW_HEIGHT : undefined;
+    addExcelScanPhoto(workbook, eventsSheet, photoCache.get(entry.photoUrl), 9, rowNumber - 1);
   }
 
   eventsSheet.columns = [
@@ -432,6 +563,7 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
     { width: 22 },
     { width: 12 },
     { width: 36 },
+    { width: 14 },
   ];
 
   const buffer = await workbook.xlsx.writeBuffer();

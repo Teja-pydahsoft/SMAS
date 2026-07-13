@@ -1,24 +1,27 @@
 'use client';
 
 import { useEffect } from 'react';
+import { bindInstallPromptEvents } from '@/lib/pwa/installPrompt';
 
 export default function PwaRegistrar() {
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return undefined;
 
+    bindInstallPromptEvents();
+
     const register = async () => {
       try {
-        await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-      } catch {
-        /* non-fatal */
+        const registration = await navigator.serviceWorker.register('/sw.js', {
+          scope: '/',
+          updateViaCache: 'none',
+        });
+        await registration.update();
+      } catch (error) {
+        console.warn('SAMS PWA service worker registration failed:', error);
       }
     };
 
-    if (document.readyState === 'complete') {
-      register();
-    } else {
-      window.addEventListener('load', register, { once: true });
-    }
+    register();
 
     return undefined;
   }, []);

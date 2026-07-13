@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api/client';
 import { formatDate } from '@/lib/formatDate';
+import { formatPayFrequency } from '@/lib/payFrequency';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
 
@@ -90,6 +91,7 @@ export default function ManageRolesPage() {
                   <th>Role Name</th>
                   <th>Description</th>
                   <th>Shift Based</th>
+                  <th>Pay Frequency</th>
                   <th>Status</th>
                   <th>Created</th>
                   {showActions && <th>Actions</th>}
@@ -103,6 +105,15 @@ export default function ManageRolesPage() {
                     <td>
                       {role.isShiftBased ? (
                         <span className="badge badge-info">Shift Required</span>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
+                      )}
+                    </td>
+                    <td>
+                      {role.payFrequencies?.length ? (
+                        <span style={{ fontSize: '0.85rem' }}>
+                          {role.payFrequencies.map((value) => formatPayFrequency(value)).join(', ')}
+                        </span>
                       ) : (
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
                       )}

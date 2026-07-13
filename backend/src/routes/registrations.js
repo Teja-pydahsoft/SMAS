@@ -89,6 +89,61 @@ function validateMediaComplete(form, formData) {
   return null;
 }
 
+function validatePayFrequency(role, payFrequency, customPayDays) {
+  const allowed = role?.payFrequencies || [];
+  if (!allowed.length) return null;
+
+  if (!payFrequency) return 'Pay frequency is required';
+
+  if (!allowed.includes(payFrequency)) {
+    return 'Selected pay frequency is not allowed for this role';
+  }
+
+  if (payFrequency === 'custom_days') {
+    const days = Number(customPayDays);
+    if (!Number.isInteger(days) || days < 1) {
+      return 'Please enter a valid number of custom pay days (1 or more)';
+    }
+    const options = role?.customPayDaysOptions || [];
+    if (options.length && !options.includes(days)) {
+      return 'Selected custom pay days option is not allowed for this role';
+    }
+  }
+
+  return null;
+}
+
+function validatePayAmount(role, payAmount) {
+  const allowed = role?.payFrequencies || [];
+  if (!allowed.length) return null;
+  const amount = Number(payAmount);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return 'Pay amount is required and must be 0 or more';
+  }
+  return null;
+}
+
+function applyPayFrequency(registration, role, payFrequency, customPayDays, payAmount) {
+  const allowed = role?.payFrequencies || [];
+  if (!allowed.length) {
+    registration.payFrequency = null;
+    registration.customPayDays = null;
+    registration.payAmount = null;
+    return null;
+  }
+
+  const error = validatePayFrequency(role, payFrequency, customPayDays);
+  if (error) return error;
+
+  const amountError = validatePayAmount(role, payAmount);
+  if (amountError) return amountError;
+
+  registration.payFrequency = payFrequency;
+  registration.customPayDays = payFrequency === 'custom_days' ? Number(customPayDays) : null;
+  registration.payAmount = Number(payAmount);
+  return null;
+}
+
 router.get(
   '/',
   asyncHandler(async (req, res) => {
@@ -98,7 +153,7 @@ router.get(
 
     const registrations = await Registration.find(filter)
       .select('-faceEmbedding')
-      .populate('roleId', 'name slug')
+      .populate('roleId', 'name slug payFrequencies customPayDaysOptions')
       .populate('formId', 'fields')
       .sort({ createdAt: -1 });
 
@@ -135,7 +190,7 @@ router.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const registration = await Registration.findById(req.params.id)
-      .populate('roleId', 'name slug')
+      .populate('roleId', 'name slug payFrequencies customPayDaysOptions')
       .populate('formId', 'fields');
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
     const obj = registration.toObject();
@@ -290,7 +345,7 @@ router.post(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { roleId, formData } = req.body;
+    const { roleId, formData, payFrequency, customPayDays, payAmount } = req.body;
 
     const role = await Role.findById(roleId);
     if (!role) return res.status(404).json({ error: 'Role not found' });
@@ -301,10 +356,20 @@ router.post(
     const validationError = validateFormData(form, formData, { skipMediaRequired: true });
     if (validationError) return res.status(400).json({ error: validationError });
 
+    const payFrequencyError = validatePayFrequency(role, payFrequency, customPayDays);
+    if (payFrequencyError) return res.status(400).json({ error: payFrequencyError });
+
+    const payAmountError = validatePayAmount(role, payAmount);
+    if (payAmountError) return res.status(400).json({ error: payAmountError });
+
     const registration = await Registration.create({
       roleId,
       formId: form._id,
       formData: formData || {},
+      payFrequency: role.payFrequencies?.length ? payFrequency : null,
+      customPayDays:
+        role.payFrequencies?.length && payFrequency === 'custom_days' ? Number(customPayDays) : null,
+      payAmount: role.payFrequencies?.length ? Number(payAmount) : null,
       currentStage: REGISTRATION_STAGES.PHOTO,
       status: REGISTRATION_STATUS.IN_PROGRESS,
     });
@@ -320,9 +385,21 @@ router.put(
     const registration = await Registration.findById(req.params.id);
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
 
+    const role = await Role.findById(registration.roleId);
+    if (!role) return res.status(404).json({ error: 'Role not found' });
+
     const form = await RegistrationForm.findById(registration.formId);
     const validationError = validateFormData(form, req.body.formData, { skipMediaRequired: true });
     if (validationError) return res.status(400).json({ error: validationError });
+
+    const payFrequencyError = applyPayFrequency(
+      registration,
+      role,
+      req.body.payFrequency,
+      req.body.customPayDays,
+      req.body.payAmount
+    );
+    if (payFrequencyError) return res.status(400).json({ error: payFrequencyError });
 
     registration.formData = req.body.formData;
 
@@ -516,7 +593,7 @@ router.post(
     await registration.save();
 
     const updated = await Registration.findById(registration._id)
-      .populate('roleId', 'name slug')
+      .populate('roleId', 'name slug payFrequencies customPayDaysOptions')
       .populate('formId', 'fields');
     const obj = updated.toObject();
     const enriched = enrichRegistrationResponse(obj, obj.formId?.fields || []);

@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "SAMS - Smart Access Management System",
   "short_name": "SAMS",
   "description": "Dynamic role-based registration with face verification and gate access",

@@ -1,6 +1,5 @@
-const CACHE_NAME = 'sams-pwa-v3';
+const CACHE_NAME = 'sams-pwa-v4';
 const PRECACHE_URLS = [
-  '/login',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -8,15 +7,17 @@ const PRECACHE_URLS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) => Promise.allSettled(PRECACHE_URLS.map((url) => cache.add(url))))
+      .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
   );
 });
 
@@ -27,17 +28,19 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/')) return;
 
+  const isNavigation = event.request.mode === 'navigate'
+    || (event.request.headers.get('accept') || '').includes('text/html');
+
+  if (isNavigation) {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match('/login'))
+    );
+    return;
+  }
+
+  if (!PRECACHE_URLS.includes(url.pathname)) return;
+
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
-        }
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      });
-    })
+    caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
 });

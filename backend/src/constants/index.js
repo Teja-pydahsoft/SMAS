@@ -1,5 +1,14 @@
 export const FIELD_TYPES = ['text', 'number', 'email', 'phone', 'date', 'select', 'textarea', 'checkbox', 'media'];
 
+export const PAY_FREQUENCIES = ['daily', 'weekly', 'monthly', 'custom_days'];
+
+export const PAY_FREQUENCY_LABELS = {
+  daily: 'Daily',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+  custom_days: 'Custom Days',
+};
+
 export const REGISTRATION_STAGES = {
   FORM: 'form',
   PHOTO: 'photo',

@@ -6,6 +6,7 @@ import { PASS_TYPES, GATE_EVENT_TYPES, SCAN_TYPES, MIN_CHECKOUT_INTERVAL_MS } fr
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { buildQrDataUrl, formatPassResponse } from './passService.js';
 import { photoUrlFromPath } from '../utils/displayInfo.js';
+import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
 
 export function todayDateString(date = new Date()) {
   return date.toISOString().slice(0, 10);
@@ -160,12 +161,11 @@ export async function getActiveDivisionSession(registrationId) {
     };
   }
 
-  const divisionIds = await GateLog.distinct('divisionId', {
+  const divisionIds = await GateLog.distinct('divisionId', grantedGateLogFilter({
     registrationId,
     scanType: SCAN_TYPES.GATE,
-    matched: true,
     createdAt: { $gte: startOfDay, $lte: endOfDayDate },
-  });
+  }));
 
   for (const divId of divisionIds) {
     const entry = await hasTodayGateEntry(registrationId, divId);
@@ -300,27 +300,25 @@ export async function hasTodayGateEntry(registrationId, divisionId) {
   const startOfDay = new Date(`${validDate}T00:00:00.000Z`);
   const endOfDayDate = endOfDay();
 
-  const lastGateEntry = await GateLog.findOne({
+  const lastGateEntry = await GateLog.findOne(grantedGateLogFilter({
     registrationId,
     divisionId,
     scanType: SCAN_TYPES.GATE,
     eventType: GATE_EVENT_TYPES.ENTRY,
-    matched: true,
     createdAt: { $gte: startOfDay, $lte: endOfDayDate },
-  }).sort({ createdAt: -1 });
+  })).sort({ createdAt: -1 });
 
   if (!lastGateEntry) {
     return { ok: false, gateEntryAt: null };
   }
 
-  const lastGateExit = await GateLog.findOne({
+  const lastGateExit = await GateLog.findOne(grantedGateLogFilter({
     registrationId,
     divisionId,
     scanType: SCAN_TYPES.GATE,
     eventType: GATE_EVENT_TYPES.EXIT,
-    matched: true,
     createdAt: { $gt: lastGateEntry.createdAt, $lte: endOfDayDate },
-  }).sort({ createdAt: -1 });
+  })).sort({ createdAt: -1 });
 
   return {
     ok: !lastGateExit,
@@ -334,14 +332,13 @@ export async function madeGateEntryToday(registrationId, divisionId) {
   const startOfDay = new Date(`${validDate}T00:00:00.000Z`);
   const endOfDayDate = endOfDay();
 
-  const count = await GateLog.countDocuments({
+  const count = await GateLog.countDocuments(grantedGateLogFilter({
     registrationId,
     divisionId,
     scanType: SCAN_TYPES.GATE,
     eventType: GATE_EVENT_TYPES.ENTRY,
-    matched: true,
     createdAt: { $gte: startOfDay, $lte: endOfDayDate },
-  });
+  }));
 
   return count > 0;
 }

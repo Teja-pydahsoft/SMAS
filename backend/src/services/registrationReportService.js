@@ -10,6 +10,7 @@ import {
   todayDateString,
 } from './attendanceService.js';
 import { calculatePaymentSummary, formatPayFrequencyLabel } from '../utils/paymentCalculation.js';
+import { grantedGateLogFilter, filterGrantedLogs } from '../utils/gateLogFilters.js';
 
 function logDateKey(date) {
   return new Date(date).toISOString().slice(0, 10);
@@ -34,7 +35,7 @@ function toIso(value) {
 }
 
 function extractDayTimings(dayLogs, session) {
-  const sorted = [...dayLogs].sort(
+  const sorted = [...filterGrantedLogs(dayLogs)].sort(
     (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
   );
   const entries = sorted.filter((l) => l.eventType === 'entry');
@@ -74,7 +75,7 @@ function extractDayTimings(dayLogs, session) {
 }
 
 function hasDayActivity(dayLogs, session) {
-  if (dayLogs?.length) return true;
+  if (filterGrantedLogs(dayLogs).length) return true;
   if (session?.gateEntryAt || session?.gateExitAt) return true;
   return false;
 }
@@ -232,7 +233,7 @@ async function buildTodayActiveForRegistration(registrationId) {
 
 export async function listRegistrationReports({ search = '', limit = 100 } = {}) {
   const matchedLogs = await GateLog.aggregate([
-    { $match: { matched: true, registrationId: { $ne: null } } },
+    { $match: grantedGateLogFilter({ registrationId: { $ne: null } }) },
     {
       $group: {
         _id: '$registrationId',
@@ -311,10 +312,9 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
   const activeSession = await getActiveDivisionSession(registration._id);
   const hasDateRange = Boolean(dateFrom && dateTo);
 
-  const logQuery = {
+  const logQuery = grantedGateLogFilter({
     registrationId: registration._id,
-    matched: true,
-  };
+  });
 
   if (hasDateRange) {
     logQuery.createdAt = {
@@ -600,11 +600,12 @@ export async function getAttendanceHistoryGrid({
   const rangeEnd = new Date(`${toDate}T23:59:59.999Z`);
 
   const [logs, passes] = await Promise.all([
-    GateLog.find({
-      registrationId: { $in: registrationIds },
-      matched: true,
-      createdAt: { $gte: rangeStart, $lte: rangeEnd },
-    })
+    GateLog.find(
+      grantedGateLogFilter({
+        registrationId: { $in: registrationIds },
+        createdAt: { $gte: rangeStart, $lte: rangeEnd },
+      })
+    )
       .select('registrationId scanType eventType createdAt')
       .lean(),
     Pass.find({

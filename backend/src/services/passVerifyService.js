@@ -2,6 +2,7 @@ import Pass from '../models/Pass.js';
 import GateLog from '../models/GateLog.js';
 import { formatPassResponse } from './passService.js';
 import { getPassSessionState, todayDateString } from './attendanceService.js';
+import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
 
 function logDateKey(date) {
   return new Date(date).toISOString().slice(0, 10);
@@ -103,10 +104,9 @@ export async function getPassVerifyInfo(passCode) {
   const today = todayDateString(now);
   const divisionId = pass.divisionId?.toString?.() || pass.divisionId || pass.qrPayload?.divisionId || null;
 
-  const logFilter = {
+  const logFilter = grantedGateLogFilter({
     registrationId: pass.registrationId,
-    matched: true,
-  };
+  });
   if (divisionId) logFilter.divisionId = divisionId;
 
   const logs = await GateLog.find(logFilter)

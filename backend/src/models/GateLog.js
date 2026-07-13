@@ -16,6 +16,7 @@ const gateLogSchema = new mongoose.Schema(
     eventType: { type: String, enum: Object.values(GATE_EVENT_TYPES), required: true },
     matchScore: { type: Number, required: true },
     matched: { type: Boolean, required: true },
+    accessGranted: { type: Boolean, default: true },
     photoPath: { type: String },
     gateId: { type: String, default: 'main' },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },

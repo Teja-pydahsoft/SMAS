@@ -38,6 +38,7 @@ import {
   uploadToCloudinary,
 } from '../services/cloudinaryService.js';
 import { hasDivisionScope, hasDepartmentScope, hasGateScope } from '../middleware/auth.js';
+import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
 
 const router = Router();
 const MATCH_THRESHOLD = parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.42');
@@ -49,6 +50,28 @@ const upload = createMulter('gate', (req, file) => {
   return `gate-${Date.now()}${path.extname(file.originalname) || '.jpg'}`;
 });
 
+async function discardGateLog(log) {
+  if (!log?._id) return;
+  try {
+    const doc = await GateLog.findById(log._id);
+    if (!doc) return;
+    if (doc.photoPath && !doc.photoPath.includes('cloudinary.com') && fs.existsSync(doc.photoPath)) {
+      fs.unlinkSync(doc.photoPath);
+    }
+    await GateLog.findByIdAndDelete(doc._id);
+  } catch (err) {
+    console.error('Failed to discard gate log:', err.message);
+  }
+}
+
+async function finalizeGateLog(log) {
+  if (!log) return log;
+  log.accessGranted = true;
+  log.matched = true;
+  await log.save();
+  return log;
+}
+
 router.get(
   '/logs',
   asyncHandler(async (req, res) => {
@@ -59,6 +82,12 @@ router.get(
     if (req.query.departmentId) filter.departmentId = req.query.departmentId;
     if (req.query.gateRefId) filter.gateRefId = req.query.gateRefId;
     if (req.query.scanType) filter.scanType = req.query.scanType;
+    if (req.query.matched === 'true') filter.matched = true;
+    if (req.query.matched === 'false') filter.matched = false;
+    if (req.query.successOnly !== 'false') {
+      filter.matched = true;
+      filter.$or = [{ accessGranted: true }, { accessGranted: { $exists: false } }];
+    }
 
     const logs = await GateLog.find(filter)
       .populate('registrationId', 'registrationCode formData')
@@ -76,17 +105,19 @@ router.get(
 router.get(
   '/status/:registrationId',
   asyncHandler(async (req, res) => {
-    const lastEntry = await GateLog.findOne({
-      registrationId: req.params.registrationId,
-      eventType: GATE_EVENT_TYPES.ENTRY,
-      matched: true,
-    }).sort({ createdAt: -1 });
+    const lastEntry = await GateLog.findOne(
+      grantedGateLogFilter({
+        registrationId: req.params.registrationId,
+        eventType: GATE_EVENT_TYPES.ENTRY,
+      })
+    ).sort({ createdAt: -1 });
 
-    const lastExit = await GateLog.findOne({
-      registrationId: req.params.registrationId,
-      eventType: GATE_EVENT_TYPES.EXIT,
-      matched: true,
-    }).sort({ createdAt: -1 });
+    const lastExit = await GateLog.findOne(
+      grantedGateLogFilter({
+        registrationId: req.params.registrationId,
+        eventType: GATE_EVENT_TYPES.EXIT,
+      })
+    ).sort({ createdAt: -1 });
 
     const isInside =
       lastEntry && (!lastExit || lastEntry.createdAt > lastExit.createdAt);
@@ -202,6 +233,12 @@ function buildScanDenialResponse({
     resolvedEventType,
     personInside,
   };
+}
+
+async function respondScanDenial(res, options) {
+  const { log, ...rest } = options;
+  await discardGateLog(log);
+  return res.status(400).json(buildScanDenialResponse({ ...rest, log: null }));
 }
 
 async function identifyFromPhoto(file, registrationId) {
@@ -425,8 +462,7 @@ router.post(
           const suggestedEventType = personInside
             ? GATE_EVENT_TYPES.EXIT
             : GATE_EVENT_TYPES.ENTRY;
-          return res.status(400).json(
-            buildScanDenialResponse({
+          return respondScanDenial(res, {
               scanType: effectiveScanType,
               matchScore,
               registration: populated,
@@ -451,10 +487,10 @@ router.post(
               securityReview: false,
               requestedEventType: eventType,
               suggestedEventType,
-            })
-          );
+            });
         }
       } else if (isAutoEvent) {
+        await discardGateLog(log);
         return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
       }
 
@@ -468,8 +504,7 @@ router.post(
         const denialDayPass = gateCheck.pass
           ? await formatPassResponse(gateCheck.pass)
           : dayPass;
-        return res.status(400).json(
-          buildScanDenialResponse({
+        return respondScanDenial(res, {
             scanType: effectiveScanType,
             matchScore,
             registration: populated,
@@ -481,8 +516,7 @@ router.post(
             activeDepartment: gateCheck.activeDepartment,
             activeDivision: gateCheck.activeDivision,
             requiredSteps: gateCheck.requiredSteps,
-          })
-        );
+          });
       }
 
       if (resolvedEventType === GATE_EVENT_TYPES.ENTRY) {
@@ -530,8 +564,7 @@ router.post(
         const denialDayPass = deptCheck.pass
           ? await formatPassResponse(deptCheck.pass)
           : dayPass;
-        return res.status(400).json(
-          buildScanDenialResponse({
+        return respondScanDenial(res, {
             scanType: effectiveScanType,
             matchScore,
             registration: populated,
@@ -544,8 +577,7 @@ router.post(
             sessionState: deptCheck.sessionState || sessionState,
             dayPass: denialDayPass,
             requiredSteps: deptCheck.requiredSteps,
-          })
-        );
+          });
       }
 
       dayPass = await updateDayPassAfterDepartmentScan(activePass, department, resolvedDeptEventType);
@@ -554,6 +586,7 @@ router.post(
     }
 
     const hasGateEntry = await madeGateEntryToday(matchedRegistration._id, divisionId);
+    await finalizeGateLog(log);
 
     res.json({
       matched: true,
@@ -686,21 +719,6 @@ router.post(
     }
 
     if (identify.ambiguous) {
-      const log = await GateLog.create({
-        matchScore: identify.matchScore,
-        matched: false,
-        photoPath: identify.savedPhotoPath,
-        ...logFields,
-        metadata: {
-          threshold: MATCH_THRESHOLD,
-          minMargin: MIN_MATCH_MARGIN,
-          autoIdentified: true,
-          reason: 'ambiguous',
-          candidates: identify.candidates,
-          scanType,
-        },
-      });
-
       return res.json({
         matched: false,
         reason: 'ambiguous',
@@ -708,7 +726,6 @@ router.post(
         matchScore: identify.matchScore,
         message: 'Could not identify this person uniquely. Please register or try again.',
         candidates: identify.candidates,
-        log,
       });
     }
 
@@ -730,6 +747,7 @@ router.post(
     });
 
     if (!matched) {
+      await discardGateLog(log);
       const reason = registrationId ? 'face_mismatch' : 'not_found';
       const message = registrationId
         ? 'Face does not match the selected registration'
@@ -742,7 +760,6 @@ router.post(
         matchScore,
         message,
         registerUrl: '/registrations/register',
-        log,
       });
     }
 
@@ -764,8 +781,7 @@ router.post(
           const suggestedEventType = personInside
             ? GATE_EVENT_TYPES.EXIT
             : GATE_EVENT_TYPES.ENTRY;
-          return res.status(400).json(
-            buildScanDenialResponse({
+          return respondScanDenial(res, {
               scanType,
               matchScore,
               registration: populated,
@@ -791,10 +807,10 @@ router.post(
               requestedEventType: eventType,
               suggestedEventType,
               personInside,
-            })
-          );
+            });
         }
       } else if (isAutoEvent) {
+        await discardGateLog(log);
         return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
       }
 
@@ -808,8 +824,7 @@ router.post(
         const denialDayPass = gateCheck.pass
           ? await formatPassResponse(gateCheck.pass)
           : dayPass;
-        return res.status(400).json(
-          buildScanDenialResponse({
+        return respondScanDenial(res, {
             scanType,
             matchScore,
             registration: populated,
@@ -821,8 +836,7 @@ router.post(
             activeDepartment: gateCheck.activeDepartment,
             activeDivision: gateCheck.activeDivision,
             requiredSteps: gateCheck.requiredSteps,
-          })
-        );
+          });
       }
 
       if (resolvedEventType === GATE_EVENT_TYPES.ENTRY) {
@@ -870,8 +884,7 @@ router.post(
         const denialDayPass = deptCheck.pass
           ? await formatPassResponse(deptCheck.pass)
           : dayPass;
-        return res.status(400).json(
-          buildScanDenialResponse({
+        return respondScanDenial(res, {
             scanType,
             matchScore,
             registration: populated,
@@ -884,8 +897,7 @@ router.post(
             sessionState: deptCheck.sessionState || sessionState,
             dayPass: denialDayPass,
             requiredSteps: deptCheck.requiredSteps,
-          })
-        );
+          });
       }
 
       dayPass = await updateDayPassAfterDepartmentScan(activePass, department, resolvedDeptEventType);
@@ -895,6 +907,7 @@ router.post(
     }
 
     const hasGateEntry = await madeGateEntryToday(matchedRegistration._id, divisionId);
+    await finalizeGateLog(log);
 
     const photoUrl = savedPhotoPath
       ? savedPhotoPath.startsWith('http')

@@ -426,7 +426,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                     <div className="system-user-scope-block">
                       <p className="system-user-scope-block__title">Gates</p>
                       {(user.gateIds || []).length === 0 ? (
-                        <p className="system-user-scope-block__empty">No gates assigned</p>
+                        <p className="system-user-scope-block__empty">No gates assigned (department-only access may still apply)</p>
                       ) : (
                         <ul className="system-user-gate-meta">
                           {(user.gateIds || []).map((gate) => (

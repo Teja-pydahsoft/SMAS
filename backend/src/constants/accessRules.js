@@ -31,6 +31,11 @@ export const ACCESS_RULES_SUMMARY = [
     rule: 'Only one active department at a time. Check out of the current department before checking into another.',
   },
   {
+    id: 'checkout_timing',
+    title: 'Check-out timing',
+    rule: 'Gate and department check-out require at least 2 minutes after the corresponding check-in.',
+  },
+  {
     id: 'division',
     title: 'Changing division',
     rule: 'Close the active department, check out at the division gate, then check in at the new division gate before any department check-in.',
@@ -54,6 +59,8 @@ export function getRequiredSteps(reason, { hasActiveDepartment = false } = {}) {
           ];
     case 'department_still_active':
       return ACCESS_FLOW_STEPS.DIVISION_EXIT;
+    case 'too_soon_after_entry':
+      return ['Wait at least 2 minutes after check-in before checking out'];
     case 'no_gate_entry':
       return ['Complete division gate entry first', 'Then check in at the department'];
     default:

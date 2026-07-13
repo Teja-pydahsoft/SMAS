@@ -216,7 +216,7 @@ export default function CreateSystemUserPage() {
         <div className="form-group">
           <label>Access Scope — Gates</label>
           <p className="field-hint">
-            Select specific division gates this user can operate. Gates are filtered by selected divisions.
+            Select division gates for gate entry/exit. Optional if this user only needs department check-in/check-out.
           </p>
           {scopedGates.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
@@ -248,7 +248,7 @@ export default function CreateSystemUserPage() {
         <div className="form-group">
           <label>Access Scope — Departments</label>
           <p className="field-hint">
-            Optionally restrict further to specific departments within the selected divisions.
+            Select departments for check-in/check-out on the Gate Access page. Gate assignment is not required when only departments are selected.
           </p>
           {scopedDepartments.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>

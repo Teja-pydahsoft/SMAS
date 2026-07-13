@@ -238,8 +238,8 @@ function NewUserModal({ onClose, onComplete }) {
                   <label>Departments</label>
                   <p className="field-hint">
                     {divisionIds.length === 0
-                      ? 'Select divisions to filter departments.'
-                      : 'Optionally restrict to specific departments.'}
+                      ? 'Select divisions to filter departments, or assign departments only for check-in/check-out access.'
+                      : 'Select departments for check-in/check-out. Gate assignment is optional.'}
                   </p>
                   {scopedDepartments.length === 0 ? (
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
@@ -287,7 +287,7 @@ function NewUserModal({ onClose, onComplete }) {
                   </p>
                 ) : (
                   <div className="form-group">
-                    <p className="field-hint">Select specific gates this user can operate.</p>
+                    <p className="field-hint">Optional — assign gates for entry/exit. Not required for department-only operators.</p>
                     <div className="checkbox-group">
                       {scopedGates.map((gate) => (
                         <label key={gate._id} className="checkbox-option">

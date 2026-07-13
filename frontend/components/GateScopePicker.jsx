@@ -39,9 +39,10 @@ export default function GateScopePicker({
 
       {!loading && !error && !hasScopeItems && (
         <div className="card gate-landing__empty">
-          <p className="section-title">No gates assigned</p>
+          <p className="section-title">No gates or departments assigned</p>
           <p className="section-desc">
-            Ask an administrator to assign division gates or departments to your account.
+            Ask an administrator to assign division gates and/or departments in System Users access scope.
+            Department-only access is supported — gate assignment is not required.
           </p>
         </div>
       )}
@@ -126,24 +127,21 @@ export default function GateScopePicker({
                       <span className="gate-landing__gate-type">Check-in / check-out</span>
                     </div>
                     <div className="gate-landing__gate-actions">
-                      {['entry', 'exit'].map((eventType) => (
-                        <button
-                          key={`${dept._id}-${eventType}`}
-                          type="button"
-                          className={eventType === 'entry' ? 'btn-primary' : 'btn-secondary'}
-                          disabled={!canGateWrite}
-                          onClick={() =>
-                            onSelect({
-                              scanType: 'department',
-                              divisionId: division._id,
-                              departmentId: dept._id,
-                              eventType,
-                            })
-                          }
-                        >
-                          {makeEntryButtonLabel('department', eventType)}
-                        </button>
-                      ))}
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={!canGateWrite}
+                        onClick={() =>
+                          onSelect({
+                            scanType: 'department',
+                            divisionId: division._id,
+                            departmentId: dept._id,
+                            eventType: 'auto',
+                          })
+                        }
+                      >
+                        {makeEntryButtonLabel('department', 'auto')}
+                      </button>
                     </div>
                   </li>
                 ))}

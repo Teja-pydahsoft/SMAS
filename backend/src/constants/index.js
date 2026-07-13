@@ -21,6 +21,9 @@ export const GATE_EVENT_TYPES = {
   AUTO: 'auto',
 };
 
+/** Minimum time after check-in before check-out is allowed (gate and department). */
+export const MIN_CHECKOUT_INTERVAL_MS = 2 * 60 * 1000;
+
 export const SCAN_TYPES = {
   GATE: 'gate',
   DEPARTMENT: 'department',

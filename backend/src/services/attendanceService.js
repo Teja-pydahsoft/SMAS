@@ -2,7 +2,7 @@ import Pass from '../models/Pass.js';
 import GateLog from '../models/GateLog.js';
 import Division from '../models/Division.js';
 import Department from '../models/Department.js';
-import { PASS_TYPES, GATE_EVENT_TYPES, SCAN_TYPES } from '../constants/index.js';
+import { PASS_TYPES, GATE_EVENT_TYPES, SCAN_TYPES, MIN_CHECKOUT_INTERVAL_MS } from '../constants/index.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { buildQrDataUrl, formatPassResponse } from './passService.js';
 import { photoUrlFromPath } from '../utils/displayInfo.js';
@@ -35,6 +35,7 @@ export const DEPARTMENT_DENIAL_REASONS = {
   ALREADY_IN_DEPARTMENT: 'already_in_department',
   NOT_IN_DEPARTMENT: 'not_in_department',
   NOT_CHECKED_IN: 'not_checked_in',
+  TOO_SOON_AFTER_ENTRY: 'too_soon_after_entry',
 };
 
 export const GATE_DENIAL_REASONS = {
@@ -42,7 +43,36 @@ export const GATE_DENIAL_REASONS = {
   ACTIVE_IN_OTHER_DIVISION: 'active_in_other_division',
   DEPARTMENT_STILL_ACTIVE: 'department_still_active',
   NOT_CHECKED_IN: 'not_checked_in',
+  TOO_SOON_AFTER_ENTRY: 'too_soon_after_entry',
 };
+
+function remainingCheckoutWaitMs(entryAt, now = new Date()) {
+  if (!entryAt) return 0;
+  const entryTime = new Date(entryAt).getTime();
+  if (Number.isNaN(entryTime)) return 0;
+  const remaining = MIN_CHECKOUT_INTERVAL_MS - (now.getTime() - entryTime);
+  return remaining > 0 ? remaining : 0;
+}
+
+function formatCheckoutWaitMessage(remainingMs, contextLabel) {
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const waitLabel = minutes > 0
+    ? `${minutes} minute${minutes !== 1 ? 's' : ''}${seconds > 0 ? ` ${seconds} second${seconds !== 1 ? 's' : ''}` : ''}`
+    : `${seconds} second${seconds !== 1 ? 's' : ''}`;
+  return `Check-out not allowed yet. Wait at least 2 minutes after ${contextLabel} (about ${waitLabel} remaining).`;
+}
+
+function getOpenDepartmentEntryAt(state, departmentId) {
+  const visits = state?.departmentVisits;
+  if (!Array.isArray(visits)) return null;
+  const deptId = departmentId?.toString();
+  const openVisit = [...visits].reverse().find(
+    (visit) => visit.departmentId === deptId && !visit.exitAt
+  );
+  return openVisit?.entryAt || null;
+}
 
 export function getPassSessionState(pass) {
   if (!pass?.qrPayload) {
@@ -229,6 +259,22 @@ export async function validateGateScan(pass, eventType, registrationId, targetDi
         ...denialExtras(GATE_DENIAL_REASONS.DEPARTMENT_STILL_ACTIVE, exitState),
       };
     }
+
+    const gateEntryAt = exitState.gateEntryAt
+      || (await hasTodayGateEntry(registrationId, targetId)).gateEntryAt;
+    const gateWaitMs = remainingCheckoutWaitMs(gateEntryAt);
+    if (gateWaitMs > 0) {
+      return {
+        ok: false,
+        reason: GATE_DENIAL_REASONS.TOO_SOON_AFTER_ENTRY,
+        error: formatCheckoutWaitMessage(gateWaitMs, 'gate entry'),
+        activeDivision,
+        sessionState: exitState,
+        checkoutWaitRemainingMs: gateWaitMs,
+        ...denialExtras(GATE_DENIAL_REASONS.TOO_SOON_AFTER_ENTRY, exitState),
+      };
+    }
+
     return { ok: true };
   }
 
@@ -382,6 +428,22 @@ export async function validateDepartmentScan(pass, department, eventType, regist
         ...denialExtras(DEPARTMENT_DENIAL_REASONS.ACTIVE_IN_OTHER_DEPARTMENT, state),
       };
     }
+
+    const deptEntryAt = getOpenDepartmentEntryAt(state, department._id);
+    const deptWaitMs = remainingCheckoutWaitMs(deptEntryAt);
+    if (deptWaitMs > 0) {
+      return {
+        ok: false,
+        reason: DEPARTMENT_DENIAL_REASONS.TOO_SOON_AFTER_ENTRY,
+        error: formatCheckoutWaitMessage(deptWaitMs, 'department check-in'),
+        hasGateEntry: true,
+        activeDepartment,
+        sessionState: state,
+        checkoutWaitRemainingMs: deptWaitMs,
+        ...denialExtras(DEPARTMENT_DENIAL_REASONS.TOO_SOON_AFTER_ENTRY, state),
+      };
+    }
+
     return { ok: true, hasGateEntry: true, activeDepartment };
   }
 

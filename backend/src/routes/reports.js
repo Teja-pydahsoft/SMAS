@@ -5,6 +5,7 @@ import {
   listRegistrationReports,
   getRegistrationReport,
   getDailyPassByRole,
+  getAttendanceHistoryGrid,
 } from '../services/registrationReportService.js';
 
 const router = Router();
@@ -31,10 +32,28 @@ router.get(
 );
 
 router.get(
+  '/attendance-history',
+  requirePermission('reports', 'read'),
+  asyncHandler(async (req, res) => {
+    const data = await getAttendanceHistoryGrid({
+      dateFrom: req.query.dateFrom || '',
+      dateTo: req.query.dateTo || '',
+      search: req.query.search || '',
+      roleId: req.query.roleId || '',
+      limit: req.query.limit || 500,
+    });
+    res.json(data);
+  })
+);
+
+router.get(
   '/registrations/:registrationId',
   requirePermission('reports', 'read'),
   asyncHandler(async (req, res) => {
-    const report = await getRegistrationReport(req.params.registrationId);
+    const report = await getRegistrationReport(req.params.registrationId, {
+      dateFrom: req.query.dateFrom || '',
+      dateTo: req.query.dateTo || '',
+    });
     if (!report) {
       return res.status(404).json({ error: 'Registration not found or not verified' });
     }

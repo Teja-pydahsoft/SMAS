@@ -218,7 +218,7 @@ export default function RegistrationDetailsModal({ registration, onClose }) {
           )}
 
           {activeTab === 'pass' && isVerified && (
-            <div className="reg-details-pass-wrap no-print">
+            <div className="reg-details-pass-wrap">
               {loadingPass && (
                 <div className="reg-details-loading">
                   <span className="reports-slide-modal__spinner" aria-hidden="true" />

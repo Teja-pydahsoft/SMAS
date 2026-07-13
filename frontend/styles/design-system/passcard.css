@@ -235,3 +235,205 @@
 .pass-verify-history__date { font-size: var(--text-15); font-weight: 600; margin-bottom: 10px; padding-bottom: 7px; border-bottom: 1px solid var(--border-color); }
 
 .pass-verify-header__title { font-size: var(--text-15); font-weight: 600; margin-top: 10px; }
+
+/* ── A5 landscape print (registration pass + daily pass) ── */
+@media print {
+  @page {
+    size: A5 landscape;
+    margin: 8mm 10mm;
+  }
+
+  html,
+  body {
+    width: 210mm;
+    height: 148mm;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden;
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .pass-card,
+  .pass-card * {
+    visibility: visible;
+  }
+
+  .pass-modal-overlay,
+  .reg-details-modal,
+  .gate-day-pass-section,
+  .gate-layout,
+  .page-shell,
+  .sidebar {
+    position: static !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .pass-card {
+    position: fixed;
+    top: 8mm;
+    left: 10mm;
+    width: 190mm;
+    max-width: 190mm;
+    max-height: 132mm;
+    height: auto;
+    margin: 0;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    outline: 2px solid #111827;
+    outline-offset: 0;
+    border: 1px solid #E5E7EB !important;
+    overflow: hidden;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pass-card__accent {
+    height: 6px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pass-card__header {
+    padding: 0.55rem 0.9rem;
+    background: #F8FAFC !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pass-brand-icon {
+    width: 28px;
+    height: 28px;
+    font-size: 0.8rem;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pass-brand-name { font-size: 0.8rem; }
+  .pass-brand-sub { font-size: 0.58rem; }
+
+  .pass-card__body {
+    display: grid !important;
+    grid-template-columns: 30mm 1fr 34mm !important;
+    grid-template-rows: unset !important;
+    min-height: 0 !important;
+  }
+
+  .pass-card__photo-col {
+    padding: 0.65rem 0.55rem;
+    background: #F8FAFC !important;
+    border-right: 1px solid #E5E7EB !important;
+    border-bottom: none !important;
+    flex-direction: column !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pass-card__photo,
+  .pass-card__photo--placeholder {
+    width: 24mm;
+    height: 30mm;
+  }
+
+  .pass-card__details-col {
+    padding: 0.55rem 0.75rem;
+  }
+
+  .pass-card__name {
+    font-size: 0.95rem;
+    margin-bottom: 1px;
+  }
+
+  .pass-card__role {
+    font-size: 0.62rem;
+    margin-bottom: 1px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pass-card__reg-code {
+    font-size: 0.62rem;
+    margin-bottom: 4px;
+  }
+
+  .pass-card__divider {
+    margin: 3px 0 5px;
+  }
+
+  .pass-card__table {
+    font-size: 0.62rem;
+  }
+
+  .pass-card__table-label {
+    padding: 2px 5px 2px 0;
+  }
+
+  .pass-card__table-value {
+    padding: 2px 0;
+  }
+
+  .pass-card__qr-col {
+    padding: 0.65rem 0.55rem;
+    background: #F8FAFC !important;
+    border-left: 1px solid #E5E7EB !important;
+    border-top: none !important;
+    flex-direction: column !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pass-card__qr,
+  .pass-card__qr--placeholder {
+    width: 28mm;
+    height: 28mm;
+  }
+
+  .pass-card__qr-hint {
+    font-size: 0.55rem;
+  }
+
+  .pass-card__footer {
+    padding: 0.45rem 0.9rem;
+    background: #F8FAFC !important;
+    border-top: 1px solid #E5E7EB !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pass-card__footer-note {
+    font-size: 0.55rem;
+    visibility: visible !important;
+  }
+
+  .pass-card__type-badge {
+    font-size: 0.55rem;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pass-card__pass-code {
+    font-size: 0.55rem;
+  }
+
+  .pass-card__print-btn {
+    display: none !important;
+  }
+
+  .pass-card img {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

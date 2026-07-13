@@ -1,17 +1,30 @@
 import { AuthProvider } from '@/components/AuthProvider';
 import LayoutShell from '@/components/LayoutShell';
+import PwaShell from '@/components/PwaShell';
 import './globals.css';
 import '../styles/admin-dashboard.css';
 
 export const metadata = {
   title: 'SAMS - Smart Access Management System',
   description: 'Dynamic role-based registration with face verification and gate access',
+  manifest: '/manifest.webmanifest',
+  applicationName: 'SAMS',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'SAMS',
+  },
+  icons: {
+    icon: '/favicon.png',
+    apple: '/icons/apple-touch-icon.png',
+  },
 };
 
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
+  themeColor: '#1A56FF',
 };
 
 export default function RootLayout({ children }) {
@@ -27,6 +40,7 @@ export default function RootLayout({ children }) {
       </head>
       <body suppressHydrationWarning>
         <AuthProvider>
+          <PwaShell />
           <LayoutShell>{children}</LayoutShell>
         </AuthProvider>
       </body>

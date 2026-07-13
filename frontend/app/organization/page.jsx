@@ -61,9 +61,10 @@ const GATE_TYPE_OPTIONS = [
   { value: 'both', label: 'Entry & Exit' },
 ];
 
-function NewDivisionModal({ onClose, onComplete }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+function DivisionFormModal({ division, onClose, onComplete }) {
+  const isEdit = Boolean(division);
+  const [name, setName] = useState(division?.name ?? '');
+  const [description, setDescription] = useState(division?.description ?? '');
   const [gates, setGates] = useState([emptyGate()]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -75,17 +76,25 @@ function NewDivisionModal({ onClose, onComplete }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim()) { setError('Division name is required'); return; }
-    const validGates = gates.filter((g) => g.name.trim() && g.gateType);
-    if (!validGates.length) { setError('Add at least one gate with a name and type'); return; }
     setLoading(true);
     setError('');
     try {
-      const division = await api.divisions.create({
+      if (isEdit) {
+        const updated = await api.divisions.update(division._id, {
+          name: name.trim(),
+          description: description.trim(),
+        });
+        onComplete(updated);
+        return;
+      }
+      const validGates = gates.filter((g) => g.name.trim() && g.gateType);
+      if (!validGates.length) { setError('Add at least one gate with a name and type'); return; }
+      const created = await api.divisions.create({
         name: name.trim(),
         description: description.trim(),
         gates: validGates.map((g) => ({ name: g.name.trim(), gateType: g.gateType, description: g.description.trim() })),
       });
-      onComplete(division);
+      onComplete(created);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -94,9 +103,14 @@ function NewDivisionModal({ onClose, onComplete }) {
   }
 
   return (
-    <Modal title="New Division" subtitle="Create a division and add its gates" onClose={onClose} maxWidth={700}>
+    <Modal
+      title={isEdit ? 'Edit Division' : 'New Division'}
+      subtitle={isEdit ? 'Update division name and description' : 'Create a division and add its gates'}
+      onClose={onClose}
+      maxWidth={700}
+    >
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '1.5rem' }}>
+        <div style={{ marginBottom: isEdit ? 0 : '1.5rem' }}>
           <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '0.75rem' }}>Division Details</h4>
           <div className="form-group">
             <label htmlFor="div-name">Division Name <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -108,37 +122,41 @@ function NewDivisionModal({ onClose, onComplete }) {
           </div>
         </div>
 
-        <div style={{ marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-            <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>Gates</h4>
-            <button type="button" className="btn-secondary" onClick={() => setGates((p) => [...p, emptyGate()])} style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}>+ Add Gate</button>
-          </div>
-          {gates.map((gate, i) => (
-            <div key={i} style={{ padding: '1rem', background: 'var(--bg-inset,#f9fafb)', borderRadius: 'var(--radius-sm)', marginBottom: '0.75rem', border: '1px solid var(--border,#e5e7eb)' }}>
-              <div className="form-group">
-                <label>Gate Name <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <input value={gate.name} onChange={(e) => updateGate(i, 'name', e.target.value)} placeholder="e.g. Main Gate" />
-              </div>
-              <div className="form-group">
-                <label>Gate Type <span style={{ color: 'var(--danger)' }}>*</span></label>
-                <select value={gate.gateType} onChange={(e) => updateGate(i, 'gateType', e.target.value)}>
-                  {GATE_TYPE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Description</label>
-                <input value={gate.description} onChange={(e) => updateGate(i, 'description', e.target.value)} placeholder="Optional gate notes" />
-              </div>
-              {gates.length > 1 && (
-                <button type="button" className="btn-danger" onClick={() => setGates((p) => p.filter((_, idx) => idx !== i))} style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}>Remove Gate</button>
-              )}
+        {!isEdit && (
+          <div style={{ marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 600 }}>Gates</h4>
+              <button type="button" className="btn-secondary" onClick={() => setGates((p) => [...p, emptyGate()])} style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}>+ Add Gate</button>
             </div>
-          ))}
-        </div>
+            {gates.map((gate, i) => (
+              <div key={i} style={{ padding: '1rem', background: 'var(--bg-inset,#f9fafb)', borderRadius: 'var(--radius-sm)', marginBottom: '0.75rem', border: '1px solid var(--border,#e5e7eb)' }}>
+                <div className="form-group">
+                  <label>Gate Name <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <input value={gate.name} onChange={(e) => updateGate(i, 'name', e.target.value)} placeholder="e.g. Main Gate" />
+                </div>
+                <div className="form-group">
+                  <label>Gate Type <span style={{ color: 'var(--danger)' }}>*</span></label>
+                  <select value={gate.gateType} onChange={(e) => updateGate(i, 'gateType', e.target.value)}>
+                    {GATE_TYPE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Description</label>
+                  <input value={gate.description} onChange={(e) => updateGate(i, 'description', e.target.value)} placeholder="Optional gate notes" />
+                </div>
+                {gates.length > 1 && (
+                  <button type="button" className="btn-danger" onClick={() => setGates((p) => p.filter((_, idx) => idx !== i))} style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}>Remove Gate</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {error && <p className="error-msg">{error}</p>}
         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
-          <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Creating...' : 'Create Division & Gates'}</button>
+          <button type="submit" className="btn-primary" disabled={loading}>
+            {loading ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Division & Gates')}
+          </button>
           <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
         </div>
       </form>
@@ -151,6 +169,7 @@ function DivisionsTab({ canWrite }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [editingDivision, setEditingDivision] = useState(null);
 
   useEffect(() => { loadDivisions(); }, []);
 
@@ -225,6 +244,7 @@ function DivisionsTab({ canWrite }) {
                       </Link>
                       {canWrite && (
                         <>
+                          <button type="button" className="btn-secondary" onClick={() => setEditingDivision(division)}>Edit</button>
                           <button type="button" className="btn-secondary" onClick={() => handleToggleActive(division)}>{division.isActive ? 'Deactivate' : 'Activate'}</button>
                           <button type="button" className="btn-danger" onClick={() => handleDelete(division._id, division.name)}>Delete</button>
                         </>
@@ -238,23 +258,34 @@ function DivisionsTab({ canWrite }) {
         </div>
       )}
 
-      {showModal && <NewDivisionModal onClose={() => setShowModal(false)} onComplete={() => { setShowModal(false); loadDivisions(); }} />}
+      {showModal && <DivisionFormModal onClose={() => setShowModal(false)} onComplete={() => { setShowModal(false); loadDivisions(); }} />}
+      {editingDivision && (
+        <DivisionFormModal
+          division={editingDivision}
+          onClose={() => setEditingDivision(null)}
+          onComplete={() => { setEditingDivision(null); loadDivisions(); }}
+        />
+      )}
     </div>
   );
 }
 
 /* ─── Departments tab ─────────────────────────────────────────── */
-function NewDepartmentModal({ onClose, onComplete }) {
+function DepartmentFormModal({ department, onClose, onComplete }) {
+  const isEdit = Boolean(department);
   const [divisions, setDivisions] = useState([]);
-  const [divisionIds, setDivisionIds] = useState([]);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [divisionIds, setDivisionIds] = useState(
+    () => (department?.divisionIds || []).map((div) => (typeof div === 'string' ? div : div._id))
+  );
+  const [name, setName] = useState(department?.name ?? '');
+  const [description, setDescription] = useState(department?.description ?? '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api.divisions.list({ isActive: 'true' }).then(setDivisions).catch((e) => setError(e.message));
-  }, []);
+    const params = isEdit ? {} : { isActive: 'true' };
+    api.divisions.list(params).then(setDivisions).catch((e) => setError(e.message));
+  }, [isEdit]);
 
   function toggleDivision(id) {
     setDivisionIds((prev) => prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]);
@@ -267,8 +298,11 @@ function NewDepartmentModal({ onClose, onComplete }) {
     setLoading(true);
     setError('');
     try {
-      const department = await api.departments.create({ divisionIds, name: name.trim(), description: description.trim() });
-      onComplete(department);
+      const payload = { divisionIds, name: name.trim(), description: description.trim() };
+      const result = isEdit
+        ? await api.departments.update(department._id, payload)
+        : await api.departments.create(payload);
+      onComplete(result);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -277,7 +311,11 @@ function NewDepartmentModal({ onClose, onComplete }) {
   }
 
   return (
-    <Modal title="New Department" subtitle="Create a department and link it to divisions" onClose={onClose}>
+    <Modal
+      title={isEdit ? 'Edit Department' : 'New Department'}
+      subtitle={isEdit ? 'Update department details and division links' : 'Create a department and link it to divisions'}
+      onClose={onClose}
+    >
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label htmlFor="dept-name">Department Name <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -305,7 +343,9 @@ function NewDepartmentModal({ onClose, onComplete }) {
         </div>
         {error && <p className="error-msg">{error}</p>}
         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
-          <button type="submit" className="btn-primary" disabled={loading || divisions.length === 0}>{loading ? 'Creating...' : 'Create Department'}</button>
+          <button type="submit" className="btn-primary" disabled={loading || divisions.length === 0}>
+            {loading ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Department')}
+          </button>
           <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
         </div>
       </form>
@@ -320,6 +360,7 @@ function DepartmentsTab({ canWrite }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState(null);
 
   useEffect(() => { api.divisions.list().then(setDivisions).catch(() => {}); }, []);
   useEffect(() => { loadDepartments(); }, [divisionFilter]);
@@ -405,6 +446,7 @@ function DepartmentsTab({ canWrite }) {
                     <td>{formatDate(dept.createdAt)}</td>
                     {canWrite && (
                       <td className="actions-cell">
+                        <button type="button" className="btn-secondary" onClick={() => setEditingDepartment(dept)}>Edit</button>
                         <button type="button" className="btn-secondary" onClick={() => handleToggleActive(dept)}>{dept.isActive ? 'Deactivate' : 'Activate'}</button>
                         <button type="button" className="btn-danger" onClick={() => handleDelete(dept._id, dept.name)}>Delete</button>
                       </td>
@@ -417,15 +459,23 @@ function DepartmentsTab({ canWrite }) {
         </div>
       )}
 
-      {showModal && <NewDepartmentModal onClose={() => setShowModal(false)} onComplete={() => { setShowModal(false); loadDepartments(); }} />}
+      {showModal && <DepartmentFormModal onClose={() => setShowModal(false)} onComplete={() => { setShowModal(false); loadDepartments(); }} />}
+      {editingDepartment && (
+        <DepartmentFormModal
+          department={editingDepartment}
+          onClose={() => setEditingDepartment(null)}
+          onComplete={() => { setEditingDepartment(null); loadDepartments(); }}
+        />
+      )}
     </div>
   );
 }
 
 /* ─── Shifts tab ──────────────────────────────────────────────── */
-function NewShiftModal({ onClose, onComplete }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+function ShiftFormModal({ shift, onClose, onComplete }) {
+  const isEdit = Boolean(shift);
+  const [name, setName] = useState(shift?.name ?? '');
+  const [description, setDescription] = useState(shift?.description ?? '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -435,8 +485,11 @@ function NewShiftModal({ onClose, onComplete }) {
     setLoading(true);
     setError('');
     try {
-      const shift = await api.shifts.create({ name: name.trim(), description: description.trim() });
-      onComplete(shift);
+      const payload = { name: name.trim(), description: description.trim() };
+      const result = isEdit
+        ? await api.shifts.update(shift._id, payload)
+        : await api.shifts.create(payload);
+      onComplete(result);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -445,7 +498,11 @@ function NewShiftModal({ onClose, onComplete }) {
   }
 
   return (
-    <Modal title="New Shift" subtitle="Create a new shift for role-based scheduling" onClose={onClose}>
+    <Modal
+      title={isEdit ? 'Edit Shift' : 'New Shift'}
+      subtitle={isEdit ? 'Update shift name and description' : 'Create a new shift for role-based scheduling'}
+      onClose={onClose}
+    >
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label htmlFor="shift-name">Shift Name <span style={{ color: 'var(--danger)' }}>*</span></label>
@@ -457,7 +514,9 @@ function NewShiftModal({ onClose, onComplete }) {
         </div>
         {error && <p className="error-msg">{error}</p>}
         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
-          <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Creating...' : 'Create Shift'}</button>
+          <button type="submit" className="btn-primary" disabled={loading}>
+            {loading ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save Changes' : 'Create Shift')}
+          </button>
           <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
         </div>
       </form>
@@ -470,6 +529,7 @@ function ShiftsTab({ canWrite }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [editingShift, setEditingShift] = useState(null);
 
   useEffect(() => { loadShifts(); }, []);
 
@@ -539,6 +599,7 @@ function ShiftsTab({ canWrite }) {
                     <td>{formatDate(shift.createdAt)}</td>
                     {canWrite && (
                       <td className="actions-cell">
+                        <button type="button" className="btn-secondary" onClick={() => setEditingShift(shift)}>Edit</button>
                         <button type="button" className="btn-secondary" onClick={() => handleToggleActive(shift)}>{shift.isActive ? 'Deactivate' : 'Activate'}</button>
                         <button type="button" className="btn-danger" onClick={() => handleDelete(shift._id, shift.name)}>Delete</button>
                       </td>
@@ -551,7 +612,14 @@ function ShiftsTab({ canWrite }) {
         </div>
       )}
 
-      {showModal && <NewShiftModal onClose={() => setShowModal(false)} onComplete={() => { setShowModal(false); loadShifts(); }} />}
+      {showModal && <ShiftFormModal onClose={() => setShowModal(false)} onComplete={() => { setShowModal(false); loadShifts(); }} />}
+      {editingShift && (
+        <ShiftFormModal
+          shift={editingShift}
+          onClose={() => setEditingShift(null)}
+          onComplete={() => { setEditingShift(null); loadShifts(); }}
+        />
+      )}
     </div>
   );
 }

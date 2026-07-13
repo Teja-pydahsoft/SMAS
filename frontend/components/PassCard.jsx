@@ -16,6 +16,13 @@ export default function PassCard({ pass, onPrint }) {
       onPrint();
       return;
     }
+    document.body.classList.add('pass-printing');
+    const cleanup = () => {
+      document.body.classList.remove('pass-printing');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(cleanup, 1500);
     window.print();
   }
 

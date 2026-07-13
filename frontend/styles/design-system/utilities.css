@@ -124,40 +124,7 @@
 /* ── Page body overrides ── */
 .gate-landing-shell { min-height: 100vh; overflow-y: auto; }
 
-/* ── Print ── */
+/* ── Print (pass isolation) — sizing in passcard.css ── */
 @media print {
-  body * { visibility: hidden; }
-  .pass-card, .pass-card * { visibility: visible; }
-
-  @page { size: A5 landscape; margin: 12mm 16mm; }
-
-  body { background: #fff !important; margin: 0; padding: 0; }
-
-  .pass-card {
-    position: fixed;
-    inset: 0;
-    margin: auto;
-    width: 180mm;
-    max-width: 180mm;
-    height: auto;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    background: #fff !important;
-    outline: 2px solid #111827;
-    outline-offset: 2px;
-    border: 1px solid #E5E7EB !important;
-  }
-
-  .pass-card__accent { height: 8px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pass-card__header { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pass-card__photo-col { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pass-card__qr-col { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pass-card__footer { background: #F8FAFC !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pass-card__type-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pass-brand-icon { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pass-card__role { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
   .no-print { display: none !important; visibility: hidden !important; }
-  .pass-card__print-btn { display: none !important; }
-  .pass-card__footer-note { visibility: visible !important; }
 }

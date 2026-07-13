@@ -41,6 +41,9 @@
 /* 10. Login page */
 @import '../styles/design-system/login.css';
 
+/* 10a. PWA install banner */
+@import '../styles/design-system/pwa-install.css';
+
 /* 11. Bot / session loader */
 @import '../styles/design-system/loader.css';
 

@@ -14,21 +14,27 @@
 export function resolvePhotoUrl(photoPath) {
   if (!photoPath) return null;
 
-  // If it's already an absolute URL (http/https/data:) return as-is
   if (/^https?:\/\/|^data:/.test(photoPath)) return photoPath;
 
-  // Extract just the filename from any path format
-  const filename = photoPath.replace(/\\/g, '/').split('/').pop();
+  const normalized = photoPath.replace(/\\/g, '/');
+  const filename = normalized.split('/').pop();
   if (!filename) return null;
 
-  const relativePath = `/uploads/registrations/${filename}`;
+  let relativePath;
+  if (normalized.includes('/gate/') || normalized.startsWith('/uploads/gate/')) {
+    relativePath = `/uploads/gate/${filename}`;
+  } else if (normalized.includes('/registrations-media/')) {
+    relativePath = `/uploads/registrations-media/${filename}`;
+  } else if (normalized.startsWith('/uploads/')) {
+    relativePath = normalized;
+  } else {
+    relativePath = `/uploads/registrations/${filename}`;
+  }
 
-  // On the client, prefer an absolute URL to the backend so the image
-  // loads directly without going through the Next.js rewrite layer.
   if (typeof window !== 'undefined') {
     const backendUrl =
       process.env.NEXT_PUBLIC_BACKEND_URL ||
-      (window.__SMAS_BACKEND_URL__) || // runtime injection fallback
+      (window.__SMAS_BACKEND_URL__) ||
       null;
 
     if (backendUrl) {

@@ -298,8 +298,15 @@ export const api = {
       const qs = new URLSearchParams(params).toString();
       return request(`/reports/registrations${qs ? `?${qs}` : ''}`);
     },
-    getRegistration: (registrationId) => request(`/reports/registrations/${registrationId}`),
+    getRegistration: (registrationId, params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/reports/registrations/${registrationId}${qs ? `?${qs}` : ''}`);
+    },
     dailyPasses: () => request('/reports/daily-passes'),
+    attendanceHistory: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/reports/attendance-history${qs ? `?${qs}` : ''}`);
+    },
   },
 
   divisions: {

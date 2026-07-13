@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
@@ -133,7 +133,81 @@ function SummaryCard({ icon, label, value, trend, trendUp, sparkData, color = 'p
 /* ═══════════════════════════════════════════════════════════════
    TIMELINE COMPONENT
 ════════════════════════════════════════════════════════════════ */
-function TimelineEvent({ entry, isLast }) {
+function entryLocationTitle(entry) {
+  const parts = [];
+  if (entry.gateName) parts.push(`Gate: ${entry.gateName}`);
+  if (entry.departmentName) parts.push(`Department: ${entry.departmentName}`);
+  if (entry.divisionName) parts.push(`Division: ${entry.divisionName}`);
+  return parts.join(' · ') || entry.label || '';
+}
+
+function EntryLocationMeta({ entry, compact = false }) {
+  const isDept = entry.scanType === 'department';
+
+  if (compact) {
+    return (
+      <div className="rc-entry-loc rc-entry-loc--compact">
+        {isDept ? (
+          <>
+            {entry.departmentName && (
+              <span className="rc-entry-loc__dept">{entry.departmentName}</span>
+            )}
+            {entry.divisionName && (
+              <span className="rc-entry-loc__div">{entry.divisionName}</span>
+            )}
+          </>
+        ) : (
+          <>
+            {entry.gateName && (
+              <span className="rc-entry-loc__gate">{entry.gateName}</span>
+            )}
+            {entry.divisionName && (
+              <span className="rc-entry-loc__div">{entry.divisionName}</span>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rc-entry-loc">
+      {entry.divisionName && (
+        <p className="rc-timeline__meta">Division: {entry.divisionName}</p>
+      )}
+      {isDept && entry.departmentName && (
+        <p className="rc-timeline__meta">Department: {entry.departmentName}</p>
+      )}
+      {!isDept && entry.gateName && (
+        <p className="rc-timeline__meta">Gate: {entry.gateName}</p>
+      )}
+    </div>
+  );
+}
+
+function ScanPhoto({ url, label, className = '' }) {
+  const [err, setErr] = useState(false);
+  const src = resolvePhotoUrl(url);
+  if (!src || err) {
+    return (
+      <div className={`rc-scan-photo rc-scan-photo--empty ${className}`.trim()} aria-hidden>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
+        </svg>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={label || 'Scan photo'}
+      className={`rc-scan-photo ${className}`.trim()}
+      onError={() => setErr(true)}
+    />
+  );
+}
+
+function TimelineEvent({ entry, isLast, showPhoto = true }) {
   const isGate = entry.scanType !== 'department';
   const isEntry = (entry.eventType || '').toLowerCase().includes('entry') ||
     (entry.label || '').toLowerCase().includes('entry') ||
@@ -158,33 +232,152 @@ function TimelineEvent({ entry, isLast }) {
         {!isLast && <div className="rc-timeline__line" />}
       </div>
       <div className={`rc-timeline__card ${isActive ? 'rc-timeline__card--active' : ''}`}>
-        <div className="rc-timeline__card-top">
-          <div className="rc-timeline__badges">
-            <span className={`badge ${isEntry ? 'badge-success' : 'badge-info'}`}>
-              {entry.eventType || (isEntry ? 'ENTRY' : 'EXIT')}
-            </span>
-            <span className={`badge ${isGate ? 'badge-secondary' : 'badge-warning'}`}>
-              {isGate ? 'Gate' : 'Dept'}
-            </span>
-            {isActive && (
-              <span className="badge badge-warning">
-                <span className="today-timeline__pulse" aria-hidden /> Active
-              </span>
+        <div className={`rc-timeline__card-body ${!showPhoto ? 'rc-timeline__card-body--no-photo' : ''}`}>
+          <div className="rc-timeline__card-main">
+            <div className="rc-timeline__card-top">
+              <div className="rc-timeline__badges">
+                <span className={`badge ${isEntry ? 'badge-success' : 'badge-info'}`}>
+                  {entry.eventType || (isEntry ? 'ENTRY' : 'EXIT')}
+                </span>
+                <span className={`badge ${isGate ? 'badge-secondary' : 'badge-warning'}`}>
+                  {isGate ? 'Gate' : 'Dept'}
+                </span>
+                {isActive && (
+                  <span className="badge badge-warning">
+                    <span className="today-timeline__pulse" aria-hidden /> Active
+                  </span>
+                )}
+              </div>
+              <span className="rc-timeline__time">{time ? formatTime(time) : '—'}</span>
+            </div>
+            <p className="rc-timeline__label">{entry.label}</p>
+            <EntryLocationMeta entry={entry} />
+            {entry.entryAt && entry.exitAt && (
+              <p className="rc-timeline__meta rc-timeline__meta--duration">
+                Duration: {calcDuration(entry.entryAt, entry.exitAt)}
+              </p>
             )}
           </div>
-          <span className="rc-timeline__time">{time ? formatTime(time) : '—'}</span>
+          {showPhoto && <ScanPhoto url={entry.photoUrl} label={`${entry.eventType || 'Scan'} photo`} />}
         </div>
-        <p className="rc-timeline__label">{entry.label}</p>
-        {entry.divisionName && <p className="rc-timeline__meta">Division: {entry.divisionName}</p>}
-        {entry.departmentName && entry.scanType !== 'department' && (
-          <p className="rc-timeline__meta">Dept: {entry.departmentName}</p>
-        )}
-        {entry.entryAt && entry.exitAt && (
-          <p className="rc-timeline__meta rc-timeline__meta--duration">
-            Duration: {calcDuration(entry.entryAt, entry.exitAt)}
-          </p>
-        )}
       </div>
+    </div>
+  );
+}
+
+function PeriodTrackStep({ entry }) {
+  const isEntry = (entry.eventType || '').toLowerCase().includes('entry');
+  return (
+    <div className="rc-day-track__step" title={entryLocationTitle(entry)}>
+      <span className={`rc-day-track__step-dot rc-day-track__step-dot--${isEntry ? 'entry' : 'exit'}`} />
+      <span className="rc-day-track__step-time">{formatTime(entry.at)}</span>
+      <span className="rc-day-track__step-label">{entry.eventType || (isEntry ? 'Entry' : 'Exit')}</span>
+      <EntryLocationMeta entry={entry} compact />
+    </div>
+  );
+}
+
+function PeriodDayTrack({ entries }) {
+  const sorted = [...entries].sort((a, b) => new Date(a.at) - new Date(b.at));
+  if (sorted.length === 0) return null;
+
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const middle = sorted.length > 2 ? sorted.slice(1, -1) : [];
+  const isSingle = sorted.length === 1;
+
+  return (
+    <div className={`rc-day-track ${isSingle ? 'rc-day-track--single' : ''}`}>
+      <div className="rc-day-track__endpoint rc-day-track__endpoint--start">
+        <ScanPhoto url={first.photoUrl} label="Start scan photo" className="rc-day-track__photo" />
+        <div className="rc-day-track__endpoint-info">
+          <span className="rc-day-track__endpoint-label">Start</span>
+          <span className="rc-day-track__endpoint-time">{formatTime(first.at)}</span>
+          <EntryLocationMeta entry={first} compact />
+        </div>
+      </div>
+
+      {!isSingle && (
+        <>
+          <div className="rc-day-track__rail">
+            <div className="rc-day-track__line" />
+            {middle.length > 0 && (
+              <div className="rc-day-track__steps-scroll">
+                <div className="rc-day-track__steps">
+                  {middle.map((entry, i) => (
+                    <PeriodTrackStep key={entry.id || i} entry={entry} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="rc-day-track__endpoint rc-day-track__endpoint--end">
+            <ScanPhoto url={last.photoUrl} label="End scan photo" className="rc-day-track__photo" />
+            <div className="rc-day-track__endpoint-info">
+              <span className="rc-day-track__endpoint-label">End</span>
+              <span className="rc-day-track__endpoint-time">{formatTime(last.at)}</span>
+              <EntryLocationMeta entry={last} compact />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PeriodDaySessionsTable({ periodDays, entriesByDateMap }) {
+  const sortedDays = [...periodDays].reverse();
+
+  return (
+    <div className="rc-period-sessions-table-wrap">
+      <table className="rc-period-sessions-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Check-In</th>
+            <th>Last Activity</th>
+            <th>Sessions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sortedDays.map((day) => {
+            const entries = entriesByDateMap[day.date] || [];
+            const lastLabel = day.lastActivityType === 'exit' ? 'Check-Out' : 'Check-In';
+
+            return (
+              <Fragment key={day.date}>
+                <tr className="rc-period-sessions-table__meta">
+                  <td className="rc-period-sessions-table__date">{formatDate(day.date)}</td>
+                  <td>
+                    <span className={`rc-period-sessions-table__status rc-period-sessions-table__status--${day.status?.toLowerCase()}`}>
+                      {day.code}
+                    </span>
+                  </td>
+                  <td className="rc-period-sessions-table__time">{formatTime(day.checkIn)}</td>
+                  <td className="rc-period-sessions-table__time">
+                    <span className="rc-period-sessions-table__activity">
+                      <span>{formatTime(day.lastActivityAt)}</span>
+                      <span className="rc-period-sessions-table__activity-type">{lastLabel}</span>
+                    </span>
+                  </td>
+                  <td className="rc-period-sessions-table__count">{entries.length}</td>
+                </tr>
+                <tr className="rc-period-sessions-table__track-row">
+                  <td colSpan={5}>
+                    {entries.length === 0 ? (
+                      <p className="rc-period-day-timeline__empty">No scan events recorded for this day.</p>
+                    ) : (
+                      <PeriodDayTrack entries={entries} />
+                    )}
+                  </td>
+                </tr>
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -192,19 +385,36 @@ function TimelineEvent({ entry, isLast }) {
 /* ═══════════════════════════════════════════════════════════════
    PERSON DETAIL DIALOG (centered modal)
 ════════════════════════════════════════════════════════════════ */
-function PersonDetailDialog({ registrationId, onClose }) {
+function DownloadIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeInnerTab, setActiveInnerTab] = useState('today');
+  const hasDateRange = Boolean(dateFrom && dateTo);
+  const [activeInnerTab, setActiveInnerTab] = useState(hasDateRange ? 'history' : 'today');
+  const [exporting, setExporting] = useState('');
 
   useEffect(() => {
     if (!registrationId) return;
-    setLoading(true); setError('');
-    api.reports.getRegistration(registrationId)
+    setLoading(true);
+    setError('');
+    setActiveInnerTab(hasDateRange ? 'history' : 'today');
+    const params = {};
+    if (dateFrom) params.dateFrom = dateFrom;
+    if (dateTo) params.dateTo = dateTo;
+    api.reports.getRegistration(registrationId, params)
       .then(d => { setData(d); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [registrationId]);
+  }, [registrationId, dateFrom, dateTo, hasDateRange]);
 
   if (!registrationId) return null;
 
@@ -213,10 +423,51 @@ function PersonDetailDialog({ registrationId, onClose }) {
     new Date(a.at || a.entryAt || 0) - new Date(b.at || b.entryAt || 0));
   const entriesByDate = data?.entriesByDate || [];
   const session = data?.sessionState || {};
+  const rangeSummary = data?.attendanceRange?.summary;
+  const periodDays = (data?.attendanceRange?.days || []).filter((day) => day.status === 'P');
+  const entriesByDateMap = Object.fromEntries(entriesByDate.map((g) => [g.date, g.entries]));
+  const rangeLabel = hasDateRange
+    ? `${formatDate(dateFrom)} — ${formatDate(dateTo)}`
+    : null;
+
+  const exportOptions = { dateFrom, dateTo };
+
+  const handleExportExcel = async () => {
+    if (!data) return;
+    setExporting('excel');
+    try {
+      const { downloadPersonReportExcel } = await import('@/lib/reportExport');
+      await downloadPersonReportExcel(data, exportOptions);
+    } finally {
+      setExporting('');
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!data) return;
+    setExporting('pdf');
+    try {
+      const { downloadPersonReportPdf } = await import('@/lib/reportExport');
+      await downloadPersonReportPdf(data, exportOptions);
+    } finally {
+      setExporting('');
+    }
+  };
+
+  const innerTabs = hasDateRange
+    ? [
+        { id: 'history', label: 'Period History' },
+        { id: 'details', label: 'Details' },
+      ]
+    : [
+        { id: 'today', label: "Today's Timeline" },
+        { id: 'history', label: 'Date History' },
+        { id: 'details', label: 'Details' },
+      ];
 
   return (
     <div className="rc-dialog-overlay" onClick={onClose} role="dialog" aria-modal aria-label="Person Access Report">
-      <div className="rc-dialog rc-dialog--person" onClick={e => e.stopPropagation()}>
+      <div className={`rc-dialog rc-dialog--person ${hasDateRange ? 'rc-dialog--person-wide' : ''}`} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="rc-dialog__header">
           <div className="rc-dialog__header-info">
@@ -227,6 +478,7 @@ function PersonDetailDialog({ registrationId, onClose }) {
               <h2 className="rc-dialog__title">{loading ? 'Loading…' : (details.holderName || '—')}</h2>
               <p className="rc-dialog__subtitle">
                 {details.roleName || ''}{details.registrationCode ? ` · ${details.registrationCode}` : ''}
+                {rangeLabel && <> · {rangeLabel}</>}
               </p>
             </div>
           </div>
@@ -251,50 +503,75 @@ function PersonDetailDialog({ registrationId, onClose }) {
                     <h3 className="rc-person-profile__name">{details.holderName || '—'}</h3>
                     <p className="rc-person-profile__role">{details.roleName}</p>
                     <code className="rc-person-profile__code">{details.registrationCode}</code>
-                    <div style={{ marginTop: 8 }}>
-                      <StatusBadge inside={session?.divisionInside} hadActivity={todayEntries.length > 0} />
-                    </div>
+                    {!hasDateRange && (
+                      <div style={{ marginTop: 8 }}>
+                        <StatusBadge inside={session?.divisionInside} hadActivity={todayEntries.length > 0} />
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="rc-person-profile__stats">
-                  <div className="rc-person-profile__stat">
-                    <span className="rc-person-profile__stat-label">Total Scans</span>
-                    <span className="rc-person-profile__stat-value">{details.totalScans ?? '—'}</span>
-                  </div>
-                  <div className="rc-person-profile__stat">
-                    <span className="rc-person-profile__stat-label">In Time</span>
-                    <span className="rc-person-profile__stat-value rc-color-success">{formatTime(session?.gateEntryAt)}</span>
-                  </div>
-                  <div className="rc-person-profile__stat">
-                    <span className="rc-person-profile__stat-label">Out Time</span>
-                    <span className="rc-person-profile__stat-value rc-color-danger">{formatTime(session?.gateExitAt)}</span>
-                  </div>
-                  <div className="rc-person-profile__stat">
-                    <span className="rc-person-profile__stat-label">Duration</span>
-                    <span className="rc-person-profile__stat-value">{calcDuration(session?.gateEntryAt, session?.gateExitAt)}</span>
-                  </div>
-                  {details.shiftName && (
-                    <div className="rc-person-profile__stat">
-                      <span className="rc-person-profile__stat-label">Shift</span>
-                      <span className="rc-person-profile__stat-value">{details.shiftName}</span>
-                    </div>
-                  )}
-                  {session?.currentDepartmentName && (
-                    <div className="rc-person-profile__stat">
-                      <span className="rc-person-profile__stat-label">Active Dept</span>
-                      <span className="rc-person-profile__stat-value">{session.currentDepartmentName}</span>
-                    </div>
+                  {hasDateRange && rangeSummary ? (
+                    <>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">Total Days</span>
+                        <span className="rc-person-profile__stat-value">{rangeSummary.totalDays}</span>
+                      </div>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">Present Days</span>
+                        <span className="rc-person-profile__stat-value rc-color-success">{rangeSummary.present}</span>
+                      </div>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">Absent Days</span>
+                        <span className="rc-person-profile__stat-value rc-color-danger">{rangeSummary.absent}</span>
+                      </div>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">Scans in Period</span>
+                        <span className="rc-person-profile__stat-value">{details.totalScans ?? '—'}</span>
+                      </div>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">Last Activity</span>
+                        <span className="rc-person-profile__stat-value">{formatDateTime(details.lastScanAt)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">Total Scans</span>
+                        <span className="rc-person-profile__stat-value">{details.totalScans ?? '—'}</span>
+                      </div>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">In Time</span>
+                        <span className="rc-person-profile__stat-value rc-color-success">{formatTime(session?.gateEntryAt)}</span>
+                      </div>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">Out Time</span>
+                        <span className="rc-person-profile__stat-value rc-color-danger">{formatTime(session?.gateExitAt)}</span>
+                      </div>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">Duration</span>
+                        <span className="rc-person-profile__stat-value">{calcDuration(session?.gateEntryAt, session?.gateExitAt)}</span>
+                      </div>
+                      {details.shiftName && (
+                        <div className="rc-person-profile__stat">
+                          <span className="rc-person-profile__stat-label">Shift</span>
+                          <span className="rc-person-profile__stat-value">{details.shiftName}</span>
+                        </div>
+                      )}
+                      {session?.currentDepartmentName && (
+                        <div className="rc-person-profile__stat">
+                          <span className="rc-person-profile__stat-label">Active Dept</span>
+                          <span className="rc-person-profile__stat-value">{session.currentDepartmentName}</span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
 
               {/* Inner tabs */}
               <div className="sub-nav" style={{ marginBottom: '1rem' }}>
-                {[
-                  { id: 'today', label: "Today's Timeline" },
-                  { id: 'history', label: 'Date History' },
-                  { id: 'details', label: 'Details' },
-                ].map(t => (
+                {innerTabs.map(t => (
                   <button key={t.id} type="button"
                     className={`sub-nav-item ${activeInnerTab === t.id ? 'active' : ''}`}
                     onClick={() => setActiveInnerTab(t.id)}>
@@ -303,7 +580,7 @@ function PersonDetailDialog({ registrationId, onClose }) {
                 ))}
               </div>
 
-              {activeInnerTab === 'today' && (
+              {!hasDateRange && activeInnerTab === 'today' && (
                 <div>
                   {todayEntries.length === 0 ? (
                     <EmptyState icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>}
@@ -320,9 +597,21 @@ function PersonDetailDialog({ registrationId, onClose }) {
 
               {activeInnerTab === 'history' && (
                 <div>
-                  {entriesByDate.length === 0 ? (
+                  {hasDateRange ? (
+                    periodDays.length === 0 ? (
+                      <EmptyState icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>}
+                        title="No activity in selected period"
+                        desc={`No check-in or check-out activity between ${formatDate(dateFrom)} and ${formatDate(dateTo)}.`} />
+                    ) : (
+                      <PeriodDaySessionsTable
+                        periodDays={periodDays}
+                        entriesByDateMap={entriesByDateMap}
+                      />
+                    )
+                  ) : entriesByDate.length === 0 ? (
                     <EmptyState icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>}
-                      title="No history found" desc="No historical gate activity found for this person." />
+                      title="No history found"
+                      desc="No historical gate activity found for this person." />
                   ) : (
                     <div className="rc-history-list">
                       {entriesByDate.map(group => (
@@ -372,7 +661,29 @@ function PersonDetailDialog({ registrationId, onClose }) {
         </div>
 
         <div className="rc-dialog__footer">
-          <button className="btn-secondary" onClick={onClose}>Close</button>
+          {!loading && !error && data && (
+            <>
+              <button
+                type="button"
+                className="btn-secondary rc-download-btn"
+                onClick={handleExportExcel}
+                disabled={Boolean(exporting)}
+              >
+                <DownloadIcon />
+                <span>{exporting === 'excel' ? 'Exporting…' : 'Download Excel'}</span>
+              </button>
+              <button
+                type="button"
+                className="btn-secondary rc-download-btn"
+                onClick={handleExportPdf}
+                disabled={Boolean(exporting)}
+              >
+                <DownloadIcon />
+                <span>{exporting === 'pdf' ? 'Exporting…' : 'Download PDF'}</span>
+              </button>
+            </>
+          )}
+          <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
@@ -546,160 +857,495 @@ function TodayActivityTab({ onViewPerson }) {
   );
 }
 
+function getMonthRange(monthValue) {
+  if (!monthValue) return { dateFrom: '', dateTo: '' };
+  const [year, month] = monthValue.split('-').map(Number);
+  const from = `${year}-${String(month).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const to = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { dateFrom: from, dateTo: to };
+}
+
+function currentMonthValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function currentIsoWeekValue() {
+  const date = new Date();
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const isoYear = utc.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const week = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
+  return `${isoYear}-W${String(week).padStart(2, '0')}`;
+}
+
+function getWeekRange(weekValue) {
+  const match = /^(\d{4})-W(\d{2})$/.exec(weekValue || '');
+  if (!match) return { dateFrom: '', dateTo: '' };
+
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const weekOneMonday = new Date(jan4);
+  weekOneMonday.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
+
+  const monday = new Date(weekOneMonday);
+  monday.setUTCDate(weekOneMonday.getUTCDate() + (week - 1) * 7);
+
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+
+  const toIso = (d) => d.toISOString().slice(0, 10);
+  return { dateFrom: toIso(monday), dateTo: toIso(sunday) };
+}
+
+function formatWeekLabel(weekValue) {
+  const { dateFrom, dateTo } = getWeekRange(weekValue);
+  if (!dateFrom || !dateTo) return '';
+  return `${formatDate(dateFrom)} — ${formatDate(dateTo)}`;
+}
+
+function dateToIsoWeekValue(date) {
+  const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const isoYear = utc.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const week = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
+  return `${isoYear}-W${String(week).padStart(2, '0')}`;
+}
+
+function shiftWeek(weekValue, delta) {
+  const { dateFrom } = getWeekRange(weekValue);
+  if (!dateFrom) return weekValue;
+  const next = new Date(`${dateFrom}T12:00:00.000Z`);
+  next.setUTCDate(next.getUTCDate() + delta * 7);
+  return dateToIsoWeekValue(next);
+}
+
+function WeekRangePicker({ value, onChange }) {
+  const weekNumber = value?.match(/W(\d{2})$/)?.[1];
+  const label = formatWeekLabel(value);
+
+  return (
+    <div className="rc-week-picker">
+      <button
+        type="button"
+        className="rc-week-picker__btn"
+        onClick={() => onChange(shiftWeek(value, -1))}
+        aria-label="Previous week"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+      </button>
+      <div className="rc-week-picker__display">
+        <span className="rc-week-picker__title">
+          {weekNumber ? `Week ${Number(weekNumber)}` : 'Week'}
+        </span>
+        {label && <span className="rc-week-picker__range">{label}</span>}
+      </div>
+      <button
+        type="button"
+        className="rc-week-picker__btn"
+        onClick={() => onChange(shiftWeek(value, 1))}
+        aria-label="Next week"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="rc-week-picker__today"
+        onClick={() => onChange(currentIsoWeekValue())}
+      >
+        This week
+      </button>
+    </div>
+  );
+}
+
+function AttendanceCell({ day, onSelect }) {
+  if (!day || day.status === 'blank') {
+    return <td className="rc-att-cell rc-att-cell--blank" aria-label="Not registered" />;
+  }
+
+  const cls = `rc-att-cell rc-att-cell--${day.status.toLowerCase()} rc-att-cell--clickable`;
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    onSelect?.(day);
+  };
+
+  if (day.status === 'A') {
+    return (
+      <td className={cls} aria-label="Absent" onClick={handleClick} role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
+        <span className="rc-att-cell__code rc-att-cell__code--plain">A</span>
+      </td>
+    );
+  }
+
+  if (day.status === 'P') {
+    return (
+      <td className={cls} aria-label="Present" onClick={handleClick} role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
+        <span className="rc-att-cell__badge">P</span>
+        {day.checkInTime && <span className="rc-att-cell__time">{day.checkInTime}</span>}
+      </td>
+    );
+  }
+
+  return (
+    <td className={cls} aria-label={day.label || day.code} onClick={handleClick} role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
+      <span className="rc-att-cell__badge">{day.code}</span>
+    </td>
+  );
+}
+
+function AttendanceDayDialog({ employee, day, onClose }) {
+  if (!employee || !day) return null;
+
+  const statusLabel = day.label || day.code || '—';
+  const lastActivityLabel = day.lastActivityType === 'exit' ? 'Check-Out' : 'Check-In';
+
+  return (
+    <div className="rc-dialog-overlay" onClick={onClose} role="dialog" aria-modal aria-label="Day attendance details">
+      <div className="rc-dialog rc-dialog--day" onClick={e => e.stopPropagation()}>
+        <div className="rc-dialog__header">
+          <div className="rc-dialog__header-info">
+            <Avatar url={employee.photoUrl} name={employee.displayName} size={44} />
+            <div>
+              <h2 className="rc-dialog__title">{employee.displayName || '—'}</h2>
+              <p className="rc-dialog__subtitle">
+                {formatDate(day.date)} · {statusLabel}
+              </p>
+            </div>
+          </div>
+          <button className="rc-dialog__close" onClick={onClose} aria-label="Close dialog">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div className="rc-dialog__body">
+          <div className="rc-att-day-detail">
+            <div className="rc-att-day-detail__status">
+              <span className={`badge rc-att-day-detail__badge rc-att-day-detail__badge--${day.status?.toLowerCase()}`}>
+                {day.code}
+              </span>
+              <span className="rc-att-day-detail__status-label">{statusLabel}</span>
+            </div>
+            {day.status === 'P' ? (
+              <div className="rc-att-day-detail__grid rc-att-day-detail__grid--two">
+                <div className="rc-att-day-detail__item">
+                  <span className="rc-att-day-detail__label">Check-In Time</span>
+                  <span className="rc-att-day-detail__value rc-color-success">{formatTime(day.checkIn)}</span>
+                </div>
+                <div className="rc-att-day-detail__item">
+                  <span className="rc-att-day-detail__label">Last Activity ({lastActivityLabel})</span>
+                  <span className={`rc-att-day-detail__value ${day.lastActivityType === 'exit' ? 'rc-color-danger' : ''}`}>
+                    {formatTime(day.lastActivityAt)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="rc-att-day-detail__empty">No check-in or check-out recorded for this day.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttendanceAbstractTable({ employees, onViewPerson }) {
+  return (
+    <div className="rc-table-wrap">
+      <table className="rc-table rc-att-abstract-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Person</th>
+            <th>Role</th>
+            <th>ID</th>
+            <th>Phone</th>
+            <th>Total Days</th>
+            <th>Present Days</th>
+            <th>Absent Days</th>
+          </tr>
+        </thead>
+        <tbody>
+          {employees.map((emp, idx) => (
+            <tr key={emp.registrationId} className="rc-table__row"
+              onClick={() => onViewPerson(emp.registrationId)}
+              tabIndex={0} role="button"
+              aria-label={`View history for ${emp.displayName || 'Unnamed'}`}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPerson(emp.registrationId); } }}>
+              <td className="rc-att-abstract-table__index">{idx + 1}</td>
+              <td>
+                <div className="rc-table__person">
+                  <Avatar url={emp.photoUrl} name={emp.displayName} size={34} />
+                  <span className="rc-table__name">{emp.displayName || 'Unnamed'}</span>
+                </div>
+              </td>
+              <td><span className="rc-table__muted">{emp.roleName || '—'}</span></td>
+              <td><code className="rc-table__code">{emp.registrationCode}</code></td>
+              <td className="rc-table__muted">{emp.displayPhone || '—'}</td>
+              <td className="rc-att-abstract-table__num">{emp.summary.totalDays}</td>
+              <td className="rc-att-abstract-table__num rc-att-abstract-table__num--present">{emp.summary.present}</td>
+              <td className="rc-att-abstract-table__num rc-att-abstract-table__num--absent">{emp.summary.absent}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════
    TAB 2 — ATTENDANCE HISTORY
 ════════════════════════════════════════════════════════════════ */
 function AttendanceHistoryTab({ onViewPerson }) {
-  const [people, setPeople] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [data, setData] = useState(null);
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [rangeMode, setRangeMode] = useState('month');
+  const [viewMode, setViewMode] = useState('abstract');
+  const [selectedDay, setSelectedDay] = useState(null);
   const [filters, setFilters] = useState({
-    search: '', dateFrom: '', dateTo: '', role: '', status: '',
+    month: currentMonthValue(),
+    week: currentIsoWeekValue(),
+    dateFrom: '',
+    dateTo: '',
+    roleId: '',
   });
 
-  const handleApply = useCallback(async () => {
-    setLoading(true); setError(''); setSearched(true);
-    try {
-      const params = {};
-      if (filters.search) params.search = filters.search;
-      if (filters.dateFrom) params.dateFrom = filters.dateFrom;
-      if (filters.dateTo) params.dateTo = filters.dateTo;
-      if (filters.status) params.status = filters.status;
-      params.limit = 300;
-      const result = await api.reports.listRegistrations(params);
-      setPeople(result);
-    } catch (e) {
-      setError(e.message);
-    } finally {
+  useEffect(() => {
+    api.roles.list().then((list) => setRoles(Array.isArray(list) ? list : [])).catch(() => setRoles([]));
+  }, []);
+
+  const resolveDateRange = useCallback(() => {
+    if (rangeMode === 'week') return getWeekRange(filters.week);
+    if (rangeMode === 'month') return getMonthRange(filters.month);
+    return { dateFrom: filters.dateFrom, dateTo: filters.dateTo };
+  }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo]);
+
+  useEffect(() => {
+    const { dateFrom, dateTo } = resolveDateRange();
+    if (!dateFrom || !dateTo) {
+      setData(null);
       setLoading(false);
+      return;
     }
-  }, [filters]);
+    if (dateFrom > dateTo) {
+      setError('From date cannot be after To date.');
+      setData(null);
+      setLoading(false);
+      return;
+    }
 
-  // Load on mount
-  useEffect(() => { handleApply(); }, []);
+    let cancelled = false;
+    setLoading(true);
+    setError('');
 
-  const handleReset = () => {
-    setFilters({ search: '', dateFrom: '', dateTo: '', role: '', status: '' });
-    setSearched(false); setPeople([]);
+    const params = { dateFrom, dateTo, limit: 500 };
+    if (filters.roleId) params.roleId = filters.roleId;
+
+    api.reports.attendanceHistory(params)
+      .then((result) => { if (!cancelled) setData(result); })
+      .catch((e) => { if (!cancelled) { setError(e.message); setData(null); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo, filters.roleId, resolveDateRange]);
+
+  const handleRangeModeChange = (mode) => {
+    setRangeMode(mode);
+    if (mode === 'week' && !filters.week) {
+      setFilters((f) => ({ ...f, week: currentIsoWeekValue() }));
+    }
+    if (mode === 'custom' && (!filters.dateFrom || !filters.dateTo)) {
+      const { dateFrom, dateTo } = getMonthRange(filters.month);
+      setFilters((f) => ({ ...f, dateFrom, dateTo }));
+    }
   };
+
+  const employees = data?.employees || [];
+  const dates = data?.dates || [];
+
+  const handleViewPerson = useCallback((registrationId) => {
+    const { dateFrom, dateTo } = resolveDateRange();
+    onViewPerson({ registrationId, dateFrom, dateTo });
+  }, [onViewPerson, resolveDateRange]);
 
   return (
     <div>
-      {/* Filters */}
-      <div className="rc-filter-panel">
-        <div className="rc-filter-panel__grid">
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Search Person</label>
-            <div className="rc-search-wrap">
-              <svg className="rc-search-wrap__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input type="search" className="rc-search-input" style={{ paddingLeft: '2rem' }}
-                placeholder="Name, code, role…"
-                value={filters.search}
-                onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} />
-            </div>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>From Date</label>
-            <input type="date" value={filters.dateFrom}
-              onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>To Date</label>
-            <input type="date" value={filters.dateTo}
-              onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Status</label>
-            <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
-              <option value="">All Status</option>
-              <option value="verified">Verified</option>
-              <option value="pending_verification">Pending</option>
-              <option value="rejected">Rejected</option>
+      <div className="rc-filter-panel rc-filter-panel--inline">
+        <div className="rc-filter-panel__inline">
+          <div className="form-group rc-filter-inline__item">
+            <label>Range Type</label>
+            <select value={rangeMode} onChange={e => handleRangeModeChange(e.target.value)}>
+              <option value="week">Weekly</option>
+              <option value="month">Monthly</option>
+              <option value="custom">From – To</option>
             </select>
           </div>
-        </div>
-        <div className="rc-filter-panel__actions">
-          <button className="btn-primary" onClick={handleApply} disabled={loading}>
-            {loading ? <><Spinner size={14} /> Searching…</> : (
-              <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg> Apply Filters</>
-            )}
-          </button>
-          <button className="btn-secondary" onClick={handleReset}>Reset</button>
+
+          {rangeMode === 'week' ? (
+            <div className="form-group rc-filter-inline__item rc-filter-inline__item--week">
+              <label>Week</label>
+              <WeekRangePicker
+                value={filters.week}
+                onChange={(week) => setFilters((f) => ({ ...f, week }))}
+              />
+            </div>
+          ) : rangeMode === 'month' ? (
+            <div className="form-group rc-filter-inline__item">
+              <label>Month</label>
+              <input type="month" value={filters.month}
+                onChange={e => setFilters(f => ({ ...f, month: e.target.value }))} />
+            </div>
+          ) : (
+            <>
+              <div className="form-group rc-filter-inline__item">
+                <label>From Date</label>
+                <input type="date" value={filters.dateFrom}
+                  onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))} />
+              </div>
+              <div className="form-group rc-filter-inline__item">
+                <label>To Date</label>
+                <input type="date" value={filters.dateTo}
+                  onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))} />
+              </div>
+            </>
+          )}
+
+          <div className="form-group rc-filter-inline__item">
+            <label>View</label>
+            <select value={viewMode} onChange={e => setViewMode(e.target.value)}>
+              <option value="abstract">Abstract</option>
+              <option value="complete">Complete</option>
+            </select>
+          </div>
+
+          <div className="form-group rc-filter-inline__item">
+            <label>Role</label>
+            <select value={filters.roleId} onChange={e => setFilters(f => ({ ...f, roleId: e.target.value }))}>
+              <option value="">All Roles</option>
+              {roles.map(role => (
+                <option key={role._id || role.id} value={role._id || role.id}>{role.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {loading && (
+            <div className="rc-filter-inline__loading" aria-live="polite">
+              <Spinner size={16} />
+              <span>Updating…</span>
+            </div>
+          )}
         </div>
       </div>
 
       {error && <p className="error-msg" style={{ marginBottom: '1rem' }}>{error}</p>}
 
-      {loading ? (
+      {loading && !data ? (
         <div className="rc-table-loading">
           {[...Array(6)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
         </div>
-      ) : !searched ? (
-        <EmptyState
-          icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>}
-          title="Apply filters to search" desc="Select a date range and filters, then click Apply Filters." />
-      ) : people.length === 0 ? (
+      ) : employees.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>}
-          title="No results found" desc="No registered people match your search criteria." />
-      ) : (
-        <div className="rc-table-wrap">
-          <div className="rc-table-meta">
-            <span>{fmt(people.length)} people found</span>
+          title="No employees found"
+          desc="No registered people match the selected filters." />
+      ) : viewMode === 'abstract' ? (
+        <div className="rc-att-abstract-wrap">
+          <div className="rc-table-meta rc-att-grid-meta">
+            <span>{fmt(employees.length)} employees</span>
+            {data?.dateFrom && data?.dateTo && (
+              <span className="rc-att-grid-meta__range">
+                {formatDate(data.dateFrom)} — {formatDate(data.dateTo)}
+              </span>
+            )}
           </div>
-          <table className="rc-table">
-            <thead>
-              <tr>
-                <th>Person</th>
-                <th>Role</th>
-                <th>Code</th>
-                <th>Status</th>
-                <th>Total Scans</th>
-                <th>Last Activity</th>
-                <th aria-label="Actions"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {people.map(person => (
-                <tr key={person.registrationId} className="rc-table__row"
-                  onClick={() => onViewPerson(person.registrationId)}
-                  tabIndex={0} role="button"
-                  aria-label={`View history for ${person.displayName || 'Unnamed'}`}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPerson(person.registrationId); } }}>
-                  <td>
-                    <div className="rc-table__person">
-                      <Avatar url={person.photoUrl} name={person.displayName} size={34} />
-                      <span className="rc-table__name">{person.displayName || 'Unnamed'}</span>
-                    </div>
-                  </td>
-                  <td><span className="rc-table__muted">{person.roleName || '—'}</span></td>
-                  <td><code className="rc-table__code">{person.registrationCode}</code></td>
-                  <td>
-                    <div className="reports-table__badges">
-                      {person.divisionInside
-                        ? <span className="badge badge-success">Inside</span>
-                        : <span className="badge badge-info">Outside</span>}
-                      {person.currentDepartmentName && (
-                        <span className="badge badge-warning">{person.currentDepartmentName}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td><span className="badge badge-info">{person.totalScans} scans</span></td>
-                  <td className="rc-table__time">{formatDateTime(person.lastScanAt)}</td>
-                  <td>
-                    <button className="rc-table__view-btn" onClick={e => { e.stopPropagation(); onViewPerson(person.registrationId); }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-                      View History
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <AttendanceAbstractTable employees={employees} onViewPerson={handleViewPerson} />
         </div>
+      ) : (
+        <div className="rc-att-grid-wrap">
+          <div className="rc-table-meta rc-att-grid-meta">
+            <span>{fmt(employees.length)} employees</span>
+            {data?.dateFrom && data?.dateTo && (
+              <span className="rc-att-grid-meta__range">
+                {formatDate(data.dateFrom)} — {formatDate(data.dateTo)}
+              </span>
+            )}
+          </div>
+          <div className="rc-att-grid-scroll">
+            <table className="rc-att-grid">
+              <thead>
+                <tr>
+                  <th className="rc-att-grid__sticky rc-att-grid__index">#</th>
+                  <th className="rc-att-grid__sticky rc-att-grid__employee">Employee</th>
+                  {dates.map(col => (
+                    <th key={col.date} className="rc-att-grid__day">
+                      <span className="rc-att-grid__day-num">{col.day}</span>
+                      <span className="rc-att-grid__day-wd">{col.weekday}</span>
+                    </th>
+                  ))}
+                  <th className="rc-att-grid__summary rc-att-grid__summary--present">Present</th>
+                  <th className="rc-att-grid__summary rc-att-grid__summary--absent">Absent</th>
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map((emp, idx) => (
+                  <tr key={emp.registrationId} className="rc-att-grid__row">
+                    <td className="rc-att-grid__sticky rc-att-grid__index">{idx + 1}</td>
+                    <td className="rc-att-grid__sticky rc-att-grid__employee rc-att-grid__employee--clickable"
+                      onClick={() => handleViewPerson(emp.registrationId)}
+                      tabIndex={0} role="button"
+                      aria-label={`View history for ${emp.displayName || 'Unnamed'}`}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleViewPerson(emp.registrationId); } }}>
+                      <div className="rc-att-grid__person">
+                        <Avatar url={emp.photoUrl} name={emp.displayName} size={32} />
+                        <div className="rc-att-grid__person-info">
+                          <span className="rc-att-grid__person-name">{emp.displayName || 'Unnamed'}</span>
+                          <span className="rc-att-grid__person-code">#{emp.registrationCode}</span>
+                          {emp.registeredAt && (
+                            <span className="rc-att-grid__person-joined">Joined {formatDate(emp.registeredAt)}</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    {emp.days.map(day => (
+                      <AttendanceCell
+                        key={`${emp.registrationId}-${day.date}`}
+                        day={day}
+                        onSelect={(selected) => setSelectedDay({ employee: emp, day: selected })}
+                      />
+                    ))}
+                    <td className="rc-att-grid__total rc-att-grid__total--present">{emp.summary.present}</td>
+                    <td className="rc-att-grid__total rc-att-grid__total--absent">{emp.summary.absent}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {selectedDay && (
+        <AttendanceDayDialog
+          employee={selectedDay.employee}
+          day={selectedDay.day}
+          onClose={() => setSelectedDay(null)}
+        />
       )}
     </div>
   );
@@ -1066,7 +1712,7 @@ function ReportsContent() {
   const tabParam = searchParams.get('tab');
   const tab = REPORT_TABS.find(t => t.id === tabParam) ? tabParam : 'today';
 
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedPerson, setSelectedPerson] = useState(null);
   const [gateLogs, setGateLogs] = useState([]);
   const [registrations, setRegistrations] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -1130,17 +1776,19 @@ function ReportsContent() {
       <div className="rc-body">
         {/* ── Tab Content — driven by URL ?tab= param ── */}
         <div className="rc-tab-content admin-fade-in" key={tab}>
-          {tab === 'today'    && <TodayActivityTab onViewPerson={setSelectedId} />}
-          {tab === 'history'  && <AttendanceHistoryTab onViewPerson={setSelectedId} />}
+          {tab === 'today'    && <TodayActivityTab onViewPerson={(id) => setSelectedPerson({ registrationId: id })} />}
+          {tab === 'history'  && <AttendanceHistoryTab onViewPerson={setSelectedPerson} />}
           {tab === 'analytics' && <AnalyticsTab gateLogs={gateLogs} registrations={registrations} />}
           {tab === 'export'   && <ExportCenterTab />}
         </div>
       </div>
 
-      {selectedId && (
+      {selectedPerson && (
         <PersonDetailDialog
-          registrationId={selectedId}
-          onClose={() => setSelectedId(null)}
+          registrationId={selectedPerson.registrationId}
+          dateFrom={selectedPerson.dateFrom}
+          dateTo={selectedPerson.dateTo}
+          onClose={() => setSelectedPerson(null)}
         />
       )}
     </div>

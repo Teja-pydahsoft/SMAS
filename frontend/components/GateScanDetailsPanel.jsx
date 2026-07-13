@@ -156,20 +156,20 @@ export default function GateScanDetailsPanel({
       <div className="gate-day-pass-section">
         <button
           type="button"
-          className="btn-secondary gate-day-pass-section__toggle"
+          className="btn-secondary gate-day-pass-section__toggle no-print"
           onClick={onToggleDayPass}
           disabled={!dayPass}
         >
           {showDayPass ? 'Hide daily pass' : 'Show daily pass'}
         </button>
         {!dayPass && (
-          <p className="field-hint gate-day-pass-section__hint">
+          <p className="field-hint gate-day-pass-section__hint no-print">
             Daily pass appears after a successful division gate entry scan.
           </p>
         )}
         {showDayPass && dayPass && (
           <div className="gate-day-pass-section__card">
-            <p className="gate-pass-panel__desc">
+            <p className="gate-pass-panel__desc no-print">
               Scan the QR to open pass details, today&apos;s active entries, and date-wise history.
             </p>
             <PassCard pass={dayPass} />

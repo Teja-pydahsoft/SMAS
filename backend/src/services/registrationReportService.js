@@ -14,6 +14,124 @@ function logDateKey(date) {
   return new Date(date).toISOString().slice(0, 10);
 }
 
+function eachDateInRange(dateFrom, dateTo) {
+  const dates = [];
+  const cur = new Date(`${dateFrom}T12:00:00.000Z`);
+  const end = new Date(`${dateTo}T12:00:00.000Z`);
+  while (cur <= end) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+
+function toIso(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  return value?.toISOString?.() || value;
+}
+
+function extractDayTimings(dayLogs, session) {
+  const sorted = [...dayLogs].sort(
+    (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+  );
+  const entries = sorted.filter((l) => l.eventType === 'entry');
+  const exits = sorted.filter((l) => l.eventType === 'exit');
+
+  let checkIn = entries[0]?.createdAt || null;
+
+  if (session?.gateEntryAt) {
+    const passEntry = new Date(session.gateEntryAt);
+    if (!checkIn || passEntry < new Date(checkIn)) {
+      checkIn = session.gateEntryAt;
+    }
+  }
+
+  const activityEvents = [];
+  for (const log of sorted) {
+    activityEvents.push({
+      at: log.createdAt,
+      type: log.eventType === 'exit' ? 'exit' : 'entry',
+    });
+  }
+  if (session?.gateEntryAt) {
+    activityEvents.push({ at: session.gateEntryAt, type: 'entry' });
+  }
+  if (session?.gateExitAt) {
+    activityEvents.push({ at: session.gateExitAt, type: 'exit' });
+  }
+
+  activityEvents.sort((a, b) => new Date(a.at) - new Date(b.at));
+  const last = activityEvents.length ? activityEvents[activityEvents.length - 1] : null;
+
+  return {
+    checkIn: toIso(checkIn),
+    lastActivityAt: last ? toIso(last.at) : null,
+    lastActivityType: last?.type || null,
+  };
+}
+
+function hasDayActivity(dayLogs, session) {
+  if (dayLogs?.length) return true;
+  if (session?.gateEntryAt || session?.gateExitAt) return true;
+  return false;
+}
+
+function dayAbbrev(dateStr) {
+  return ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][
+    new Date(`${dateStr}T12:00:00.000Z`).getUTCDay()
+  ];
+}
+
+function dayNumber(dateStr) {
+  return new Date(`${dateStr}T12:00:00.000Z`).getUTCDate();
+}
+
+function formatTimeFromDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false });
+}
+
+function resolveDayAttendance({ date, registeredAt, dayLogs, session }) {
+  const joinDate = logDateKey(registeredAt);
+  const timings = extractDayTimings(dayLogs || [], session);
+
+  if (date < joinDate) {
+    return { status: 'blank', code: '', label: '', ...timings };
+  }
+
+  if (hasDayActivity(dayLogs, session)) {
+    return {
+      status: 'P',
+      code: 'P',
+      label: 'Present',
+      checkInTime: formatTimeFromDate(timings.checkIn),
+      ...timings,
+    };
+  }
+
+  return { status: 'A', code: 'A', label: 'Absent', checkInTime: null, ...timings };
+}
+
+function summarizeAttendanceDays(days) {
+  let present = 0;
+  let absent = 0;
+
+  for (const day of days) {
+    if (day.status === 'P') present += 1;
+    else if (day.status === 'A') absent += 1;
+  }
+
+  return {
+    present,
+    absent,
+    totalDays: present + absent,
+  };
+}
+
 function formatLogEntry(log) {
   return {
     id: log._id.toString(),
@@ -26,6 +144,7 @@ function formatLogEntry(log) {
     departmentId: log.departmentId?._id?.toString() || log.departmentId?.toString() || null,
     departmentName: log.departmentId?.name || null,
     matchScore: log.matchScore,
+    photoUrl: photoUrlFromPath(log.photoPath),
   };
 }
 
@@ -175,7 +294,7 @@ export async function listRegistrationReports({ search = '', limit = 100 } = {})
   );
 }
 
-export async function getRegistrationReport(registrationId) {
+export async function getRegistrationReport(registrationId, { dateFrom = '', dateTo = '' } = {}) {
   const registration = await Registration.findById(registrationId)
     .select('-faceEmbedding')
     .populate('roleId', 'name slug')
@@ -189,26 +308,38 @@ export async function getRegistrationReport(registrationId) {
   const display = buildDisplayInfo(obj.formData, obj.formId?.fields || []);
   const today = todayDateString();
   const activeSession = await getActiveDivisionSession(registration._id);
+  const hasDateRange = Boolean(dateFrom && dateTo);
 
-  const logs = await GateLog.find({
+  const logQuery = {
     registrationId: registration._id,
     matched: true,
-  })
+  };
+
+  if (hasDateRange) {
+    logQuery.createdAt = {
+      $gte: new Date(`${dateFrom}T00:00:00.000Z`),
+      $lte: new Date(`${dateTo}T23:59:59.999Z`),
+    };
+  }
+
+  const logs = await GateLog.find(logQuery)
     .populate('divisionId', 'name slug')
     .populate('departmentId', 'name slug')
     .populate('gateRefId', 'name gateType slug')
     .sort({ createdAt: -1 })
-    .limit(1000);
+    .limit(hasDateRange ? 5000 : 1000);
 
-  const todayEntries = logs
-    .filter((log) => logDateKey(log.createdAt) === today)
-    .map((entry) => ({
-      ...formatLogEntry(entry),
-      label: scanLabel(formatLogEntry(entry)),
-    }))
-    .sort((a, b) => new Date(b.at) - new Date(a.at));
+  const todayEntries = hasDateRange
+    ? []
+    : logs
+        .filter((log) => logDateKey(log.createdAt) === today)
+        .map((entry) => ({
+          ...formatLogEntry(entry),
+          label: scanLabel(formatLogEntry(entry)),
+        }))
+        .sort((a, b) => new Date(b.at) - new Date(a.at));
 
-  const todayActive = await buildTodayActiveForRegistration(registration._id);
+  const todayActive = hasDateRange ? [] : await buildTodayActiveForRegistration(registration._id);
   const entriesByDate = groupEntriesByDate(logs).map((group) => ({
     ...group,
     entries: group.entries.map((entry) => ({
@@ -216,6 +347,55 @@ export async function getRegistrationReport(registrationId) {
       label: scanLabel(entry),
     })),
   }));
+
+  let attendanceRange = null;
+  if (hasDateRange) {
+    const dates = eachDateInRange(dateFrom, dateTo);
+    const passes = await Pass.find({
+      registrationId: registration._id,
+      passType: PASS_TYPES.DAY_PASS,
+      validDate: { $gte: dateFrom, $lte: dateTo },
+    })
+      .select('registrationId validDate qrPayload createdAt')
+      .lean();
+
+    const logsByDate = new Map();
+    for (const log of logs) {
+      const date = logDateKey(log.createdAt);
+      if (!logsByDate.has(date)) logsByDate.set(date, []);
+      logsByDate.get(date).push(log);
+    }
+
+    const passByDate = new Map();
+    for (const pass of passes) {
+      const existing = passByDate.get(pass.validDate);
+      if (!existing || pass.createdAt > existing.createdAt) {
+        passByDate.set(pass.validDate, pass);
+      }
+    }
+
+    const days = dates.map((date) => {
+      const dayLogs = logsByDate.get(date) || [];
+      const pass = passByDate.get(date);
+      const session = pass ? getPassSessionState(pass) : null;
+      return {
+        date,
+        ...resolveDayAttendance({
+          date,
+          registeredAt: registration.createdAt,
+          dayLogs,
+          session,
+        }),
+      };
+    });
+
+    attendanceRange = {
+      dateFrom,
+      dateTo,
+      days,
+      summary: summarizeAttendanceDays(days),
+    };
+  }
 
   const sessionState = activeSession?.sessionState || {
     divisionInside: false,
@@ -231,6 +411,9 @@ export async function getRegistrationReport(registrationId) {
     expired: false,
     inactive: false,
     sessionState,
+    dateFrom: hasDateRange ? dateFrom : null,
+    dateTo: hasDateRange ? dateTo : null,
+    attendanceRange,
     details: {
       holderName: display.displayName,
       holderPhotoUrl: photoUrlFromPath(registration.photoPath),
@@ -357,4 +540,137 @@ export async function getDailyPassByRole() {
     });
 
   return { date: today, roles: result };
+}
+
+/**
+ * Attendance history grid — rows are employees, columns are days in range.
+ * Dates before registration (createdAt) are returned as blank.
+ */
+export async function getAttendanceHistoryGrid({
+  dateFrom,
+  dateTo,
+  search = '',
+  roleId = '',
+  limit = 500,
+} = {}) {
+  const today = todayDateString();
+  const from = dateFrom || today.slice(0, 8) + '01';
+  const toDate = dateTo || today;
+  const dates = eachDateInRange(from, toDate);
+  if (dates.length === 0) {
+    return { dateFrom: from, dateTo: toDate, dates: [], employees: [] };
+  }
+
+  const regQuery = { status: REGISTRATION_STATUS.VERIFIED };
+  if (roleId) regQuery.roleId = roleId;
+
+  const registrations = await Registration.find(regQuery)
+    .select('-faceEmbedding')
+    .populate('roleId', 'name slug')
+    .populate('formId', 'fields')
+    .sort({ createdAt: 1 })
+    .limit(parseInt(limit, 10) || 500)
+    .lean();
+
+  if (registrations.length === 0) {
+    return {
+      dateFrom: from,
+      dateTo: toDate,
+      dates: dates.map((date) => ({ date, day: dayNumber(date), weekday: dayAbbrev(date) })),
+      employees: [],
+    };
+  }
+
+  const registrationIds = registrations.map((reg) => reg._id);
+  const rangeStart = new Date(`${from}T00:00:00.000Z`);
+  const rangeEnd = new Date(`${toDate}T23:59:59.999Z`);
+
+  const [logs, passes] = await Promise.all([
+    GateLog.find({
+      registrationId: { $in: registrationIds },
+      matched: true,
+      createdAt: { $gte: rangeStart, $lte: rangeEnd },
+    })
+      .select('registrationId scanType eventType createdAt')
+      .lean(),
+    Pass.find({
+      registrationId: { $in: registrationIds },
+      passType: PASS_TYPES.DAY_PASS,
+      validDate: { $gte: from, $lte: toDate },
+    })
+      .select('registrationId validDate qrPayload createdAt')
+      .lean(),
+  ]);
+
+  const logsByRegDate = new Map();
+  for (const log of logs) {
+    const regId = log.registrationId.toString();
+    const date = logDateKey(log.createdAt);
+    const key = `${regId}|${date}`;
+    if (!logsByRegDate.has(key)) logsByRegDate.set(key, []);
+    logsByRegDate.get(key).push(log);
+  }
+
+  const passByRegDate = new Map();
+  for (const pass of passes) {
+    const key = `${pass.registrationId.toString()}|${pass.validDate}`;
+    const existing = passByRegDate.get(key);
+    if (!existing || pass.createdAt > existing.createdAt) {
+      passByRegDate.set(key, pass);
+    }
+  }
+
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const employees = registrations
+    .map((reg) => {
+      const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
+      const regId = reg._id.toString();
+      const registeredAt = reg.createdAt;
+
+      const days = dates.map((date) => {
+        const key = `${regId}|${date}`;
+        const dayLogs = logsByRegDate.get(key) || [];
+        const pass = passByRegDate.get(key);
+        const session = pass ? getPassSessionState(pass) : null;
+
+        return {
+          date,
+          ...resolveDayAttendance({
+            date,
+            registeredAt,
+            dayLogs,
+            session,
+          }),
+        };
+      });
+
+      return {
+        registrationId: regId,
+        displayName: display.displayName,
+        displayPhone: display.displayPhone || null,
+        registrationCode: reg.registrationCode,
+        roleName: reg.roleId?.name || '—',
+        photoUrl: photoUrlFromPath(reg.photoPath),
+        registeredAt: registeredAt?.toISOString?.() || registeredAt,
+        summary: summarizeAttendanceDays(days),
+        days,
+      };
+    })
+    .filter((emp) => {
+      if (!normalizedSearch) return true;
+      return (
+        emp.displayName?.toLowerCase().includes(normalizedSearch) ||
+        emp.registrationCode?.toLowerCase().includes(normalizedSearch) ||
+        emp.roleName?.toLowerCase().includes(normalizedSearch)
+      );
+    })
+    .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+
+  return {
+    dateFrom: from,
+    dateTo: toDate,
+    dates: dates.map((date) => ({ date, day: dayNumber(date), weekday: dayAbbrev(date) })),
+    employees,
+  };
 }

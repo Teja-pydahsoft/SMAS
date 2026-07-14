@@ -2064,7 +2064,9 @@
   background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
 }
 
-.rc-att-cell--hd {
+.rc-att-cell--hd,
+.rc-att-cell--fh,
+.rc-att-cell--sh {
   background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
   border: 1px solid #a7f3d0;
 }
@@ -2083,7 +2085,9 @@
 }
 
 .rc-att-cell--pt .rc-att-cell__badge { color: #6d28d9; }
-.rc-att-cell--hd .rc-att-cell__badge { color: #047857; }
+.rc-att-cell--hd .rc-att-cell__badge,
+.rc-att-cell--fh .rc-att-cell__badge,
+.rc-att-cell--sh .rc-att-cell__badge { color: #047857; }
 
 .rc-att-cell__paid {
   display: block;
@@ -2208,6 +2212,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+.rc-period-sessions-table__hours {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rc-period-sessions-table__amount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #0f766e;
+  white-space: nowrap;
+}
+
 .rc-period-sessions-table__status {
   display: inline-flex;
   align-items: center;
@@ -2221,6 +2238,8 @@
 
 .rc-period-sessions-table__status--p { background: #d1fae5; color: #047857; }
 .rc-period-sessions-table__status--hd { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.rc-period-sessions-table__status--fh { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.rc-period-sessions-table__status--sh { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; }
 .rc-period-sessions-table__status--pt { background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
 .rc-period-sessions-table__status--a { background: #f3f4f6; color: #6b7280; }
 
@@ -2265,7 +2284,9 @@
 }
 
 .rc-att-day-detail__badge--p { background: #d1fae5; color: #047857; }
-.rc-att-day-detail__badge--hd { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.rc-att-day-detail__badge--hd,
+.rc-att-day-detail__badge--fh { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.rc-att-day-detail__badge--sh { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; }
 .rc-att-day-detail__badge--pt { background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
 .rc-att-day-detail__badge--a { background: #f3f4f6; color: #6b7280; }
 

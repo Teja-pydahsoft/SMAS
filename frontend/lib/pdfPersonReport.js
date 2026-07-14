@@ -82,6 +82,8 @@ function formatShortDate(value) {
 function dayStatusLabel(day) {
   if (!day || day.status === 'blank') return 'Not Registered';
   if (day.status === 'P') return 'Present';
+  if (day.status === 'FH') return day.label || 'First Half';
+  if (day.status === 'SH') return day.label || 'Second Half';
   if (day.status === 'HD') return day.label || 'Partial Day';
   if (day.status === 'PT') return day.label || 'Hours Worked';
   if (day.status === 'A') return 'Absent';
@@ -92,7 +94,9 @@ function dayPayFactor(day) {
   if (!day) return 0;
   if (typeof day.payFactor === 'number') return day.payFactor;
   if (day.status === 'P') return 1;
-  if (day.status === 'HD' || day.status === 'PT') return 0.5;
+  if (day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT') {
+    return 0.5;
+  }
   return 0;
 }
 
@@ -256,7 +260,19 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
       data.cell.styles.fontStyle = 'italic';
       return;
     }
-    if (data.column.index === 1 && (status === 'Present' || status === 'Partial Day' || status === 'Partial' || status === 'Half Day' || status === 'Half' || status.startsWith('Hours Worked'))) {
+    if (
+      data.column.index === 1 &&
+      (status === 'Present' ||
+        status === 'Partial Day' ||
+        status === 'Partial' ||
+        status === 'Half Day' ||
+        status === 'Half' ||
+        status === 'First Half' ||
+        status === 'Second Half' ||
+        status.startsWith('First Half') ||
+        status.startsWith('Second Half') ||
+        status.startsWith('Hours Worked'))
+    ) {
       data.cell.styles.textColor = [22, 163, 74];
       data.cell.styles.fontStyle = 'bold';
     } else if (data.column.index === 1 && status === 'Absent') {
@@ -269,8 +285,17 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
     return body.map((row) => {
       if (!row[0] && !row[1]) return row;
       if (row[1] === 'Not Registered') return [row[0], 'Not Reg.', row[2]];
-      if (row[1] === 'Half Day' || row[1] === 'Partial Day' || String(row[1] || '').startsWith('Hours Worked')) {
-        return [row[0], 'Partial', row[2]];
+      const label = String(row[1] || '');
+      if (
+        label === 'Half Day' ||
+        label === 'Partial Day' ||
+        label === 'First Half' ||
+        label === 'Second Half' ||
+        label.startsWith('First Half') ||
+        label.startsWith('Second Half') ||
+        label.startsWith('Hours Worked')
+      ) {
+        return [row[0], label.startsWith('Second') ? '2nd' : label.startsWith('First') ? '1st' : 'Partial', row[2]];
       }
       return row;
     });

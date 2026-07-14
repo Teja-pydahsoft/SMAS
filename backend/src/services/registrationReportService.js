@@ -14,7 +14,7 @@ import {
 import { calculatePaymentSummary, formatPayFrequencyLabel } from '../utils/paymentCalculation.js';
 import { grantedGateLogFilter, filterGrantedLogs } from '../utils/gateLogFilters.js';
 import {
-  computeActivityHours,
+  computeActivityWindow,
   getShiftDurationHours,
   resolveShiftDayStatus,
 } from '../utils/shiftAttendance.js';
@@ -108,9 +108,10 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
   const joinDate = logDateKey(registeredAt);
   const grantedLogs = filterGrantedLogs(dayLogs || []);
   const timings = extractDayTimings(dayLogs || [], session);
-  const activityHours = computeActivityHours(grantedLogs, session, date, {
+  const activityWindow = computeActivityWindow(grantedLogs, session, date, {
     today: todayDateString(),
   });
+  const activityHours = activityWindow.hours;
   const shiftMeta = {
     activityHours,
     shiftId: shift?._id?.toString?.() || shift?.id || session?.shiftId || null,
@@ -126,6 +127,7 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
       code: 'NR',
       label: 'Not Registered',
       payFactor: 0,
+      halfSide: null,
       ...timings,
       ...shiftMeta,
     };
@@ -138,18 +140,26 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
       label: 'Absent',
       checkInTime: null,
       payFactor: 0,
+      halfSide: null,
       ...timings,
       ...shiftMeta,
     };
   }
 
-  const shiftStatus = resolveShiftDayStatus(activityHours, shift);
+  const shiftStatus = resolveShiftDayStatus(activityHours, shift, {
+    checkIn: activityWindow.start || timings.checkIn,
+    checkOut: activityWindow.end || timings.lastActivityAt,
+  });
   if (shiftStatus) {
     return {
       ...shiftStatus,
       checkInTime: formatTimeFromDate(timings.checkIn),
       ...timings,
       ...shiftMeta,
+      halfSide: shiftStatus.halfSide ?? null,
+      firstOverlapHours: shiftStatus.firstOverlapHours ?? null,
+      secondOverlapHours: shiftStatus.secondOverlapHours ?? null,
+      inShiftHours: shiftStatus.inShiftHours ?? null,
     };
   }
 
@@ -160,6 +170,7 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
     label: 'Present',
     checkInTime: formatTimeFromDate(timings.checkIn),
     payFactor: 1,
+    halfSide: null,
     ...timings,
     ...shiftMeta,
   };
@@ -172,8 +183,9 @@ function summarizeAttendanceDays(days) {
 
   for (const day of days) {
     if (day.status === 'P') present += 1;
-    else if (day.status === 'HD' || day.status === 'PT') halfDay += 1;
-    else if (day.status === 'A') absent += 1;
+    else if (day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT') {
+      halfDay += 1;
+    } else if (day.status === 'A') absent += 1;
   }
 
   return {
@@ -871,7 +883,9 @@ export async function recalculateAttendanceHistory({
         shiftDays += 1;
       }
       if (day.status === 'P') presentDays += 1;
-      else if (day.status === 'HD' || day.status === 'PT') partialDays += 1;
+      else if (day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT') {
+        partialDays += 1;
+      }
       else if (day.status === 'A') absentDays += 1;
     }
     if (emp.payment?.totalAmount) totalPayroll += Number(emp.payment.totalAmount) || 0;

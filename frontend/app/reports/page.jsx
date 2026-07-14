@@ -51,6 +51,20 @@ function formatTime(value) {
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
+function dayEarnedAmount(day, rate) {
+  if (rate == null || Number.isNaN(Number(rate))) return null;
+  if (!day || day.status === 'blank') return null;
+  if (day.status === 'A') return 0;
+  const factor = typeof day.payFactor === 'number'
+    ? day.payFactor
+    : day.status === 'P'
+      ? 1
+      : day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT'
+        ? 0.5
+        : 0;
+  return Math.round(Number(rate) * factor * 100) / 100;
+}
+
 function useNow() {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -347,8 +361,9 @@ function PeriodDayTrack({ entries }) {
   );
 }
 
-function PeriodDaySessionsTable({ periodDays, entriesByDateMap }) {
+function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null }) {
   const sortedDays = [...periodDays].reverse();
+  const rate = payAmount != null ? Number(payAmount) : null;
 
   return (
     <div className="rc-period-sessions-table-wrap">
@@ -359,6 +374,8 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap }) {
             <th>Status</th>
             <th>Check-In</th>
             <th>Last Activity</th>
+            <th>Hours</th>
+            <th>Day Amount</th>
             <th>Sessions</th>
           </tr>
         </thead>
@@ -366,6 +383,8 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap }) {
           {sortedDays.map((day) => {
             const entries = entriesByDateMap[day.date] || [];
             const lastLabel = day.lastActivityType === 'exit' ? 'Check-Out' : 'Check-In';
+            const hoursLabel = formatCellHours(day.activityHours) || '—';
+            const earned = dayEarnedAmount(day, rate);
 
             return (
               <Fragment key={day.date}>
@@ -383,10 +402,14 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap }) {
                       <span className="rc-period-sessions-table__activity-type">{lastLabel}</span>
                     </span>
                   </td>
+                  <td className="rc-period-sessions-table__hours">{hoursLabel}</td>
+                  <td className="rc-period-sessions-table__amount">
+                    {earned != null ? formatCurrency(earned) : '—'}
+                  </td>
                   <td className="rc-period-sessions-table__count">{entries.length}</td>
                 </tr>
                 <tr className="rc-period-sessions-table__track-row">
-                  <td colSpan={5}>
+                  <td colSpan={7}>
                     {entries.length === 0 ? (
                       <p className="rc-period-day-timeline__empty">No scan events recorded for this day.</p>
                     ) : (
@@ -447,7 +470,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
   const rangeSummary = data?.attendanceRange?.summary;
   const paymentSummary = data?.attendanceRange?.payment;
   const periodDays = (data?.attendanceRange?.days || []).filter(
-    (day) => day.status === 'P' || day.status === 'HD' || day.status === 'PT'
+    (day) => day.status === 'P' || day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT'
   );
   const entriesByDateMap = Object.fromEntries(entriesByDate.map((g) => [g.date, g.entries]));
   const rangeLabel = hasDateRange
@@ -656,6 +679,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
                       <PeriodDaySessionsTable
                         periodDays={periodDays}
                         entriesByDateMap={entriesByDateMap}
+                        payAmount={paymentSummary?.payAmount ?? details.payAmount}
                       />
                     )
                   ) : entriesByDate.length === 0 ? (
@@ -1101,11 +1125,13 @@ function AttendanceCell({ day, onSelect }) {
     );
   }
 
-  if (day.status === 'HD') {
+  if (day.status === 'HD' || day.status === 'FH' || day.status === 'SH') {
+    const halfLabel =
+      day.status === 'FH' ? 'First Half' : day.status === 'SH' ? 'Second Half' : 'Partial Day';
     return (
-      <td className={cls} aria-label={`Partial Day${hoursLabel ? `, ${hoursLabel}` : ''}`} onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`${halfLabel}${hoursLabel ? `, ${hoursLabel}` : ''}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
-        <span className="rc-att-cell__badge">HD</span>
+        <span className="rc-att-cell__badge">{day.code || day.status}</span>
         {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
       </td>
     );
@@ -1145,7 +1171,9 @@ function AttendanceDayDialog({ employee, day, onClose }) {
 
   const statusLabel = day.label || day.code || '—';
   const lastActivityLabel = day.lastActivityType === 'exit' ? 'Check-Out' : 'Check-In';
-  const hasPresence = day.status === 'P' || day.status === 'HD' || day.status === 'PT';
+  const hasPresence = day.status === 'P' || day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT';
+  const halfSideLabel =
+    day.halfSide === 'first' ? 'First Half' : day.halfSide === 'second' ? 'Second Half' : null;
   const activityHoursLabel =
     day.activityHours != null && day.activityHours > 0
       ? `${day.activityHours}h`
@@ -1208,6 +1236,20 @@ function AttendanceDayDialog({ employee, day, onClose }) {
                     <span className="rc-att-day-detail__value">{activityHoursLabel}</span>
                   </div>
                 )}
+                {halfSideLabel && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Nearest Half</span>
+                    <span className="rc-att-day-detail__value">{halfSideLabel}</span>
+                  </div>
+                )}
+                {(day.firstOverlapHours != null || day.secondOverlapHours != null) && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Half Overlap (1st / 2nd)</span>
+                    <span className="rc-att-day-detail__value">
+                      {day.firstOverlapHours ?? 0}h / {day.secondOverlapHours ?? 0}h
+                    </span>
+                  </div>
+                )}
                 {day.shiftName && (
                   <div className="rc-att-day-detail__item">
                     <span className="rc-att-day-detail__label">Shift</span>
@@ -1253,6 +1295,7 @@ function AttendanceDayDialog({ employee, day, onClose }) {
               <p className="rc-att-day-detail__empty" style={{ marginTop: '0.75rem' }}>
                 Below half-day minimum
                 {day.halfDayMinHours != null ? ` (${day.halfDayMinHours}h)` : ''}
+                {halfSideLabel ? `, nearest ${halfSideLabel.toLowerCase()}` : ''}
                 , paid for hours worked.
               </p>
             )}

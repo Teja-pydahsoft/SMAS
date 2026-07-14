@@ -110,6 +110,8 @@ function formatShortDate(value) {
 function dayStatusLabel(day) {
   if (!day || day.status === 'blank') return 'Not Registered';
   if (day.status === 'P') return 'Present';
+  if (day.status === 'FH') return day.label || 'First Half';
+  if (day.status === 'SH') return day.label || 'Second Half';
   if (day.status === 'HD') return day.label || 'Partial Day';
   if (day.status === 'PT') return day.label || 'Hours Worked';
   if (day.status === 'A') return 'Absent';
@@ -120,7 +122,9 @@ function dayPayFactor(day) {
   if (!day) return 0;
   if (typeof day.payFactor === 'number') return day.payFactor;
   if (day.status === 'P') return 1;
-  if (day.status === 'HD' || day.status === 'PT') return 0.5;
+  if (day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT') {
+    return 0.5;
+  }
   return 0;
 }
 
@@ -403,7 +407,12 @@ function collectReportEntries(reportData, { dateFrom = '', dateTo = '' } = {}) {
 
   if (hasDateRange) {
     const periodDays = (reportData?.attendanceRange?.days || []).filter(
-      (day) => day.status === 'P' || day.status === 'HD' || day.status === 'PT'
+      (day) =>
+        day.status === 'P' ||
+        day.status === 'HD' ||
+        day.status === 'FH' ||
+        day.status === 'SH' ||
+        day.status === 'PT'
     );
     const entriesByDateMap = Object.fromEntries(
       (reportData?.entriesByDate || []).map((group) => [group.date, group.entries])
@@ -584,7 +593,12 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
 
   const periodDays = hasDateRange
     ? (reportData?.attendanceRange?.days || []).filter(
-        (day) => day.status === 'P' || day.status === 'HD' || day.status === 'PT'
+        (day) =>
+          day.status === 'P' ||
+          day.status === 'HD' ||
+          day.status === 'FH' ||
+          day.status === 'SH' ||
+          day.status === 'PT'
       )
     : [];
   const entriesByDateMap = Object.fromEntries(
@@ -675,10 +689,17 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
       'Last Activity',
       'Activity Type',
       'Check-Out Photo',
+      'Hours',
+      'Day Amount',
       'Sessions',
     ];
     periodSheet.addRow(periodHeaders);
     styleExcelHeaderRow(periodSheet, 1);
+
+    const rate =
+      reportData?.attendanceRange?.payment?.payAmount ??
+      reportData?.details?.payAmount ??
+      null;
 
     const sortedPeriodDays = [...periodDays].sort((a, b) => b.date.localeCompare(a.date));
     for (const day of sortedPeriodDays) {
@@ -686,6 +707,10 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
       const { checkInPhotoUrl, checkOutPhotoUrl } = getDayScanPhotos(entries);
       const lastActivityLabel = day.lastActivityType === 'exit' ? 'Check-Out' : 'Check-In';
       const rowNumber = periodSheet.rowCount + 1;
+      const hoursLabel =
+        day.activityHours != null && day.activityHours > 0
+          ? `${day.activityHours}h`
+          : '—';
 
       periodSheet.addRow([
         formatExportDate(day.date),
@@ -695,6 +720,8 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
         formatExportTime(day.lastActivityAt),
         lastActivityLabel,
         checkOutPhotoUrl ? '' : '—',
+        hoursLabel,
+        dayAmount(day, rate),
         entries.length,
       ]);
 
@@ -711,6 +738,8 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
       { width: 14 },
       { width: 14 },
       { width: 14 },
+      { width: 10 },
+      { width: 12 },
       { width: 10 },
     ];
   }

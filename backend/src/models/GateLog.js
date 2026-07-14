@@ -19,6 +19,8 @@ const gateLogSchema = new mongoose.Schema(
     accessGranted: { type: Boolean, default: true },
     photoPath: { type: String },
     gateId: { type: String, default: 'main' },
+    /** Optional note entered on department check-in only. */
+    remark: { type: String, default: '' },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }

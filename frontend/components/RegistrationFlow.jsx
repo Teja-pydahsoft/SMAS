@@ -9,6 +9,9 @@ import CameraCapture from '@/components/CameraCapture';
 import PassCard from '@/components/PassCard';
 import {
   formatPayFrequency,
+  formatGender,
+  GENDERS,
+  GENDER_LABELS,
   buildCombinedPayFrequencyOptions,
   parsePayFrequencySelection,
   serializePayFrequencySelection,
@@ -67,6 +70,7 @@ export default function RegistrationFlow({
   const [formData, setFormData] = useState({});
   const [payFrequencySelection, setPayFrequencySelection] = useState('');
   const [payAmount, setPayAmount] = useState('');
+  const [gender, setGender] = useState('');
   const [pendingMediaFiles, setPendingMediaFiles] = useState({});
   const [photoBlob, setPhotoBlob] = useState(null);
   const [gatePhotoLoaded, setGatePhotoLoaded] = useState(false);
@@ -97,6 +101,7 @@ export default function RegistrationFlow({
       setFormData({});
       setPayFrequencySelection('');
       setPayAmount('');
+      setGender('');
       setPendingMediaFiles({});
       setStage('form');
       loadNew(selectedRoleId);
@@ -156,6 +161,7 @@ export default function RegistrationFlow({
         serializePayFrequencySelection(reg.payFrequency, reg.customPayDays)
       );
       setPayAmount(reg.payAmount != null ? String(reg.payAmount) : '');
+      setGender(reg.gender || '');
       setPendingMediaFiles({});
       setStage(resolveStage(reg));
 
@@ -221,6 +227,10 @@ export default function RegistrationFlow({
         setError('Please select a pay frequency');
         return;
       }
+      if (!gender) {
+        setError('Please select a gender');
+        return;
+      }
       const amount = Number(payAmount);
       if (!Number.isFinite(amount) || amount < 0) {
         setError('Please enter a valid pay amount');
@@ -241,6 +251,7 @@ export default function RegistrationFlow({
             ? customPayDays
             : undefined,
         payAmount: role?.payFrequencies?.length ? Number(payAmount) : undefined,
+        gender: role?.payFrequencies?.length ? gender : undefined,
       };
       let reg = registration;
       if (reg) {
@@ -491,6 +502,7 @@ export default function RegistrationFlow({
                       setFormData({});
                       setPayFrequencySelection('');
                       setPayAmount('');
+                      setGender('');
                       setPendingMediaFiles({});
                       setError('');
                     }}
@@ -524,23 +536,45 @@ export default function RegistrationFlow({
                     </select>
                   </div>
                   {payFrequencySelection && (
-                    <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-                      <label htmlFor="reg-flow-pay-amount">
-                        Pay Amount (per day) <span style={{ color: 'var(--danger)' }}>*</span>
-                      </label>
-                      <input
-                        id="reg-flow-pay-amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={payAmount}
-                        onChange={(e) => setPayAmount(e.target.value)}
-                        placeholder="Enter amount per present day"
-                      />
-                      <p className="field-hint" style={{ marginTop: '0.35rem', marginBottom: 0 }}>
-                        This amount is multiplied by present days on the attendance report.
-                      </p>
-                    </div>
+                    <>
+                      <div className="form-group" style={{ marginBottom: '1rem' }}>
+                        <label htmlFor="reg-flow-gender">
+                          Gender <span style={{ color: 'var(--danger)' }}>*</span>
+                        </label>
+                        <select
+                          id="reg-flow-gender"
+                          value={gender}
+                          onChange={(e) => setGender(e.target.value)}
+                        >
+                          <option value="">Choose gender…</option>
+                          {GENDERS.map((value) => (
+                            <option key={value} value={value}>
+                              {GENDER_LABELS[value]}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="field-hint" style={{ marginTop: '0.35rem', marginBottom: 0 }}>
+                          Used with pay frequency to generate codes like DM0001, DF0001, WM0001, WF0001.
+                        </p>
+                      </div>
+                      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                        <label htmlFor="reg-flow-pay-amount">
+                          Pay Amount (per day) <span style={{ color: 'var(--danger)' }}>*</span>
+                        </label>
+                        <input
+                          id="reg-flow-pay-amount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={payAmount}
+                          onChange={(e) => setPayAmount(e.target.value)}
+                          placeholder="Enter amount per present day"
+                        />
+                        <p className="field-hint" style={{ marginTop: '0.35rem', marginBottom: 0 }}>
+                          This amount is multiplied by present days on the attendance report.
+                        </p>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
@@ -652,6 +686,10 @@ export default function RegistrationFlow({
                 <p style={{ margin: 0 }}>
                   {formatPayFrequency(registration.payFrequency, registration.customPayDays)}
                 </p>
+              </div>
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label>Gender</label>
+                <p style={{ margin: 0 }}>{formatGender(registration.gender)}</p>
               </div>
               {registration.payAmount != null && (
                 <div className="form-group" style={{ marginBottom: '1rem' }}>

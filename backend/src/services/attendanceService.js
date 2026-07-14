@@ -95,6 +95,93 @@ export function getPassSessionState(pass) {
   };
 }
 
+/**
+ * Rebuild today's department visit pairs from GateLog (source of truth for in/out times).
+ */
+export async function buildDepartmentVisitsFromLogs(registrationId, divisionId) {
+  if (!registrationId || !divisionId) return [];
+
+  const validDate = todayDateString();
+  const startOfDay = new Date(`${validDate}T00:00:00.000Z`);
+  const endOfDayDate = endOfDay();
+
+  const logs = await GateLog.find(
+    grantedGateLogFilter({
+      registrationId,
+      divisionId,
+      scanType: SCAN_TYPES.DEPARTMENT,
+      createdAt: { $gte: startOfDay, $lte: endOfDayDate },
+    })
+  )
+    .populate('departmentId', 'name')
+    .sort({ createdAt: 1 });
+
+  const visits = [];
+  /** @type {Map<string, object>} */
+  const openByDept = new Map();
+
+  for (const log of logs) {
+    const departmentId =
+      log.departmentId?._id?.toString() || log.departmentId?.toString() || null;
+    if (!departmentId) continue;
+
+    const departmentName = log.departmentId?.name || 'Department';
+    const at = log.createdAt?.toISOString?.() || log.createdAt;
+    const remark =
+      typeof log.remark === 'string' && log.remark.trim() ? log.remark.trim() : '';
+
+    if (log.eventType === GATE_EVENT_TYPES.ENTRY) {
+      const visit = {
+        departmentId,
+        departmentName,
+        entryAt: at,
+        exitAt: null,
+        remark,
+      };
+      visits.push(visit);
+      openByDept.set(departmentId, visit);
+    } else if (log.eventType === GATE_EVENT_TYPES.EXIT) {
+      const open = openByDept.get(departmentId);
+      if (open) {
+        open.exitAt = at;
+        openByDept.delete(departmentId);
+      } else {
+        visits.push({
+          departmentId,
+          departmentName,
+          entryAt: null,
+          exitAt: at,
+          remark,
+        });
+      }
+    }
+  }
+
+  return visits;
+}
+
+/**
+ * Refresh pass.qrPayload.departmentVisits from GateLog so activity times stay accurate.
+ */
+export async function syncDepartmentVisitsFromLogs(pass, registrationId, divisionId) {
+  if (!pass) return getPassSessionState(pass);
+
+  const visits = await buildDepartmentVisitsFromLogs(registrationId, divisionId);
+  const payload = { ...(pass.qrPayload || {}) };
+  payload.departmentVisits = visits;
+  payload.updatedAt = new Date().toISOString();
+
+  const open = [...visits].reverse().find((v) => !v.exitAt) || null;
+  payload.currentDepartmentId = open?.departmentId || null;
+  payload.currentDepartmentName = open?.departmentName || null;
+
+  pass.qrPayload = payload;
+  pass.markModified('qrPayload');
+  await pass.save();
+
+  return getPassSessionState(pass);
+}
+
 function activeDivisionFromSession(session) {
   if (!session) return null;
   return {
@@ -522,23 +609,24 @@ export async function createOrRefreshDayPass({
   return formatPassResponse(pass, await buildQrDataUrl(passCode));
 }
 
-export async function updateDayPassAfterDepartmentScan(pass, department, eventType) {
-  const now = new Date();
+export async function updateDayPassAfterDepartmentScan(pass, department, eventType, scannedAt = null) {
+  const now = scannedAt ? new Date(scannedAt) : new Date();
   const payload = { ...(pass.qrPayload || {}) };
   const visits = Array.isArray(payload.departmentVisits) ? [...payload.departmentVisits] : [];
+  const departmentId = department._id.toString();
 
   if (eventType === GATE_EVENT_TYPES.ENTRY) {
     visits.push({
-      departmentId: department._id.toString(),
+      departmentId,
       departmentName: department.name,
       entryAt: now.toISOString(),
       exitAt: null,
     });
-    payload.currentDepartmentId = department._id.toString();
+    payload.currentDepartmentId = departmentId;
     payload.currentDepartmentName = department.name;
   } else {
     const openIdx = [...visits].reverse().findIndex(
-      (v) => v.departmentId === department._id.toString() && !v.exitAt
+      (v) => String(v.departmentId) === departmentId && !v.exitAt
     );
     if (openIdx >= 0) {
       const idx = visits.length - 1 - openIdx;

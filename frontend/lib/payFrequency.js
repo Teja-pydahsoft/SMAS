@@ -7,6 +7,18 @@ export const PAY_FREQUENCY_LABELS = {
   custom_days: 'Custom Days',
 };
 
+export const GENDERS = ['male', 'female'];
+
+export const GENDER_LABELS = {
+  male: 'Male',
+  female: 'Female',
+};
+
+export function formatGender(gender) {
+  if (!gender) return '—';
+  return GENDER_LABELS[gender] || gender;
+}
+
 export function formatPayFrequency(payFrequency, customPayDays) {
   if (!payFrequency) return '—';
   if (payFrequency === 'custom_days' && customPayDays) {

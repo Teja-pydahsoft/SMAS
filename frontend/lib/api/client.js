@@ -291,6 +291,11 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify({ shiftId, shiftName }),
       }),
+    attachRemark: (logId, remark) =>
+      request(`/gate/logs/${logId}/remark`, {
+        method: 'PATCH',
+        body: JSON.stringify({ remark }),
+      }),
   },
 
   reports: {

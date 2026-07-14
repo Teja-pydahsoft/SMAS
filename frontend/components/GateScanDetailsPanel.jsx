@@ -1,34 +1,38 @@
 'use client';
 
 import PassCard from '@/components/PassCard';
-import GateMatchedPerson from '@/components/GateMatchedPerson';
+import GateMatchedPerson, { formatVisitTime } from '@/components/GateMatchedPerson';
 import GateSecurityReview from '@/components/GateSecurityReview';
 import { RequiredStepsList } from '@/components/AccessRulesPanel';
 
 function SessionStatus({ sessionState }) {
   if (!sessionState) return null;
+
+  const visits = [...(sessionState.departmentVisits || [])].sort((a, b) => {
+    const aTime = new Date(a.exitAt || a.entryAt || 0).getTime();
+    const bTime = new Date(b.exitAt || b.entryAt || 0).getTime();
+    return bTime - aTime;
+  });
+
   return (
     <div className="gate-session-status">
-      <p>
-        Division:{' '}
-        <strong>{sessionState.divisionInside ? 'Inside' : 'Outside'}</strong>
-      </p>
-      {sessionState.currentDepartmentName && (
+      {(sessionState.currentDepartmentName || visits.length > 0) && (
         <p>
-          Current department: <strong>{sessionState.currentDepartmentName}</strong>
+          Current department:{' '}
+          <strong>{sessionState.currentDepartmentName || 'None'}</strong>
         </p>
       )}
-      {(sessionState.departmentVisits || []).length > 0 && (
+      {visits.length > 0 && (
         <div className="gate-visit-list">
           <p className="field-hint">Today&apos;s department visits</p>
           <ul>
-            {sessionState.departmentVisits.map((visit, idx) => (
-              <li key={`${visit.departmentId}-${idx}`}>
-                {visit.departmentName} — in{' '}
-                {visit.entryAt ? new Date(visit.entryAt).toLocaleTimeString() : '—'}
+            {visits.map((visit, idx) => (
+              <li key={`${visit.departmentId}-${visit.entryAt || visit.exitAt}-${idx}`}>
+                {visit.departmentName} — in {formatVisitTime(visit.entryAt)}
                 {visit.exitAt
-                  ? ` → out ${new Date(visit.exitAt).toLocaleTimeString()}`
+                  ? ` → out ${formatVisitTime(visit.exitAt)}`
                   : ' (active)'}
+                {visit.remark ? ` · ${visit.remark}` : ''}
               </li>
             ))}
           </ul>

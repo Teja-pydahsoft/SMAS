@@ -9,6 +9,7 @@ import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { checkAiServerHealth, getFaceIndexStats, waitForAiServer } from './services/aiClient.js';
 import { rebuildFaceIndexFromDb } from './services/faceIndexService.js';
 import { migrateDepartmentsToMultiDivision } from './services/departmentMigration.js';
+import { migrateLegacyRegistrationCodes } from './services/registrationCodeMigration.js';
 import { ensureSuperAdmin } from './services/superAdminService.js';
 import { authenticateUnlessPublic } from './middleware/auth.js';
 
@@ -106,6 +107,22 @@ async function start() {
     }
   } catch (err) {
     console.warn('Department migration skipped:', err.message);
+  }
+
+  try {
+    const codeMigration = await migrateLegacyRegistrationCodes();
+    if (codeMigration.upgraded > 0) {
+      console.log(
+        `Upgraded ${codeMigration.upgraded} registration code(s) to pay/gender format (DM0001…)`
+      );
+    }
+    if (codeMigration.skipped > 0) {
+      console.warn(
+        `Skipped ${codeMigration.skipped} registration(s) — set pay frequency + gender, then restart to upgrade`
+      );
+    }
+  } catch (err) {
+    console.warn('Registration code migration skipped:', err.message);
   }
 
   try {

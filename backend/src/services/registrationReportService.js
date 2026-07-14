@@ -2,7 +2,7 @@ import Registration from '../models/Registration.js';
 import GateLog from '../models/GateLog.js';
 import Pass from '../models/Pass.js';
 import Role from '../models/Role.js';
-import { REGISTRATION_STATUS, PASS_TYPES } from '../constants/index.js';
+import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS } from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import {
   getActiveDivisionSession,
@@ -102,7 +102,7 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session }) {
   const timings = extractDayTimings(dayLogs || [], session);
 
   if (date < joinDate) {
-    return { status: 'blank', code: '', label: '', ...timings };
+    return { status: 'blank', code: 'NR', label: 'Not Registered', ...timings };
   }
 
   if (hasDayActivity(dayLogs, session)) {
@@ -147,6 +147,7 @@ function formatLogEntry(log) {
     departmentName: log.departmentId?.name || null,
     matchScore: log.matchScore,
     photoUrl: photoUrlFromPath(log.photoPath),
+    remark: typeof log.remark === 'string' && log.remark.trim() ? log.remark.trim() : '',
   };
 }
 
@@ -444,6 +445,10 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
         registration.payFrequency,
         registration.customPayDays
       ),
+      gender: registration.gender || null,
+      genderLabel: registration.gender
+        ? GENDER_LABELS[registration.gender] || registration.gender
+        : null,
     },
     todayActive,
     todayEntries,

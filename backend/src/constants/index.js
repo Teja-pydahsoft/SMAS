@@ -9,6 +9,26 @@ export const PAY_FREQUENCY_LABELS = {
   custom_days: 'Custom Days',
 };
 
+export const GENDERS = ['male', 'female'];
+
+export const GENDER_LABELS = {
+  male: 'Male',
+  female: 'Female',
+};
+
+/** Prefix letter for registration codes by pay frequency (e.g. DM0001). */
+export const PAY_FREQUENCY_CODE_LETTERS = {
+  daily: 'D',
+  weekly: 'W',
+  monthly: 'M',
+  custom_days: 'C',
+};
+
+export const GENDER_CODE_LETTERS = {
+  male: 'M',
+  female: 'F',
+};
+
 export const REGISTRATION_STAGES = {
   FORM: 'form',
   PHOTO: 'photo',

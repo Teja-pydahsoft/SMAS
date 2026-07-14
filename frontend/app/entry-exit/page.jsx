@@ -8,6 +8,7 @@ import { saveGatePhotoForRegistration } from '@/lib/gateRegistration';
 import GateCameraScanner from '@/components/GateCameraScanner';
 import GateScanDetailsPanel from '@/components/GateScanDetailsPanel';
 import ShiftPickerModal from '@/components/ShiftPickerModal';
+import RemarkEntryModal from '@/components/RemarkEntryModal';
 import EntryExitSelector from '@/components/EntryExitSelector';
 import PageShell from '@/components/PageShell';
 import { useAuth } from '@/components/AuthProvider';
@@ -105,6 +106,8 @@ function EntryExitContent() {
   const [setupLoading, setSetupLoading] = useState(true);
   // Shift picker — shown after a successful gate entry when role.isShiftBased = true
   const [shiftPicker, setShiftPicker] = useState(null); // { logId, personName } | null
+  // Remark picker — shown after a successful department check-in
+  const [remarkPicker, setRemarkPicker] = useState(null); // { logId, personName, departmentName } | null
 
   const divisions = useMemo(() => accessScope?.divisions || [], [accessScope]);
 
@@ -171,6 +174,7 @@ function EntryExitContent() {
     setError('');
     setShowDayPass(false);
     setShiftPicker(null);
+    setRemarkPicker(null);
   }, []);
 
   // After a successful gate ENTRY, check if the role requires a shift selection
@@ -188,6 +192,22 @@ function EntryExitContent() {
       });
     }
   }, []);
+
+  // After a successful department CHECK-IN, prompt for an optional remark
+  const maybePromptRemark = useCallback((res) => {
+    const isDeptCheckIn =
+      res.scanType === 'department' &&
+      !res.denied &&
+      res.matched &&
+      (res.resolvedEventType === 'entry' || (!res.resolvedEventType && res.log?.eventType === 'entry'));
+    if (isDeptCheckIn && res.log?._id) {
+      setRemarkPicker({
+        logId: res.log._id,
+        personName: res.registration?.displayName || res.registration?.holderName || '',
+        departmentName: res.log?.departmentName || selectedDepartment?.name || '',
+      });
+    }
+  }, [selectedDepartment?.name]);
 
   const applySelection = useCallback(
     (session) => {
@@ -280,13 +300,14 @@ function EntryExitContent() {
         const res = await api.gate.scan(blob, eventType, options);
         applyResult(res, setResult, setSessionState, setDayPass, setError);
         maybePromptShift(res);
+        maybePromptRemark(res);
       } catch (e) {
         applyErrorData(e, setResult, setSessionState, setDayPass, setError);
       } finally {
         setLoading(false);
       }
     },
-    [canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState, maybePromptShift]
+    [canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState, maybePromptShift, maybePromptRemark]
   );
 
   // ── QR scan ───────────────────────────────────────────────────────────────
@@ -311,13 +332,14 @@ function EntryExitContent() {
         const res = await api.gate.qrScan(passCode, eventType, options);
         applyResult(res, setResult, setSessionState, setDayPass, setError);
         maybePromptShift(res);
+        maybePromptRemark(res);
       } catch (e) {
         applyErrorData(e, setResult, setSessionState, setDayPass, setError);
       } finally {
         setLoading(false);
       }
     },
-    [loading, canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState, maybePromptShift]
+    [loading, canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState, maybePromptShift, maybePromptRemark]
   );
 
   // ── registration redirect ─────────────────────────────────────────────────
@@ -510,6 +532,20 @@ function EntryExitContent() {
             );
           }}
           onSkip={() => setShiftPicker(null)}
+        />
+      )}
+
+      {/* Remark modal — shown after department check-in */}
+      {remarkPicker && (
+        <RemarkEntryModal
+          logId={remarkPicker.logId}
+          personName={remarkPicker.personName}
+          departmentName={remarkPicker.departmentName}
+          onConfirm={(remark) => {
+            setRemarkPicker(null);
+            setResult((prev) => (prev ? { ...prev, remark } : prev));
+          }}
+          onSkip={() => setRemarkPicker(null)}
         />
       )}
     </PageShell>

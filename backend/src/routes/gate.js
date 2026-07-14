@@ -23,6 +23,7 @@ import {
   createOrRefreshDayPass,
   updateDayPassAfterDepartmentScan,
   updateDayPassAfterGateExit,
+  syncDepartmentVisitsFromLogs,
   madeGateEntryToday,
   isPersonInsideTargetDivision,
   resolveAutoGateEventType,
@@ -172,6 +173,33 @@ router.patch(
       dayPass.markModified('qrPayload');
       await dayPass.save();
     }
+
+    res.json({ ok: true, log });
+  })
+);
+
+// ─── Attach remark to a department check-in log ──────────────────────────────
+router.patch(
+  '/logs/:id/remark',
+  asyncHandler(async (req, res) => {
+    const remark = typeof req.body?.remark === 'string' ? req.body.remark.trim() : '';
+
+    const log = await GateLog.findById(req.params.id);
+    if (!log) return res.status(404).json({ error: 'Gate log not found' });
+
+    if (log.scanType !== SCAN_TYPES.DEPARTMENT || log.eventType !== GATE_EVENT_TYPES.ENTRY) {
+      // Allow legacy QR dept check-ins that stored scanType as "qr"
+      const isLegacyDeptCheckIn =
+        log.scanType === SCAN_TYPES.QR &&
+        log.departmentId &&
+        log.eventType === GATE_EVENT_TYPES.ENTRY;
+      if (!isLegacyDeptCheckIn) {
+        return res.status(400).json({ error: 'Remarks can only be added on department check-in' });
+      }
+    }
+
+    log.remark = remark;
+    await log.save();
 
     res.json({ ok: true, log });
   })
@@ -336,7 +364,6 @@ router.post(
       gateId,
       divisionId: bodyDivisionId,
       departmentId,
-      scanType = SCAN_TYPES.QR,
     } = req.body;
 
     if (!passCode?.trim()) {
@@ -352,11 +379,11 @@ router.post(
     }
 
     // Resolve gate/division info identical to face scan
-    const logFields = { scanType };
+    const effectiveScanType = departmentId ? SCAN_TYPES.DEPARTMENT : SCAN_TYPES.GATE;
+    const logFields = { scanType: effectiveScanType };
     let divisionId = bodyDivisionId || null;
     let gateRecord = null;
     let department = null;
-    const effectiveScanType = departmentId ? SCAN_TYPES.DEPARTMENT : SCAN_TYPES.GATE;
 
     if (effectiveScanType === SCAN_TYPES.GATE) {
       if (!gateId) return res.status(400).json({ error: 'gateId is required for gate scans' });
@@ -580,13 +607,29 @@ router.post(
           });
       }
 
-      dayPass = await updateDayPassAfterDepartmentScan(activePass, department, resolvedDeptEventType);
-      sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
+      dayPass = await updateDayPassAfterDepartmentScan(
+        activePass,
+        department,
+        resolvedDeptEventType,
+        log.createdAt
+      );
       resolvedEventType = resolvedDeptEventType;
     }
 
     const hasGateEntry = await madeGateEntryToday(matchedRegistration._id, divisionId);
     await finalizeGateLog(log);
+
+    if (effectiveScanType === SCAN_TYPES.DEPARTMENT) {
+      const updatedPass = await getActiveDayPass(matchedRegistration._id, divisionId);
+      sessionState = await syncDepartmentVisitsFromLogs(
+        updatedPass,
+        matchedRegistration._id,
+        divisionId
+      );
+      if (updatedPass) {
+        dayPass = await formatPassResponse(updatedPass);
+      }
+    }
 
     res.json({
       matched: true,
@@ -598,6 +641,12 @@ router.post(
       dayPass,
       sessionState,
       hasGateEntry,
+      activeDepartment: sessionState?.currentDepartmentId
+        ? {
+            departmentId: sessionState.currentDepartmentId,
+            departmentName: sessionState.currentDepartmentName,
+          }
+        : null,
       resolvedEventType,
       autoResolved: isAutoEvent,
       qrScan: true,
@@ -900,14 +949,30 @@ router.post(
           });
       }
 
-      dayPass = await updateDayPassAfterDepartmentScan(activePass, department, resolvedDeptEventType);
-      sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
+      dayPass = await updateDayPassAfterDepartmentScan(
+        activePass,
+        department,
+        resolvedDeptEventType,
+        log.createdAt
+      );
       resolvedEventType = resolvedDeptEventType;
       personInside = deptAutoResolved;
     }
 
     const hasGateEntry = await madeGateEntryToday(matchedRegistration._id, divisionId);
     await finalizeGateLog(log);
+
+    if (scanType === SCAN_TYPES.DEPARTMENT) {
+      const updatedPass = await getActiveDayPass(matchedRegistration._id, divisionId);
+      sessionState = await syncDepartmentVisitsFromLogs(
+        updatedPass,
+        matchedRegistration._id,
+        divisionId
+      );
+      if (updatedPass) {
+        dayPass = await formatPassResponse(updatedPass);
+      }
+    }
 
     const photoUrl = savedPhotoPath
       ? savedPhotoPath.startsWith('http')
@@ -925,6 +990,12 @@ router.post(
       dayPass,
       sessionState,
       hasGateEntry,
+      activeDepartment: sessionState?.currentDepartmentId
+        ? {
+            departmentId: sessionState.currentDepartmentId,
+            departmentName: sessionState.currentDepartmentName,
+          }
+        : null,
       photoUrl,
       resolvedEventType,
       autoResolved: isAutoEvent,

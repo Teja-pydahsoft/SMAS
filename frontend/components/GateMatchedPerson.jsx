@@ -2,6 +2,13 @@
 
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 
+export function formatVisitTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 export default function GateMatchedPerson({
   registration,
   matchScore,
@@ -13,6 +20,8 @@ export default function GateMatchedPerson({
   if (!registration) return null;
 
   const photoUrl = resolvePhotoUrl(registration.photoUrl || registration.photoPath);
+  const departmentName =
+    activeDepartment?.departmentName || sessionState?.currentDepartmentName || null;
 
   return (
     <div className="gate-matched-person">
@@ -66,9 +75,9 @@ export default function GateMatchedPerson({
             Active division: <strong>{activeDivision.divisionName}</strong>
           </p>
         )}
-        {activeDepartment?.departmentName ? (
+        {departmentName ? (
           <p className="gate-matched-person__active-dept">
-            Active in department: <strong>{activeDepartment.departmentName}</strong>
+            Department status: <strong>Checked in — {departmentName}</strong>
           </p>
         ) : (
           <p>

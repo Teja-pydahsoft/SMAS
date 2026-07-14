@@ -667,6 +667,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
                     { label: 'Divisions Visited', value: (details.divisionsVisited || []).join(', ') || '—' },
                     { label: 'Shift', value: details.shiftName || '—' },
                     { label: 'Pay Frequency', value: details.payFrequencyLabel || '—' },
+                    { label: 'Gender', value: details.genderLabel || '—' },
                     { label: 'Pay Amount (per day)', value: details.payAmount != null ? formatCurrency(details.payAmount) : '—' },
                   ].map(row => (
                     <div key={row.label} className="rc-detail-row">

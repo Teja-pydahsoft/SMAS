@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { REGISTRATION_STAGES, REGISTRATION_STATUS, PAY_FREQUENCIES } from '../constants/index.js';
+import { REGISTRATION_STAGES, REGISTRATION_STATUS, PAY_FREQUENCIES, GENDERS } from '../constants/index.js';
 
 const registrationSchema = new mongoose.Schema(
   {
@@ -25,6 +25,7 @@ const registrationSchema = new mongoose.Schema(
     payFrequency: { type: String, enum: PAY_FREQUENCIES, default: null },
     customPayDays: { type: Number, min: 1 },
     payAmount: { type: Number, min: 0, default: null },
+    gender: { type: String, enum: GENDERS, default: null },
   },
   { timestamps: true }
 );

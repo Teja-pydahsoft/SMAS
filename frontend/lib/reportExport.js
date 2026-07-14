@@ -1,4 +1,5 @@
 import { resolvePhotoUrl } from '@/lib/photoUrl';
+import { formatCurrency, formatPayFrequency } from '@/lib/payFrequency';
 
 /** Portrait photo size matching PassCard (86×106 CSS px). */
 const PASS_PHOTO_WIDTH = 86;
@@ -72,6 +73,182 @@ function calcExportDuration(entryAt, exitAt) {
   const m = Math.floor((ms % 3600000) / 60000);
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+}
+
+function addUtcDays(dateStr, days) {
+  const d = new Date(`${dateStr}T12:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function eachDateInRange(dateFrom, dateTo) {
+  const dates = [];
+  let cur = dateFrom;
+  while (cur <= dateTo) {
+    dates.push(cur);
+    cur = addUtcDays(cur, 1);
+  }
+  return dates;
+}
+
+function countRangeDays(dateFrom, dateTo) {
+  if (!dateFrom || !dateTo) return 0;
+  return eachDateInRange(dateFrom, dateTo).length;
+}
+
+function formatShortDate(value) {
+  if (!value) return '—';
+  const d = new Date(`${value}T12:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+function dayStatusLabel(day) {
+  if (!day || day.status === 'blank') return 'Not Registered';
+  if (day.status === 'P') return 'Present';
+  if (day.status === 'A') return 'Absent';
+  return day.label || day.code || '—';
+}
+
+function dayAmount(day, rate) {
+  if (!day || day.status === 'blank') return '—';
+  if (day.status === 'P') return formatCurrency(Number(rate) || 0);
+  return formatCurrency(0);
+}
+
+function buildAttendanceBodyRow(date, day, rate) {
+  if (!day || day.status === 'blank') {
+    return [formatShortDate(date), 'Not Registered', '—'];
+  }
+  return [formatShortDate(date), dayStatusLabel(day), dayAmount(day, rate)];
+}
+
+/**
+ * Split a date range into week chunks for PDF tables.
+ * - ≤7 days → single week table
+ * - ~month (28–31) → exactly 4 weeks side-by-side
+ * - longer/custom → evenly divided week tables
+ */
+function splitRangeIntoWeekChunks(dateFrom, dateTo) {
+  const dates = eachDateInRange(dateFrom, dateTo);
+  const dayCount = dates.length;
+  if (dayCount === 0) return [];
+
+  if (dayCount <= 7) {
+    return [
+      {
+        label: 'Week 1',
+        rangeLabel: `${formatShortDate(dates[0])} – ${formatShortDate(dates[dates.length - 1])}`,
+        dates,
+      },
+    ];
+  }
+
+  const weekCount =
+    dayCount >= 28 && dayCount <= 31 ? 4 : Math.max(2, Math.ceil(dayCount / 7));
+  const size = Math.ceil(dayCount / weekCount);
+  const chunks = [];
+
+  for (let i = 0; i < weekCount; i += 1) {
+    const slice = dates.slice(i * size, (i + 1) * size);
+    if (!slice.length) continue;
+    chunks.push({
+      label: `Week ${i + 1}`,
+      rangeLabel: `${formatShortDate(slice[0])} – ${formatShortDate(slice[slice.length - 1])}`,
+      dates: slice,
+    });
+  }
+
+  return chunks;
+}
+
+function buildPersonDetailRows(reportData, options = {}) {
+  const details = reportData?.details || {};
+  const { dateFrom = '', dateTo = '' } = options;
+  const rows = [
+    ['Name', details.holderName || '—'],
+    ['Role', details.roleName || '—'],
+    ['Code', details.registrationCode || '—'],
+    ['Gender', details.genderLabel || '—'],
+    ['Registered', formatExportDate(details.registeredAt)],
+  ];
+  if (dateFrom && dateTo) {
+    rows.push(['Period', `${formatExportDate(dateFrom)} — ${formatExportDate(dateTo)}`]);
+  }
+  return rows;
+}
+
+function buildPayDetailRows(reportData, options = {}) {
+  const details = reportData?.details || {};
+  const payment = reportData?.attendanceRange?.payment || null;
+  const summary = reportData?.attendanceRange?.summary || null;
+  const payFrequency = payment?.payFrequency || details.payFrequency || null;
+  const customPayDays = payment?.customPayDays || details.customPayDays || null;
+  const rate = payment?.payAmount ?? details.payAmount ?? null;
+  const hasRange = Boolean(options.dateFrom && options.dateTo);
+
+  return [
+    [
+      'Pay Frequency',
+      payment?.payFrequencyLabel || formatPayFrequency(payFrequency, customPayDays),
+    ],
+    ['Per Day Amount', rate != null ? formatCurrency(rate) : '—'],
+    ['Present Days', hasRange ? String(payment?.paymentDays ?? summary?.present ?? 0) : '—'],
+    ['Absent Days', hasRange ? String(summary?.absent ?? 0) : '—'],
+    ['Calculated Amount', payment ? formatCurrency(payment.totalAmount) : '—'],
+  ];
+}
+
+function buildAttendanceWeekTables(reportData, { dateFrom = '', dateTo = '' } = {}) {
+  if (!dateFrom || !dateTo) {
+    return {
+      mode: 'empty',
+      title: 'Attendance',
+      weeks: [],
+    };
+  }
+
+  const days = reportData?.attendanceRange?.days || [];
+  const dayByDate = Object.fromEntries(days.map((day) => [day.date, day]));
+  const rate =
+    reportData?.attendanceRange?.payment?.payAmount ??
+    reportData?.details?.payAmount ??
+    0;
+  const chunks = splitRangeIntoWeekChunks(dateFrom, dateTo);
+  const dayCount = countRangeDays(dateFrom, dateTo);
+
+  const weeks = chunks.map((chunk) => ({
+    label: chunk.label,
+    rangeLabel: chunk.rangeLabel,
+    head: [['Date', 'Status', 'Amount']],
+    body: chunk.dates.map((date) => {
+      const day = dayByDate[date];
+      return buildAttendanceBodyRow(date, day, rate);
+    }),
+  }));
+
+  // Pad so side-by-side week tables share the same row count / bottom edge
+  const maxRows = Math.max(0, ...weeks.map((week) => week.body.length));
+  for (const week of weeks) {
+    while (week.body.length < maxRows) {
+      week.body.push(['', '', '']);
+    }
+  }
+
+  return {
+    mode: dayCount <= 7 ? 'single' : 'multi',
+    title:
+      dayCount <= 7
+        ? 'Attendance (Week)'
+        : dayCount >= 28 && dayCount <= 31
+          ? 'Attendance (Month — 4 Weeks)'
+          : `Attendance (${weeks.length} Weeks)`,
+    weeks,
+  };
 }
 
 function excelImageExtension(format) {
@@ -273,7 +450,9 @@ function buildSummaryRows(reportData, { dateFrom = '', dateTo = '' } = {}, { inc
     ['Last Scan', formatExportDateTime(details.lastScanAt)],
     ['Total Scans', details.totalScans ?? '—'],
     ['Divisions Visited', (details.divisionsVisited || []).join(', ') || '—'],
-    ['Shift', details.shiftName || '—']
+    ['Shift', details.shiftName || '—'],
+    ['Pay Frequency', details.payFrequencyLabel || '—'],
+    ['Gender', details.genderLabel || '—']
   );
 
   if (hasDateRange) {
@@ -311,7 +490,7 @@ function buildEventRows(entries) {
       entry.divisionName || '—',
       entry.departmentName || '—',
       entry.matchScore != null ? `${Math.round(entry.matchScore * 100)}%` : '—',
-      entry.label || '—',
+      entry.remark?.trim() ? entry.remark.trim() : '—',
     ];
   });
 }
@@ -529,7 +708,7 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
     'Division',
     'Department',
     'Match Score',
-    'Description',
+    'Remark',
     'Photo',
   ]);
   styleExcelHeaderRow(eventsSheet, 1);
@@ -546,7 +725,7 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
       entry.divisionName || '—',
       entry.departmentName || '—',
       entry.matchScore != null ? `${Math.round(entry.matchScore * 100)}%` : '—',
-      entry.label || '—',
+      entry.remark?.trim() ? entry.remark.trim() : '—',
       entry.photoUrl ? '' : '—',
     ]);
     eventsSheet.getRow(rowNumber).height = entry.photoUrl ? SCAN_PHOTO_ROW_HEIGHT : undefined;
@@ -575,70 +754,4 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
   );
 }
 
-export async function downloadPersonReportPdf(reportData, options = {}) {
-  const [{ jsPDF }, autoTableModule] = await Promise.all([
-    import('jspdf'),
-    import('jspdf-autotable'),
-  ]);
-  const autoTable = autoTableModule.default;
-  const payload = buildPersonReportExport(reportData, options);
-  const photo = await loadPhotoForExport(payload.holderPhotoUrl);
-  const summaryRows = buildSummaryRows(reportData, options, { includeIdentity: false });
-
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 40;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('SAMS — Individual Access Report', margin, 48);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(80);
-  doc.text(`Generated: ${formatExportDateTime(new Date())}`, margin, 66);
-  doc.setTextColor(0);
-
-  const tableStartY = drawPdfPassPhotoHeader(doc, payload.details, photo, margin, 82);
-
-  autoTable(doc, {
-    startY: tableStartY,
-    head: [['Field', 'Value']],
-    body: summaryRows,
-    styles: { fontSize: 9, cellPadding: 5 },
-    headStyles: { fillColor: [26, 86, 255], textColor: 255 },
-    columnStyles: {
-      0: { cellWidth: 130, fontStyle: 'bold' },
-      1: { cellWidth: pageWidth - margin * 2 - 130 },
-    },
-    margin: { left: margin, right: margin },
-  });
-
-  const activityStartY = (doc.lastAutoTable?.finalY || tableStartY + 40) + 24;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text('Activity History', margin, activityStartY);
-
-  autoTable(doc, {
-    startY: activityStartY + 10,
-    head: [['Date', 'Time', 'Event', 'Type', 'Location', 'Division', 'Department', 'Match']],
-    body: payload.eventRows.length
-      ? payload.eventRows.map((row) => row.slice(0, 8))
-      : [['—', '—', '—', '—', 'No activity found', '—', '—', '—']],
-    styles: { fontSize: 8, cellPadding: 4, overflow: 'linebreak' },
-    headStyles: { fillColor: [26, 86, 255], textColor: 255 },
-    columnStyles: {
-      0: { cellWidth: 52 },
-      1: { cellWidth: 42 },
-      2: { cellWidth: 38 },
-      3: { cellWidth: 42 },
-      4: { cellWidth: 88 },
-      5: { cellWidth: 68 },
-      6: { cellWidth: 68 },
-      7: { cellWidth: 38 },
-    },
-    margin: { left: margin, right: margin },
-  });
-
-  doc.save(`${payload.fileBaseName}.pdf`);
-}
+export { downloadPersonReportPdf } from './pdfPersonReport.js';

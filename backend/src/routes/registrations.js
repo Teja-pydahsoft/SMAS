@@ -7,7 +7,7 @@ import Pass from '../models/Pass.js';
 import RegistrationForm from '../models/RegistrationForm.js';
 import Role from '../models/Role.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { REGISTRATION_STAGES, REGISTRATION_STATUS } from '../constants/index.js';
+import { REGISTRATION_STAGES, REGISTRATION_STATUS, GENDERS, GENDER_LABELS } from '../constants/index.js';
 import { extractFaceEmbedding, searchFaceEmbeddings } from '../services/aiClient.js';
 import {
   indexVerifiedRegistration,
@@ -25,6 +25,7 @@ import {
   deleteMediaFromCloudinary,
   extractPublicId,
 } from '../services/cloudinaryService.js';
+import { generateRegistrationCode, shouldAssignRegistrationCode, syncPassRegistrationCode, isLegacySamsCode, buildRegistrationCodePrefix } from '../utils/registrationCode.js';
 
 const router = Router();
 
@@ -55,10 +56,6 @@ function hasMediaValue(value) {
   if (typeof value === 'string') return value.trim().length > 0;
   if (typeof value === 'object') return Boolean(value.path || value.url);
   return false;
-}
-
-function generateRegistrationCode() {
-  return `SAMS-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
 
 function validateFormData(form, formData, { skipMediaRequired = false } = {}) {
@@ -141,6 +138,30 @@ function applyPayFrequency(registration, role, payFrequency, customPayDays, payA
   registration.payFrequency = payFrequency;
   registration.customPayDays = payFrequency === 'custom_days' ? Number(customPayDays) : null;
   registration.payAmount = Number(payAmount);
+  return null;
+}
+
+function validateGender(role, gender) {
+  const allowed = role?.payFrequencies || [];
+  if (!allowed.length) return null;
+  if (!gender) return 'Gender is required';
+  if (!GENDERS.includes(gender)) {
+    return `Gender must be one of: ${GENDERS.map((g) => GENDER_LABELS[g] || g).join(', ')}`;
+  }
+  return null;
+}
+
+function applyGender(registration, role, gender) {
+  const allowed = role?.payFrequencies || [];
+  if (!allowed.length) {
+    registration.gender = null;
+    return null;
+  }
+
+  const error = validateGender(role, gender);
+  if (error) return error;
+
+  registration.gender = gender;
   return null;
 }
 
@@ -345,7 +366,7 @@ router.post(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { roleId, formData, payFrequency, customPayDays, payAmount } = req.body;
+    const { roleId, formData, payFrequency, customPayDays, payAmount, gender } = req.body;
 
     const role = await Role.findById(roleId);
     if (!role) return res.status(404).json({ error: 'Role not found' });
@@ -362,6 +383,9 @@ router.post(
     const payAmountError = validatePayAmount(role, payAmount);
     if (payAmountError) return res.status(400).json({ error: payAmountError });
 
+    const genderError = validateGender(role, gender);
+    if (genderError) return res.status(400).json({ error: genderError });
+
     const registration = await Registration.create({
       roleId,
       formId: form._id,
@@ -370,6 +394,7 @@ router.post(
       customPayDays:
         role.payFrequencies?.length && payFrequency === 'custom_days' ? Number(customPayDays) : null,
       payAmount: role.payFrequencies?.length ? Number(payAmount) : null,
+      gender: role.payFrequencies?.length ? gender : null,
       currentStage: REGISTRATION_STAGES.PHOTO,
       status: REGISTRATION_STATUS.IN_PROGRESS,
     });
@@ -401,6 +426,9 @@ router.put(
     );
     if (payFrequencyError) return res.status(400).json({ error: payFrequencyError });
 
+    const genderError = applyGender(registration, role, req.body.gender);
+    if (genderError) return res.status(400).json({ error: genderError });
+
     registration.formData = req.body.formData;
 
     const isVerified = registration.status === REGISTRATION_STATUS.VERIFIED;
@@ -422,7 +450,24 @@ router.put(
     }
     // pending_verification / review: keep current stage, form data updated only
 
+    if (shouldAssignRegistrationCode(registration)) {
+      try {
+        registration.registrationCode = await generateRegistrationCode(registration);
+      } catch (err) {
+        return res.status(400).json({ error: err.message || 'Could not generate registration code' });
+      }
+    }
+
     await registration.save();
+
+    if (registration.registrationCode) {
+      try {
+        await syncPassRegistrationCode(registration._id, registration.registrationCode);
+      } catch (err) {
+        console.error('Failed to sync registration code on passes:', err.message);
+      }
+    }
+
     const updated = await Registration.findById(registration._id).populate('roleId', 'name slug');
     res.json(updated);
   })
@@ -621,13 +666,38 @@ router.post(
     }
 
     if (approved) {
+      const role = await Role.findById(registration.roleId);
+      if (role?.payFrequencies?.length) {
+        if (!registration.payFrequency || !registration.gender) {
+          return res.status(400).json({
+            error: 'Pay frequency and gender are required before verification (codes like DM0001)',
+          });
+        }
+      }
+
       registration.status = REGISTRATION_STATUS.VERIFIED;
       registration.currentStage = REGISTRATION_STAGES.COMPLETED;
       registration.verifiedAt = new Date();
       registration.verifiedBy = verifiedBy || 'system';
-      if (!registration.registrationCode) {
-        registration.registrationCode = generateRegistrationCode();
+
+      const needsNewCode =
+        shouldAssignRegistrationCode(registration) || isLegacySamsCode(registration.registrationCode);
+
+      if (needsNewCode) {
+        if (!buildRegistrationCodePrefix(registration.payFrequency, registration.gender)) {
+          return res.status(400).json({
+            error: 'Pay frequency and gender are required to issue a registration code (e.g. DM0001)',
+          });
+        }
+        try {
+          registration.registrationCode = await generateRegistrationCode(registration);
+        } catch (err) {
+          return res.status(400).json({
+            error: err.message || 'Could not generate registration code',
+          });
+        }
       }
+
       registration.rejectionReason = undefined;
     } else {
       registration.status = REGISTRATION_STATUS.REJECTED;
@@ -637,6 +707,11 @@ router.post(
     await registration.save();
 
     if (approved) {
+      try {
+        await syncPassRegistrationCode(registration._id, registration.registrationCode);
+      } catch (err) {
+        console.error('Failed to sync registration code on passes:', err.message);
+      }
       try {
         await indexVerifiedRegistration(registration);
       } catch (err) {

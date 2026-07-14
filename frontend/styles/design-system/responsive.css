@@ -298,11 +298,15 @@
 
 /* ── 640px ── */
 @media (max-width: 640px) {
-  .pass-card { border-radius: var(--radius-lg); }
+  .pass-card { border-radius: 12px; }
   .pass-card__body { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; min-height: unset; }
-  .pass-card__photo-col { border-right: none; border-bottom: 1px solid #E5E7EB; padding: var(--space-4); flex-direction: row; justify-content: center; gap: var(--space-4); }
-  .pass-card__qr-col { border-left: none; border-top: 1px solid #E5E7EB; padding: var(--space-4); flex-direction: row; justify-content: center; gap: 8px; }
+  .pass-card__photo-col { border-right: none; border-bottom: 1px solid #E2E8F0; padding: 1rem; flex-direction: row; justify-content: center; gap: 1rem; }
+  .pass-card__qr-col { border-left: none; border-top: 1px solid #E2E8F0; padding: 1rem; flex-direction: row; justify-content: center; gap: 8px; }
+  .pass-card__details-col { justify-content: flex-start; }
   .pass-card__footer { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .pass-card__print-controls { margin-left: 0; width: 100%; }
+  .pass-card__paper-size { flex: 1 1 auto; }
+  .pass-card__paper-btn { flex: 1; text-align: center; }
   .pass-card__print-btn { width: 100%; justify-content: center; }
 }
 

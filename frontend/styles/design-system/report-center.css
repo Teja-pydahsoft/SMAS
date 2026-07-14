@@ -2362,3 +2362,66 @@
   .rc-export__type-grid   { grid-template-columns: repeat(2, 1fr); }
   .rc-analytics__summary-row { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
 }
+
+/* ── Report Center print (A4) — works for every tab Print button ── */
+@media print {
+  body.report-printing {
+    background: #fff !important;
+  }
+
+  body.report-printing .admin-sidebar,
+  body.report-printing .admin-sidebar-backdrop,
+  body.report-printing .admin-topnav,
+  body.report-printing .no-print {
+    display: none !important;
+  }
+
+  body.report-printing .admin-layout,
+  body.report-printing .admin-content,
+  body.report-printing .content,
+  body.report-printing .page-shell,
+  body.report-printing .rc-print-root,
+  body.report-printing .rc-body,
+  body.report-printing .rc-tab-content {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  body.report-printing .rc-page-header {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0 0 10px;
+    margin-bottom: 12px;
+  }
+
+  body.report-printing .rc-page-header__subtitle {
+    color: #64748b !important;
+  }
+
+  body.report-printing .rc-table-wrap,
+  body.report-printing .rc-filter-panel,
+  body.report-printing .rc-analytics-panel,
+  body.report-printing .rc-summary-card {
+    overflow: visible !important;
+    break-inside: avoid;
+  }
+
+  body.report-printing .rc-table {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  body.report-printing * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

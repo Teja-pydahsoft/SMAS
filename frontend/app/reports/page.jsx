@@ -11,6 +11,26 @@ import { resolvePhotoUrl } from '@/lib/photoUrl';
    UTILITIES
 ════════════════════════════════════════════════════════════════ */
 
+/** Print helper — Daily / History download professional PDFs; others use browser print */
+function printReportCenterFallback() {
+  document.body.classList.add('report-printing');
+  let pageStyle = document.getElementById('report-print-page-style');
+  if (!pageStyle) {
+    pageStyle = document.createElement('style');
+    pageStyle.id = 'report-print-page-style';
+    pageStyle.textContent = '@page { size: A4 portrait; margin: 12mm; }';
+    document.head.appendChild(pageStyle);
+  }
+  const cleanup = () => {
+    document.body.classList.remove('report-printing');
+    pageStyle?.remove();
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(cleanup, 2000);
+  window.print();
+}
+
 function fmt(n) { return Number(n || 0).toLocaleString(); }
 
 function calcDuration(entryAt, exitAt) {
@@ -720,13 +740,14 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
 /* ═══════════════════════════════════════════════════════════════
    TAB 1 — TODAY'S ACTIVITY
 ════════════════════════════════════════════════════════════════ */
-function TodayActivityTab({ onViewPerson }) {
+function TodayActivityTab({ onViewPerson, onPrintReady }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortOrder, setSortOrder] = useState('role');
+  const [printing, setPrinting] = useState(false);
   const intervalRef = useRef(null);
 
   const load = useCallback(async (silent = false) => {
@@ -772,6 +793,24 @@ function TodayActivityTab({ onViewPerson }) {
     return (a.roleName || '').localeCompare(b.roleName || '');
   });
 
+  const handlePrintPdf = useCallback(async () => {
+    setPrinting(true);
+    try {
+      const { downloadDailyAttendancePdf } = await import('@/lib/pdfReportCenter');
+      await downloadDailyAttendancePdf(filtered, { date: new Date() });
+    } catch (e) {
+      console.error(e);
+      setError(e.message || 'Failed to generate PDF');
+    } finally {
+      setPrinting(false);
+    }
+  }, [filtered]);
+
+  useEffect(() => {
+    onPrintReady?.(handlePrintPdf);
+    return () => onPrintReady?.(null);
+  }, [handlePrintPdf, onPrintReady]);
+
   const insideCount = allPeople.filter(p => p.divisionInside).length;
   const activeCount = allPeople.filter(p => p.hadActivityToday).length;
 
@@ -805,7 +844,7 @@ function TodayActivityTab({ onViewPerson }) {
             <span className="daily-pass-dot daily-pass-dot--inside" />{insideCount} Inside
           </span>
           <span className="rc-filter-pill rc-filter-pill--muted">{activeCount} Active Today</span>
-          <button className="btn-secondary btn-sm" onClick={() => load()} disabled={loading}>
+          <button className="btn-secondary btn-sm" onClick={() => load()} disabled={loading || printing}>
             {loading ? <Spinner size={14} /> : (
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
@@ -1176,7 +1215,7 @@ function AttendanceAbstractTable({ employees, onViewPerson }) {
 /* ═══════════════════════════════════════════════════════════════
    TAB 2 — ATTENDANCE HISTORY
 ════════════════════════════════════════════════════════════════ */
-function AttendanceHistoryTab({ onViewPerson }) {
+function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [data, setData] = useState(null);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1184,6 +1223,7 @@ function AttendanceHistoryTab({ onViewPerson }) {
   const [rangeMode, setRangeMode] = useState('month');
   const [viewMode, setViewMode] = useState('abstract');
   const [selectedDay, setSelectedDay] = useState(null);
+  const [printing, setPrinting] = useState(false);
   const [filters, setFilters] = useState({
     month: currentMonthValue(),
     week: currentIsoWeekValue(),
@@ -1250,13 +1290,36 @@ function AttendanceHistoryTab({ onViewPerson }) {
     onViewPerson({ registrationId, dateFrom, dateTo });
   }, [onViewPerson, resolveDateRange]);
 
+  const handlePrintPdf = useCallback(async () => {
+    const { dateFrom, dateTo } = resolveDateRange();
+    if (!dateFrom || !dateTo) {
+      setError('Select a date range before printing.');
+      return;
+    }
+    setPrinting(true);
+    try {
+      const { downloadAttendanceHistoryPdf } = await import('@/lib/pdfReportCenter');
+      await downloadAttendanceHistoryPdf(employees, { dateFrom, dateTo });
+    } catch (e) {
+      console.error(e);
+      setError(e.message || 'Failed to generate PDF');
+    } finally {
+      setPrinting(false);
+    }
+  }, [employees, resolveDateRange]);
+
+  useEffect(() => {
+    onPrintReady?.(handlePrintPdf);
+    return () => onPrintReady?.(null);
+  }, [handlePrintPdf, onPrintReady]);
+
   return (
     <div>
       <div className="rc-filter-panel rc-filter-panel--inline">
         <div className="rc-filter-panel__inline">
           <div className="form-group rc-filter-inline__item">
             <label>Range Type</label>
-            <select value={rangeMode} onChange={e => handleRangeModeChange(e.target.value)}>
+            <select value={rangeMode} onChange={e => handleRangeModeChange(e.target.value)} disabled={printing}>
               <option value="week">Weekly</option>
               <option value="month">Monthly</option>
               <option value="custom">From – To</option>
@@ -1752,7 +1815,7 @@ function ExportCenterTab() {
                     <td><span className="badge badge-success">{r.status}</span></td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="rc-table__view-btn" onClick={() => window.print()}>
+                        <button className="rc-table__view-btn" onClick={() => printReportCenterFallback()}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                           Download
                         </button>
@@ -1792,6 +1855,25 @@ function ReportsContent() {
   const [gateLogs, setGateLogs] = useState([]);
   const [registrations, setRegistrations] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const tabPrintRef = useRef(null);
+
+  const registerTabPrint = useCallback((fn) => {
+    tabPrintRef.current = fn;
+  }, []);
+
+  const handleHeaderPrint = useCallback(async () => {
+    if (typeof tabPrintRef.current === 'function') {
+      setPrinting(true);
+      try {
+        await tabPrintRef.current();
+      } finally {
+        setPrinting(false);
+      }
+      return;
+    }
+    printReportCenterFallback();
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -1807,6 +1889,9 @@ function ReportsContent() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    tabPrintRef.current = null;
+  }, [tab]);
 
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1814,7 +1899,7 @@ function ReportsContent() {
   const tabLabel = REPORT_TABS.find(t => t.id === tab)?.label ?? 'Reports';
 
   return (
-    <div className="page-shell admin-fade-in" style={{ overflow: 'hidden' }}>
+    <div className="page-shell admin-fade-in rc-print-root" style={{ overflow: 'hidden' }}>
       {/* ── Report Center Header ── */}
       <div className="rc-page-header">
         <div className="rc-page-header__left">
@@ -1828,7 +1913,7 @@ function ReportsContent() {
             <p className="rc-page-header__subtitle">Monitor attendance, access history, analytics and export reports.</p>
           </div>
         </div>
-        <div className="rc-page-header__right">
+        <div className="rc-page-header__right no-print">
           <div className="rc-page-header__clock">
             <span className="rc-page-header__date">{dateStr}</span>
             <span className="rc-page-header__time">{timeStr}</span>
@@ -1840,11 +1925,17 @@ function ReportsContent() {
             </svg>
             Refresh
           </button>
-          <button className="btn-secondary btn-sm" onClick={() => window.print()} title="Print" aria-label="Print">
+          <button
+            className="btn-secondary btn-sm"
+            onClick={handleHeaderPrint}
+            disabled={printing}
+            title={tab === 'today' || tab === 'history' ? 'Download professional PDF report' : 'Print current report'}
+            aria-label="Print"
+          >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" />
             </svg>
-            Print
+            {printing ? 'Preparing…' : 'Print'}
           </button>
         </div>
       </div>
@@ -1852,8 +1943,18 @@ function ReportsContent() {
       <div className="rc-body">
         {/* ── Tab Content — driven by URL ?tab= param ── */}
         <div className="rc-tab-content admin-fade-in" key={tab}>
-          {tab === 'today'    && <TodayActivityTab onViewPerson={(id) => setSelectedPerson({ registrationId: id })} />}
-          {tab === 'history'  && <AttendanceHistoryTab onViewPerson={setSelectedPerson} />}
+          {tab === 'today' && (
+            <TodayActivityTab
+              onViewPerson={(id) => setSelectedPerson({ registrationId: id })}
+              onPrintReady={registerTabPrint}
+            />
+          )}
+          {tab === 'history' && (
+            <AttendanceHistoryTab
+              onViewPerson={setSelectedPerson}
+              onPrintReady={registerTabPrint}
+            />
+          )}
           {tab === 'analytics' && <AnalyticsTab gateLogs={gateLogs} registrations={registrations} />}
           {tab === 'export'   && <ExportCenterTab />}
         </div>

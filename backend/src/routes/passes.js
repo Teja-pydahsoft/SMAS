@@ -28,6 +28,7 @@ router.get(
 router.get(
   '/registration/:registrationId',
   asyncHandler(async (req, res) => {
+    // Always recreate to ensure latest form data + system fields (gender, pay) are reflected
     const pass = await getOrCreateRegistrationPass(req.params.registrationId);
     res.json(pass);
   })

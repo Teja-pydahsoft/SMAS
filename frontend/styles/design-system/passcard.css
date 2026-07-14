@@ -110,15 +110,67 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Body: photo | details | QR ── */
+/* ── Body: details | [photo+QR] ── */
 .pass-card__body {
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr) 118px;
-  min-height: 168px;
+  grid-template-columns: minmax(0, 1fr) 148px;
+  min-height: 200px;
   flex: 1;
 }
 
-.pass-card__photo-col,
+/* LEFT column — name + all detail fields */
+.pass-card__details-col {
+  padding: 0.85rem 1rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.65rem;
+  border-right: 1px solid #E2E8F0;
+}
+
+/* RIGHT column — photo on top, QR below */
+.pass-card__right-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0.85rem 0.7rem;
+  background: #F8FAFC;
+}
+
+/* keep old left-col name if referenced elsewhere */
+.pass-card__left-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0.85rem 0.7rem;
+  background: #F8FAFC;
+  border-right: 1px solid #E2E8F0;
+}
+
+.pass-card__photo-wrap,
+.pass-card__qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* keep old photo-col / qr-col selectors working if referenced elsewhere */
+.pass-card__photo-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.85rem 0.7rem;
+  background: #F8FAFC;
+  border-right: 1px solid #E2E8F0;
+}
+
 .pass-card__qr-col {
   display: flex;
   flex-direction: column;
@@ -126,21 +178,14 @@
   justify-content: center;
   padding: 0.85rem 0.7rem;
   background: #F8FAFC;
-}
-
-.pass-card__photo-col {
-  border-right: 1px solid #E2E8F0;
-}
-
-.pass-card__qr-col {
   border-left: 1px solid #E2E8F0;
   gap: 6px;
 }
 
 .pass-card__photo,
 .pass-card__photo--placeholder {
-  width: 92px;
-  height: 112px;
+  width: 100px;
+  height: 120px;
   object-fit: cover;
   border-radius: 8px;
   border: 1.5px solid #CBD5E1;
@@ -159,8 +204,8 @@
 
 .pass-card__qr,
 .pass-card__qr--placeholder {
-  width: 92px;
-  height: 92px;
+  width: 96px;
+  height: 96px;
   background: #fff;
   border-radius: 8px;
   border: 1px solid #CBD5E1;
@@ -531,48 +576,60 @@
 
   body.pass-printing #pass-print-root .pass-card__body {
     display: grid !important;
-    grid-template-columns: 42mm minmax(0, 1fr) 46mm !important;
+    grid-template-columns: minmax(0, 1fr) 52mm !important;
     grid-template-rows: 1fr !important;
     min-height: 0 !important;
     flex: 1 1 auto !important;
     overflow: hidden;
   }
 
-  body.pass-printing #pass-print-root .pass-card__photo-col,
-  body.pass-printing #pass-print-root .pass-card__qr-col {
+  /* DETAILS column — LEFT side, all fields */
+  body.pass-printing #pass-print-root .pass-card__details-col {
+    padding: 4mm 5mm;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    gap: 3mm;
+    overflow: hidden;
+    min-width: 0;
+    border-right: 0.4pt solid #CBD5E1 !important;
+  }
+
+  /* RIGHT column — photo + QR stacked */
+  body.pass-printing #pass-print-root .pass-card__right-col {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4mm;
     padding: 4mm 3.5mm;
     background: #F8FAFC !important;
-    border-bottom: none !important;
-    flex-direction: column !important;
-    justify-content: center !important;
-    align-items: center !important;
-    gap: 2mm;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  body.pass-printing #pass-print-root .pass-card__photo-col {
-    border-right: 0.4pt solid #CBD5E1 !important;
-  }
-
-  body.pass-printing #pass-print-root .pass-card__qr-col {
-    border-left: 0.4pt solid #CBD5E1 !important;
+  body.pass-printing #pass-print-root .pass-card__photo-wrap,
+  body.pass-printing #pass-print-root .pass-card__qr-wrap {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 1.5mm;
   }
 
   body.pass-printing #pass-print-root .pass-card__photo,
   body.pass-printing #pass-print-root .pass-card__photo--placeholder {
-    width: 32mm;
-    height: 40mm;
+    width: 36mm;
+    height: 44mm;
     border-radius: 1.5mm;
     border: 0.5pt solid #94A3B8 !important;
   }
 
   body.pass-printing #pass-print-root .pass-card__qr,
   body.pass-printing #pass-print-root .pass-card__qr--placeholder {
-    width: 34mm;
-    height: 34mm;
+    width: 32mm;
+    height: 32mm;
     border-radius: 1.5mm;
-    padding: 1.2mm;
+    padding: 1mm;
     border: 0.5pt solid #94A3B8 !important;
   }
 
@@ -581,65 +638,46 @@
     letter-spacing: 0.06em;
   }
 
-  body.pass-printing #pass-print-root .pass-card__details-col {
-    padding: 4mm 5mm;
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: center !important;
-    gap: 3.5mm;
-    overflow: hidden;
-    min-width: 0;
-  }
-
   body.pass-printing #pass-print-root .pass-card__name {
-    font-size: 5.5mm;
+    font-size: 5mm;
     margin: 0 0 1.5mm;
     line-height: 1.15;
   }
 
   body.pass-printing #pass-print-root .pass-card__role {
-    font-size: 2.8mm;
+    font-size: 2.6mm;
     color: var(--pass-accent) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
   body.pass-printing #pass-print-root .pass-card__reg-code {
-    font-size: 2.8mm;
+    font-size: 2.6mm;
   }
 
   body.pass-printing #pass-print-root .pass-card__meta-sep {
-    font-size: 2.8mm;
+    font-size: 2.6mm;
   }
 
   body.pass-printing #pass-print-root .pass-card__fields {
     border-top: 0.4pt solid #CBD5E1;
-    padding-top: 2.5mm;
+    padding-top: 2mm;
     gap: 0;
   }
 
   body.pass-printing #pass-print-root .pass-card__field {
-    grid-template-columns: 32mm minmax(0, 1fr);
-    gap: 3mm;
-    padding: 1.8mm 0;
+    grid-template-columns: 28mm minmax(0, 1fr);
+    gap: 2.5mm;
+    padding: 1.5mm 0;
     border-bottom: 0.3pt solid #E2E8F0;
   }
 
   body.pass-printing #pass-print-root .pass-card__field-label {
-    font-size: 2.7mm;
+    font-size: 2.5mm;
   }
 
   body.pass-printing #pass-print-root .pass-card__field-value {
-    font-size: 3mm;
-  }
-
-  body.pass-printing #pass-print-root .pass-card[data-pass-type="day"] .pass-card__field {
-    padding: 1.4mm 0;
-  }
-
-  body.pass-printing #pass-print-root .pass-card[data-pass-type="day"] .pass-card__field-label,
-  body.pass-printing #pass-print-root .pass-card[data-pass-type="day"] .pass-card__field-value {
-    font-size: 2.6mm;
+    font-size: 2.8mm;
   }
 
   body.pass-printing #pass-print-root .pass-card__footer {

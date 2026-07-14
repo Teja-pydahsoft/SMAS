@@ -16,7 +16,9 @@ const PRINT_SIZE_CLASS = {
   'a5-landscape': 'pass-print-a5',
 };
 
-/** Labels already shown in the identity block — hide from the details table */
+/** Labels already shown in the identity block — hide from the details table.
+ *  We only hide the holder's own name to avoid duplication.
+ *  Role, code etc. are kept so they appear as detail rows (matching table columns). */
 const IDENTITY_DETAIL_LABELS = new Set([
   'name',
   'full name',
@@ -31,9 +33,8 @@ function filterPassDetails(details, holderName) {
   return (details || []).filter((d) => {
     const label = String(d.label || '').trim().toLowerCase();
     if (IDENTITY_DETAIL_LABELS.has(label)) return false;
-    if (nameNorm && String(d.value || '').trim().toLowerCase() === nameNorm && label.includes('name')) {
-      return false;
-    }
+    // skip if value exactly matches holder name (catches "Full Name" field)
+    if (nameNorm && String(d.value || '').trim().toLowerCase() === nameNorm) return false;
     return true;
   });
 }
@@ -128,31 +129,7 @@ export default function PassCard({ pass, onPrint }) {
       </header>
 
       <div className="pass-card__body">
-        <div className="pass-card__photo-col">
-          {pass.holderPhotoUrl ? (
-            <img
-              src={resolvePhotoUrl(pass.holderPhotoUrl)}
-              alt={pass.holderName || 'Pass holder'}
-              className="pass-card__photo"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                if (e.currentTarget.nextSibling) {
-                  e.currentTarget.nextSibling.style.display = 'flex';
-                }
-              }}
-            />
-          ) : null}
-          <div
-            className="pass-card__photo pass-card__photo--placeholder"
-            style={{ display: pass.holderPhotoUrl ? 'none' : 'flex' }}
-          >
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <circle cx="12" cy="8" r="4" />
-              <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-            </svg>
-          </div>
-        </div>
-
+        {/* LEFT COLUMN — name, role, all detail fields */}
         <div className="pass-card__details-col">
           <div className="pass-card__identity">
             <h3 className="pass-card__name">{pass.holderName || '—'}</h3>
@@ -219,13 +196,41 @@ export default function PassCard({ pass, onPrint }) {
           </dl>
         </div>
 
-        <div className="pass-card__qr-col">
-          {pass.qrDataUrl ? (
-            <img src={pass.qrDataUrl} alt="Pass QR Code" className="pass-card__qr" />
-          ) : (
-            <div className="pass-card__qr pass-card__qr--placeholder">QR</div>
-          )}
-          <p className="pass-card__qr-hint">Scan at gate</p>
+        {/* RIGHT COLUMN — photo on top, QR below */}
+        <div className="pass-card__right-col">
+          <div className="pass-card__photo-wrap">
+            {pass.holderPhotoUrl ? (
+              <img
+                src={resolvePhotoUrl(pass.holderPhotoUrl)}
+                alt={pass.holderName || 'Pass holder'}
+                className="pass-card__photo"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  if (e.currentTarget.nextSibling) {
+                    e.currentTarget.nextSibling.style.display = 'flex';
+                  }
+                }}
+              />
+            ) : null}
+            <div
+              className="pass-card__photo pass-card__photo--placeholder"
+              style={{ display: pass.holderPhotoUrl ? 'none' : 'flex' }}
+            >
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="pass-card__qr-wrap">
+            {pass.qrDataUrl ? (
+              <img src={pass.qrDataUrl} alt="Pass QR Code" className="pass-card__qr" />
+            ) : (
+              <div className="pass-card__qr pass-card__qr--placeholder">QR</div>
+            )}
+            <p className="pass-card__qr-hint">Scan at gate</p>
+          </div>
         </div>
       </div>
 

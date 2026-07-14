@@ -73,6 +73,66 @@ export async function formatPassResponse(passDoc, qrDataUrl = null) {
   };
 }
 
+/** Build extra system-level fields from the Registration document itself —
+ *  mirrors the columns shown in the All Registrations table:
+ *  Photo | Name | Role | Contact | Status | Code | Pass | Date          */
+function buildRegistrationSystemDetails(registration, role) {
+  const extras = [];
+
+  // Role (table col 3)
+  if (role?.name) {
+    extras.push({ label: 'Role', value: role.name });
+  }
+
+  // Contact / phone — only add if NOT already in formData details
+  // (displayPhone comes from buildDisplayInfo; we add it explicitly here
+  //  so it always appears even when the form field label differs)
+  if (registration.formData) {
+    // phone is already captured by buildDisplayInfo into display.details,
+    // so we skip it here — handled via formData fields
+  }
+
+  // Gender (shown as D/M, D/F etc in current pass — keep)
+  if (registration.gender) {
+    extras.push({ label: 'Gender', value: registration.gender });
+  }
+
+  // Pay Frequency + Amount
+  if (registration.payFrequency) {
+    const freqMap = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
+    let payStr = freqMap[registration.payFrequency] || registration.payFrequency;
+    if (registration.payAmount != null) payStr += ` · ₹${registration.payAmount}`;
+    if (registration.payFrequency === 'custom' && registration.customPayDays) {
+      payStr += ` (every ${registration.customPayDays} days)`;
+    }
+    extras.push({ label: 'Pay Frequency', value: payStr });
+  }
+
+  // Status (table col 5)
+  if (registration.status) {
+    extras.push({
+      label: 'Status',
+      value: registration.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    });
+  }
+
+  // Registration Code (table col 6)
+  if (registration.registrationCode) {
+    extras.push({ label: 'Registration Code', value: registration.registrationCode });
+  }
+
+  // Registered Date (table col 8)
+  if (registration.createdAt) {
+    const d = new Date(registration.createdAt);
+    extras.push({
+      label: 'Registered On',
+      value: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+    });
+  }
+
+  return extras;
+}
+
 export async function createRegistrationPass(registrationId) {
   const { registration, role, display } = await loadRegistrationContext(registrationId);
 
@@ -92,6 +152,10 @@ export async function createRegistrationPass(registrationId) {
     issuedAt: new Date().toISOString(),
   };
 
+  // Merge form details + system-level fields (registration code, role, gender, pay, status, dates)
+  const systemExtras = buildRegistrationSystemDetails(registration, role);
+  const allDetails = [...display.details, ...systemExtras];
+
   const pass = await Pass.create({
     passCode,
     passType: PASS_TYPES.REGISTRATION,
@@ -102,7 +166,7 @@ export async function createRegistrationPass(registrationId) {
     holderPhotoUrl: photoUrlFromPath(registration.photoPath),
     roleName: role.name,
     registrationCode: registration.registrationCode,
-    details: display.details,
+    details: allDetails,
     qrPayload,
     isActive: true,
   });
@@ -162,8 +226,16 @@ export async function getRegistrationPass(registrationId) {
 }
 
 export async function getOrCreateRegistrationPass(registrationId) {
-  const existing = await getRegistrationPass(registrationId);
-  if (existing) return existing;
+  // Always recreate to pick up latest form data + system fields (gender, pay frequency etc.)
+  // createRegistrationPass deactivates old passes first so this is safe
+  return createRegistrationPass(registrationId);
+}
+
+/**
+ * Regenerate a registration pass with the latest form data + system fields.
+ * Called when admin wants fresh details (e.g. after editing a registration).
+ */
+export async function regenerateRegistrationPass(registrationId) {
   return createRegistrationPass(registrationId);
 }
 

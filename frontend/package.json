@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
-    "dev:turbo": "next dev -p 3000 --turbopack",
-    "dev:clean": "node scripts/clean.mjs && next dev -p 3000",
+    "dev": "next dev -p 3005",
+    "dev:turbo": "next dev -p 3005 --turbopack",
+    "dev:clean": "node scripts/clean.mjs && next dev -p 3005",
     "build": "next build",
     "build:clean": "node scripts/clean.mjs && next build",
-    "start": "next start -p 3000",
+    "start": "next start -p 3005",
     "clean": "node scripts/clean.mjs",
     "lint": "next lint"
   },

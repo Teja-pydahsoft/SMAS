@@ -82,6 +82,8 @@ export function getPassSessionState(pass) {
       currentDepartmentId: null,
       currentDepartmentName: null,
       departmentVisits: [],
+      shiftId: null,
+      shiftName: null,
     };
   }
   const payload = pass.qrPayload;
@@ -92,6 +94,8 @@ export function getPassSessionState(pass) {
     departmentVisits: Array.isArray(payload.departmentVisits) ? payload.departmentVisits : [],
     gateEntryAt: payload.gateEntryAt || null,
     gateExitAt: payload.gateExitAt || null,
+    shiftId: payload.shiftId || null,
+    shiftName: payload.shiftName || null,
   };
 }
 

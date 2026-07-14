@@ -446,7 +446,9 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
   const session = data?.sessionState || {};
   const rangeSummary = data?.attendanceRange?.summary;
   const paymentSummary = data?.attendanceRange?.payment;
-  const periodDays = (data?.attendanceRange?.days || []).filter((day) => day.status === 'P');
+  const periodDays = (data?.attendanceRange?.days || []).filter(
+    (day) => day.status === 'P' || day.status === 'HD' || day.status === 'PT'
+  );
   const entriesByDateMap = Object.fromEntries(entriesByDate.map((g) => [g.date, g.entries]));
   const rangeLabel = hasDateRange
     ? `${formatDate(dateFrom)} — ${formatDate(dateTo)}`
@@ -542,6 +544,10 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
                       <div className="rc-person-profile__stat">
                         <span className="rc-person-profile__stat-label">Present Days</span>
                         <span className="rc-person-profile__stat-value rc-color-success">{rangeSummary.present}</span>
+                      </div>
+                      <div className="rc-person-profile__stat">
+                        <span className="rc-person-profile__stat-label">Partial Days</span>
+                        <span className="rc-person-profile__stat-value">{rangeSummary.halfDay ?? 0}</span>
                       </div>
                       <div className="rc-person-profile__stat">
                         <span className="rc-person-profile__stat-label">Absent Days</span>
@@ -1063,12 +1069,23 @@ function WeekRangePicker({ value, onChange }) {
   );
 }
 
+function formatCellHours(hours) {
+  if (hours == null || Number(hours) <= 0) return null;
+  const totalMinutes = Math.round(Number(hours) * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 function AttendanceCell({ day, onSelect }) {
   if (!day || day.status === 'blank') {
     return <td className="rc-att-cell rc-att-cell--blank" aria-label="Not registered" />;
   }
 
   const cls = `rc-att-cell rc-att-cell--${day.status.toLowerCase()} rc-att-cell--clickable`;
+  const hoursLabel = formatCellHours(day.activityHours);
 
   const handleClick = (e) => {
     e.stopPropagation();
@@ -1084,12 +1101,32 @@ function AttendanceCell({ day, onSelect }) {
     );
   }
 
+  if (day.status === 'HD') {
+    return (
+      <td className={cls} aria-label={`Partial Day${hoursLabel ? `, ${hoursLabel}` : ''}`} onClick={handleClick} role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
+        <span className="rc-att-cell__badge">HD</span>
+        {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
+      </td>
+    );
+  }
+
+  if (day.status === 'PT') {
+    return (
+      <td className={cls} aria-label={`Hours Worked${hoursLabel ? `, ${hoursLabel}` : ''}`} onClick={handleClick} role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
+        <span className="rc-att-cell__badge">PT</span>
+        {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
+      </td>
+    );
+  }
+
   if (day.status === 'P') {
     return (
-      <td className={cls} aria-label="Present" onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`Present${hoursLabel ? `, ${hoursLabel}` : ''}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
         <span className="rc-att-cell__badge">P</span>
-        {day.checkInTime && <span className="rc-att-cell__time">{day.checkInTime}</span>}
+        {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
       </td>
     );
   }
@@ -1098,6 +1135,7 @@ function AttendanceCell({ day, onSelect }) {
     <td className={cls} aria-label={day.label || day.code} onClick={handleClick} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
       <span className="rc-att-cell__badge">{day.code}</span>
+      {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
     </td>
   );
 }
@@ -1107,6 +1145,23 @@ function AttendanceDayDialog({ employee, day, onClose }) {
 
   const statusLabel = day.label || day.code || '—';
   const lastActivityLabel = day.lastActivityType === 'exit' ? 'Check-Out' : 'Check-In';
+  const hasPresence = day.status === 'P' || day.status === 'HD' || day.status === 'PT';
+  const activityHoursLabel =
+    day.activityHours != null && day.activityHours > 0
+      ? `${day.activityHours}h`
+      : null;
+  const dayRate = employee.payAmount != null ? Number(employee.payAmount) : null;
+  const earned =
+    dayRate != null && typeof day.payFactor === 'number' && day.payFactor > 0
+      ? Math.round(dayRate * day.payFactor * 100) / 100
+      : null;
+  const payBreakdown =
+    earned != null &&
+    day.activityHours != null &&
+    day.shiftTotalHours != null &&
+    day.shiftTotalHours > 0
+      ? `${day.activityHours}h / ${day.shiftTotalHours}h × ${formatCurrency(dayRate)}`
+      : null;
 
   return (
     <div className="rc-dialog-overlay" onClick={onClose} role="dialog" aria-modal aria-label="Day attendance details">
@@ -1135,7 +1190,7 @@ function AttendanceDayDialog({ employee, day, onClose }) {
               </span>
               <span className="rc-att-day-detail__status-label">{statusLabel}</span>
             </div>
-            {day.status === 'P' ? (
+            {hasPresence || day.checkIn ? (
               <div className="rc-att-day-detail__grid rc-att-day-detail__grid--two">
                 <div className="rc-att-day-detail__item">
                   <span className="rc-att-day-detail__label">Check-In Time</span>
@@ -1147,9 +1202,59 @@ function AttendanceDayDialog({ employee, day, onClose }) {
                     {formatTime(day.lastActivityAt)}
                   </span>
                 </div>
+                {activityHoursLabel && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Activity Hours</span>
+                    <span className="rc-att-day-detail__value">{activityHoursLabel}</span>
+                  </div>
+                )}
+                {day.shiftName && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Shift</span>
+                    <span className="rc-att-day-detail__value">{day.shiftName}</span>
+                  </div>
+                )}
+                {day.shiftTotalHours != null && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Shift Total Hours</span>
+                    <span className="rc-att-day-detail__value">{day.shiftTotalHours}h</span>
+                  </div>
+                )}
+                {(day.halfDayMinHours != null || day.fullDayMinHours != null) && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Min Hours (Half / Full)</span>
+                    <span className="rc-att-day-detail__value">
+                      {day.halfDayMinHours ?? '—'} / {day.fullDayMinHours ?? '—'}
+                    </span>
+                  </div>
+                )}
+                {earned != null && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Day Amount</span>
+                    <span className="rc-att-day-detail__value">{formatCurrency(earned)}</span>
+                    {payBreakdown && (
+                      <span className="rc-att-day-detail__label" style={{ marginTop: '0.25rem', fontWeight: 400 }}>
+                        {payBreakdown}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <p className="rc-att-day-detail__empty">No check-in or check-out recorded for this day.</p>
+            )}
+            {day.status === 'A' && activityHoursLabel && (
+              <p className="rc-att-day-detail__empty" style={{ marginTop: '0.75rem' }}>
+                Activity was {activityHoursLabel}, which is below the half-day minimum
+                {day.halfDayMinHours != null ? ` (${day.halfDayMinHours}h)` : ''}.
+              </p>
+            )}
+            {day.status === 'PT' && activityHoursLabel && (
+              <p className="rc-att-day-detail__empty" style={{ marginTop: '0.75rem' }}>
+                Below half-day minimum
+                {day.halfDayMinHours != null ? ` (${day.halfDayMinHours}h)` : ''}
+                , paid for hours worked.
+              </p>
             )}
           </div>
         </div>
@@ -1171,6 +1276,7 @@ function AttendanceAbstractTable({ employees, onViewPerson }) {
             <th>Phone</th>
             <th>Total Days</th>
             <th>Present Days</th>
+            <th>Partial Days</th>
             <th>Absent Days</th>
             <th>Pay Frequency</th>
             <th>Pay Amount (per day)</th>
@@ -1197,6 +1303,7 @@ function AttendanceAbstractTable({ employees, onViewPerson }) {
               <td className="rc-table__muted">{emp.displayPhone || '—'}</td>
               <td className="rc-att-abstract-table__num">{emp.summary.totalDays}</td>
               <td className="rc-att-abstract-table__num rc-att-abstract-table__num--present">{emp.summary.present}</td>
+              <td className="rc-att-abstract-table__num">{emp.summary.halfDay ?? 0}</td>
               <td className="rc-att-abstract-table__num rc-att-abstract-table__num--absent">{emp.summary.absent}</td>
               <td className="rc-table__muted">{emp.payFrequencyLabel || '—'}</td>
               <td className="rc-att-abstract-table__num">{emp.payAmount != null ? formatCurrency(emp.payAmount) : '—'}</td>
@@ -1219,7 +1326,9 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [data, setData] = useState(null);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [recalculating, setRecalculating] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [rangeMode, setRangeMode] = useState('month');
   const [viewMode, setViewMode] = useState('abstract');
   const [selectedDay, setSelectedDay] = useState(null);
@@ -1243,33 +1352,87 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo]);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { dateFrom, dateTo } = resolveDateRange();
+      if (!dateFrom || !dateTo) {
+        setData(null);
+        setLoading(false);
+        return;
+      }
+      if (dateFrom > dateTo) {
+        setError('From date cannot be after To date.');
+        setData(null);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      const params = { dateFrom, dateTo, limit: 500 };
+      if (filters.roleId) params.roleId = filters.roleId;
+
+      try {
+        const result = await api.reports.attendanceHistory(params);
+        if (!cancelled) setData(result);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e.message);
+          setData(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo, filters.roleId, resolveDateRange]);
+
+  const handleRecalculate = useCallback(async () => {
     const { dateFrom, dateTo } = resolveDateRange();
     if (!dateFrom || !dateTo) {
-      setData(null);
-      setLoading(false);
+      setError('Select a date range before recalculating.');
       return;
     }
     if (dateFrom > dateTo) {
       setError('From date cannot be after To date.');
-      setData(null);
-      setLoading(false);
       return;
     }
 
-    let cancelled = false;
-    setLoading(true);
+    setRecalculating(true);
     setError('');
+    setSuccess('');
 
-    const params = { dateFrom, dateTo, limit: 500 };
-    if (filters.roleId) params.roleId = filters.roleId;
+    try {
+      const payload = { dateFrom, dateTo, limit: 500 };
+      if (filters.roleId) payload.roleId = filters.roleId;
 
-    api.reports.attendanceHistory(params)
-      .then((result) => { if (!cancelled) setData(result); })
-      .catch((e) => { if (!cancelled) { setError(e.message); setData(null); } })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      const result = await api.reports.recalculateAttendanceHistory(payload);
+      setData(result);
 
-    return () => { cancelled = true; };
-  }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo, filters.roleId, resolveDateRange]);
+      const meta = result?.recalculation;
+      if (meta) {
+        const payLabel =
+          meta.totalPayroll != null
+            ? formatCurrency(meta.totalPayroll)
+            : '—';
+        setSuccess(
+          `Recalculated ${meta.employeeCount ?? 0} people using current shift rules` +
+            ` (${meta.shiftsApplied ?? 0} shifts, ${meta.passesUpdated ?? 0} day passes updated).` +
+            ` Present ${meta.presentDays ?? 0}, Partial ${meta.partialDays ?? 0}, Absent ${meta.absentDays ?? 0}.` +
+            ` Payroll total: ${payLabel}.`
+        );
+      } else {
+        setSuccess('Attendance and payroll recalculated from current shift settings.');
+      }
+    } catch (e) {
+      setError(e.message || 'Failed to recalculate attendance');
+    } finally {
+      setRecalculating(false);
+    }
+  }, [resolveDateRange, filters.roleId]);
 
   const handleRangeModeChange = (mode) => {
     setRangeMode(mode);
@@ -1313,13 +1476,15 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     return () => onPrintReady?.(null);
   }, [handlePrintPdf, onPrintReady]);
 
+  const busy = loading || recalculating || printing;
+
   return (
     <div>
       <div className="rc-filter-panel rc-filter-panel--inline">
         <div className="rc-filter-panel__inline">
           <div className="form-group rc-filter-inline__item">
             <label>Range Type</label>
-            <select value={rangeMode} onChange={e => handleRangeModeChange(e.target.value)} disabled={printing}>
+            <select value={rangeMode} onChange={e => handleRangeModeChange(e.target.value)} disabled={busy}>
               <option value="week">Weekly</option>
               <option value="month">Monthly</option>
               <option value="custom">From – To</option>
@@ -1338,26 +1503,29 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
             <div className="form-group rc-filter-inline__item">
               <label>Month</label>
               <input type="month" value={filters.month}
-                onChange={e => setFilters(f => ({ ...f, month: e.target.value }))} />
+                onChange={e => setFilters(f => ({ ...f, month: e.target.value }))}
+                disabled={busy} />
             </div>
           ) : (
             <>
               <div className="form-group rc-filter-inline__item">
                 <label>From Date</label>
                 <input type="date" value={filters.dateFrom}
-                  onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))} />
+                  onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))}
+                  disabled={busy} />
               </div>
               <div className="form-group rc-filter-inline__item">
                 <label>To Date</label>
                 <input type="date" value={filters.dateTo}
-                  onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))} />
+                  onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))}
+                  disabled={busy} />
               </div>
             </>
           )}
 
           <div className="form-group rc-filter-inline__item">
             <label>View</label>
-            <select value={viewMode} onChange={e => setViewMode(e.target.value)}>
+            <select value={viewMode} onChange={e => setViewMode(e.target.value)} disabled={busy}>
               <option value="abstract">Abstract</option>
               <option value="complete">Complete</option>
             </select>
@@ -1365,7 +1533,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
 
           <div className="form-group rc-filter-inline__item">
             <label>Role</label>
-            <select value={filters.roleId} onChange={e => setFilters(f => ({ ...f, roleId: e.target.value }))}>
+            <select value={filters.roleId} onChange={e => setFilters(f => ({ ...f, roleId: e.target.value }))} disabled={busy}>
               <option value="">All Roles</option>
               {roles.map(role => (
                 <option key={role._id || role.id} value={role._id || role.id}>{role.name}</option>
@@ -1373,16 +1541,30 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
             </select>
           </div>
 
-          {loading && (
+          <div className="form-group rc-filter-inline__item rc-filter-inline__item--action">
+            <label>&nbsp;</label>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleRecalculate}
+              disabled={busy}
+              title="Recalculate attendance and payroll from current shift timings and minimum hours"
+            >
+              {recalculating ? 'Recalculating…' : 'Recalculate'}
+            </button>
+          </div>
+
+          {(loading || recalculating) && (
             <div className="rc-filter-inline__loading" aria-live="polite">
               <Spinner size={16} />
-              <span>Updating…</span>
+              <span>{recalculating ? 'Recalculating from current shifts…' : 'Updating…'}</span>
             </div>
           )}
         </div>
       </div>
 
       {error && <p className="error-msg" style={{ marginBottom: '1rem' }}>{error}</p>}
+      {success && <p className="success-msg" style={{ marginBottom: '1rem' }}>{success}</p>}
 
       {loading && !data ? (
         <div className="rc-table-loading">
@@ -1428,6 +1610,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
                     </th>
                   ))}
                   <th className="rc-att-grid__summary rc-att-grid__summary--present">Present</th>
+                  <th className="rc-att-grid__summary rc-att-grid__summary--present">Partial</th>
                   <th className="rc-att-grid__summary rc-att-grid__summary--absent">Absent</th>
                   <th className="rc-att-grid__summary rc-att-grid__summary--pay">Per Day</th>
                   <th className="rc-att-grid__summary rc-att-grid__summary--pay">Pay Days</th>
@@ -1462,6 +1645,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
                       />
                     ))}
                     <td className="rc-att-grid__total rc-att-grid__total--present">{emp.summary.present}</td>
+                    <td className="rc-att-grid__total rc-att-grid__total--present">{emp.summary.halfDay ?? 0}</td>
                     <td className="rc-att-grid__total rc-att-grid__total--absent">{emp.summary.absent}</td>
                     <td className="rc-att-grid__total rc-att-grid__total--pay">
                       {emp.payAmount != null ? formatCurrency(emp.payAmount) : '—'}

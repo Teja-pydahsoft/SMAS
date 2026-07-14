@@ -1710,6 +1710,14 @@
   min-width: 140px;
 }
 
+.rc-filter-inline__item--action {
+  min-width: auto;
+}
+
+.rc-filter-inline__item--action .btn-primary {
+  white-space: nowrap;
+}
+
 .rc-filter-inline__item label {
   font-size: var(--text-11);
   margin-bottom: 4px;
@@ -2027,8 +2035,8 @@
 .rc-att-cell {
   text-align: center;
   vertical-align: middle;
-  min-width: 42px;
-  width: 42px;
+  min-width: 48px;
+  width: 48px;
   padding: 2px !important;
 }
 
@@ -2212,6 +2220,9 @@
 }
 
 .rc-period-sessions-table__status--p { background: #d1fae5; color: #047857; }
+.rc-period-sessions-table__status--hd { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.rc-period-sessions-table__status--pt { background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
+.rc-period-sessions-table__status--a { background: #f3f4f6; color: #6b7280; }
 
 .rc-period-sessions-table__activity {
   display: flex;
@@ -2254,6 +2265,8 @@
 }
 
 .rc-att-day-detail__badge--p { background: #d1fae5; color: #047857; }
+.rc-att-day-detail__badge--hd { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.rc-att-day-detail__badge--pt { background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
 .rc-att-day-detail__badge--a { background: #f3f4f6; color: #6b7280; }
 
 .rc-att-day-detail__status-label {

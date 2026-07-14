@@ -6,6 +6,7 @@ import {
   getRegistrationReport,
   getDailyPassByRole,
   getAttendanceHistoryGrid,
+  recalculateAttendanceHistory,
 } from '../services/registrationReportService.js';
 
 const router = Router();
@@ -41,6 +42,22 @@ router.get(
       search: req.query.search || '',
       roleId: req.query.roleId || '',
       limit: req.query.limit || 500,
+    });
+    res.json(data);
+  })
+);
+
+router.post(
+  '/attendance-history/recalculate',
+  requirePermission('reports', 'read'),
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const data = await recalculateAttendanceHistory({
+      dateFrom: body.dateFrom || req.query.dateFrom || '',
+      dateTo: body.dateTo || req.query.dateTo || '',
+      search: body.search || req.query.search || '',
+      roleId: body.roleId || req.query.roleId || '',
+      limit: body.limit || req.query.limit || 500,
     });
     res.json(data);
   })

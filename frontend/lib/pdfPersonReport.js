@@ -82,14 +82,24 @@ function formatShortDate(value) {
 function dayStatusLabel(day) {
   if (!day || day.status === 'blank') return 'Not Registered';
   if (day.status === 'P') return 'Present';
+  if (day.status === 'HD') return day.label || 'Partial Day';
+  if (day.status === 'PT') return day.label || 'Hours Worked';
   if (day.status === 'A') return 'Absent';
   return day.label || day.code || '—';
 }
 
+function dayPayFactor(day) {
+  if (!day) return 0;
+  if (typeof day.payFactor === 'number') return day.payFactor;
+  if (day.status === 'P') return 1;
+  if (day.status === 'HD' || day.status === 'PT') return 0.5;
+  return 0;
+}
+
 function dayAmount(day, rate) {
   if (!day || day.status === 'blank') return '—';
-  if (day.status === 'P') return formatPdfAmount(Number(rate) || 0);
-  return formatPdfAmount(0);
+  const factor = dayPayFactor(day);
+  return formatPdfAmount((Number(rate) || 0) * factor);
 }
 
 function buildAttendanceBodyRow(date, day, rate) {
@@ -163,7 +173,9 @@ function buildPayDetailRows(reportData, options = {}) {
       payment?.payFrequencyLabel || formatPayFrequency(payFrequency, customPayDays),
     ],
     ['Per Day Amount', rate != null ? formatPdfCurrency(rate) : '—'],
-    ['Present Days', hasRange ? String(payment?.paymentDays ?? summary?.present ?? 0) : '—'],
+    ['Full Days', hasRange ? String(payment?.fullDays ?? summary?.present ?? 0) : '—'],
+    ['Partial Days', hasRange ? String(payment?.halfDays ?? summary?.halfDay ?? 0) : '—'],
+    ['Payment Days', hasRange ? String(payment?.paymentDays ?? summary?.present ?? 0) : '—'],
     ['Absent Days', hasRange ? String(summary?.absent ?? 0) : '—'],
     ['Calculated Amount', payment ? formatPdfCurrency(payment.totalAmount) : '—'],
   ];
@@ -244,7 +256,7 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
       data.cell.styles.fontStyle = 'italic';
       return;
     }
-    if (data.column.index === 1 && status === 'Present') {
+    if (data.column.index === 1 && (status === 'Present' || status === 'Partial Day' || status === 'Partial' || status === 'Half Day' || status === 'Half' || status.startsWith('Hours Worked'))) {
       data.cell.styles.textColor = [22, 163, 74];
       data.cell.styles.fontStyle = 'bold';
     } else if (data.column.index === 1 && status === 'Absent') {
@@ -257,6 +269,9 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
     return body.map((row) => {
       if (!row[0] && !row[1]) return row;
       if (row[1] === 'Not Registered') return [row[0], 'Not Reg.', row[2]];
+      if (row[1] === 'Half Day' || row[1] === 'Partial Day' || String(row[1] || '').startsWith('Hours Worked')) {
+        return [row[0], 'Partial', row[2]];
+      }
       return row;
     });
   }

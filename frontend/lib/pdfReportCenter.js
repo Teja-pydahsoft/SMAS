@@ -245,6 +245,7 @@ export async function downloadAttendanceHistoryPdf(employees = [], options = {})
     emp.displayPhone || '—',
     String(emp.summary?.totalDays ?? '—'),
     String(emp.summary?.present ?? '—'),
+    String(emp.summary?.halfDay ?? 0),
     String(emp.summary?.absent ?? '—'),
     emp.payFrequencyLabel ||
       formatPayFrequency(emp.payFrequency, emp.customPayDays) ||
@@ -264,6 +265,7 @@ export async function downloadAttendanceHistoryPdf(employees = [], options = {})
       'Phone',
       'Total Days',
       'Present Days',
+      'Partial Days',
       'Absent Days',
       'Pay Frequency',
       'Pay Amount (per day)',
@@ -272,7 +274,7 @@ export async function downloadAttendanceHistoryPdf(employees = [], options = {})
     ]],
     body: body.length
       ? body
-      : [['No attendance history for this period.', '', '', '', '', '', '', '', '', '', '', '']],
+      : [['No attendance history for this period.', '', '', '', '', '', '', '', '', '', '', '', '']],
     theme: 'grid',
     styles: {
       fontSize: 6.5,
@@ -293,30 +295,31 @@ export async function downloadAttendanceHistoryPdf(employees = [], options = {})
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     columnStyles: {
-      0: { cellWidth: 22, halign: 'center' },
-      1: { cellWidth: 78 },
-      2: { cellWidth: 58 },
-      3: { cellWidth: 70 },
-      4: { cellWidth: 68 },
-      5: { cellWidth: 42, halign: 'right' },
-      6: { cellWidth: 50, halign: 'right' },
-      7: { cellWidth: 50, halign: 'right' },
-      8: { cellWidth: 68 },
-      9: { cellWidth: 72, halign: 'right' },
-      10: { cellWidth: 52, halign: 'right' },
-      11: { cellWidth: 78, halign: 'right' },
+      0: { cellWidth: 20, halign: 'center' },
+      1: { cellWidth: 70 },
+      2: { cellWidth: 52 },
+      3: { cellWidth: 62 },
+      4: { cellWidth: 58 },
+      5: { cellWidth: 36, halign: 'right' },
+      6: { cellWidth: 42, halign: 'right' },
+      7: { cellWidth: 36, halign: 'right' },
+      8: { cellWidth: 42, halign: 'right' },
+      9: { cellWidth: 58 },
+      10: { cellWidth: 64, halign: 'right' },
+      11: { cellWidth: 44, halign: 'right' },
+      12: { cellWidth: 68, halign: 'right' },
     },
     didParseCell(data) {
       if (data.section !== 'body') return;
-      if (data.column.index === 6) {
+      if (data.column.index === 6 || data.column.index === 7) {
         data.cell.styles.textColor = [22, 163, 74];
         data.cell.styles.fontStyle = 'bold';
       }
-      if (data.column.index === 7) {
+      if (data.column.index === 8) {
         data.cell.styles.textColor = [220, 38, 38];
         data.cell.styles.fontStyle = 'bold';
       }
-      if (data.column.index === 11 && data.cell.raw && data.cell.raw !== '—') {
+      if (data.column.index === 12 && data.cell.raw && data.cell.raw !== '—') {
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.textColor = [15, 118, 110];
       }

@@ -2,6 +2,8 @@ import Registration from '../models/Registration.js';
 import GateLog from '../models/GateLog.js';
 import Pass from '../models/Pass.js';
 import Role from '../models/Role.js';
+import Shift from '../models/Shift.js';
+import mongoose from 'mongoose';
 import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS } from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import {
@@ -11,6 +13,11 @@ import {
 } from './attendanceService.js';
 import { calculatePaymentSummary, formatPayFrequencyLabel } from '../utils/paymentCalculation.js';
 import { grantedGateLogFilter, filterGrantedLogs } from '../utils/gateLogFilters.js';
+import {
+  computeActivityHours,
+  getShiftDurationHours,
+  resolveShiftDayStatus,
+} from '../utils/shiftAttendance.js';
 
 function logDateKey(date) {
   return new Date(date).toISOString().slice(0, 10);
@@ -97,41 +104,111 @@ function formatTimeFromDate(value) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false });
 }
 
-function resolveDayAttendance({ date, registeredAt, dayLogs, session }) {
+function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = null }) {
   const joinDate = logDateKey(registeredAt);
+  const grantedLogs = filterGrantedLogs(dayLogs || []);
   const timings = extractDayTimings(dayLogs || [], session);
+  const activityHours = computeActivityHours(grantedLogs, session, date, {
+    today: todayDateString(),
+  });
+  const shiftMeta = {
+    activityHours,
+    shiftId: shift?._id?.toString?.() || shift?.id || session?.shiftId || null,
+    shiftName: shift?.name || session?.shiftName || null,
+    shiftTotalHours: shift ? getShiftDurationHours(shift.startTime, shift.endTime) : null,
+    halfDayMinHours: shift?.halfDayMinHours ?? null,
+    fullDayMinHours: shift?.fullDayMinHours ?? null,
+  };
 
   if (date < joinDate) {
-    return { status: 'blank', code: 'NR', label: 'Not Registered', ...timings };
-  }
-
-  if (hasDayActivity(dayLogs, session)) {
     return {
-      status: 'P',
-      code: 'P',
-      label: 'Present',
-      checkInTime: formatTimeFromDate(timings.checkIn),
+      status: 'blank',
+      code: 'NR',
+      label: 'Not Registered',
+      payFactor: 0,
       ...timings,
+      ...shiftMeta,
     };
   }
 
-  return { status: 'A', code: 'A', label: 'Absent', checkInTime: null, ...timings };
+  if (!hasDayActivity(dayLogs, session)) {
+    return {
+      status: 'A',
+      code: 'A',
+      label: 'Absent',
+      checkInTime: null,
+      payFactor: 0,
+      ...timings,
+      ...shiftMeta,
+    };
+  }
+
+  const shiftStatus = resolveShiftDayStatus(activityHours, shift);
+  if (shiftStatus) {
+    return {
+      ...shiftStatus,
+      checkInTime: formatTimeFromDate(timings.checkIn),
+      ...timings,
+      ...shiftMeta,
+    };
+  }
+
+  // No shift thresholds configured — any activity counts as full present
+  return {
+    status: 'P',
+    code: 'P',
+    label: 'Present',
+    checkInTime: formatTimeFromDate(timings.checkIn),
+    payFactor: 1,
+    ...timings,
+    ...shiftMeta,
+  };
 }
 
 function summarizeAttendanceDays(days) {
   let present = 0;
+  let halfDay = 0;
   let absent = 0;
 
   for (const day of days) {
     if (day.status === 'P') present += 1;
+    else if (day.status === 'HD' || day.status === 'PT') halfDay += 1;
     else if (day.status === 'A') absent += 1;
   }
 
   return {
     present,
+    halfDay,
     absent,
-    totalDays: present + absent,
+    totalDays: present + halfDay + absent,
   };
+}
+
+function collectShiftIdsFromPasses(passes) {
+  const ids = new Set();
+  for (const pass of passes || []) {
+    const id = pass?.qrPayload?.shiftId;
+    if (id) ids.add(String(id));
+  }
+  return [...ids];
+}
+
+async function loadShiftMap(shiftIds) {
+  const map = new Map();
+  if (!shiftIds?.length) return map;
+  const validIds = shiftIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (!validIds.length) return map;
+  const shifts = await Shift.find({ _id: { $in: validIds } }).lean();
+  for (const shift of shifts) {
+    map.set(shift._id.toString(), shift);
+  }
+  return map;
+}
+
+function shiftFromSession(session, shiftMap) {
+  const shiftId = session?.shiftId ? String(session.shiftId) : null;
+  if (!shiftId) return null;
+  return shiftMap.get(shiftId) || null;
 }
 
 function formatLogEntry(log) {
@@ -376,10 +453,13 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
       }
     }
 
+    const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes));
+
     const days = dates.map((date) => {
       const dayLogs = logsByDate.get(date) || [];
       const pass = passByDate.get(date);
       const session = pass ? getPassSessionState(pass) : null;
+      const shift = shiftFromSession(session, shiftMap);
       return {
         date,
         ...resolveDayAttendance({
@@ -387,6 +467,7 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
           registeredAt: registration.createdAt,
           dayLogs,
           session,
+          shift,
         }),
       };
     });
@@ -640,6 +721,8 @@ export async function getAttendanceHistoryGrid({
     }
   }
 
+  const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes));
+
   const normalizedSearch = search.trim().toLowerCase();
 
   const employees = registrations
@@ -653,6 +736,7 @@ export async function getAttendanceHistoryGrid({
         const dayLogs = logsByRegDate.get(key) || [];
         const pass = passByRegDate.get(key);
         const session = pass ? getPassSessionState(pass) : null;
+        const shift = shiftFromSession(session, shiftMap);
 
         return {
           date,
@@ -661,6 +745,7 @@ export async function getAttendanceHistoryGrid({
             registeredAt,
             dayLogs,
             session,
+            shift,
           }),
         };
       });
@@ -702,5 +787,110 @@ export async function getAttendanceHistoryGrid({
     dateTo: toDate,
     dates: dates.map((date) => ({ date, day: dayNumber(date), weekday: dayAbbrev(date) })),
     employees,
+  };
+}
+
+/**
+ * Sync day-pass shift snapshots from the live Shift documents, then rebuild
+ * attendance + payroll for the range using current shift timings/thresholds.
+ */
+export async function recalculateAttendanceHistory({
+  dateFrom,
+  dateTo,
+  search = '',
+  roleId = '',
+  limit = 500,
+} = {}) {
+  const today = todayDateString();
+  const from = dateFrom || today.slice(0, 8) + '01';
+  const toDate = dateTo || today;
+
+  const passes = await Pass.find({
+    passType: PASS_TYPES.DAY_PASS,
+    validDate: { $gte: from, $lte: toDate },
+  });
+
+  const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes.map((p) => p.toObject?.() || p)));
+  let passesUpdated = 0;
+
+  for (const pass of passes) {
+    const payload = pass.qrPayload || {};
+    const shiftId = payload.shiftId ? String(payload.shiftId) : null;
+    if (!shiftId) continue;
+
+    const shift = shiftMap.get(shiftId);
+    if (!shift) continue;
+
+    const nextName = shift.name || payload.shiftName || '';
+    const nextStart = shift.startTime || '';
+    const nextEnd = shift.endTime || '';
+    const nextHalf = shift.halfDayMinHours ?? null;
+    const nextFull = shift.fullDayMinHours ?? null;
+
+    const changed =
+      payload.shiftName !== nextName ||
+      payload.shiftStartTime !== nextStart ||
+      payload.shiftEndTime !== nextEnd ||
+      payload.halfDayMinHours !== nextHalf ||
+      payload.fullDayMinHours !== nextFull;
+
+    if (!changed) continue;
+
+    pass.qrPayload = {
+      ...payload,
+      shiftId,
+      shiftName: nextName,
+      shiftStartTime: nextStart,
+      shiftEndTime: nextEnd,
+      halfDayMinHours: nextHalf,
+      fullDayMinHours: nextFull,
+    };
+    pass.markModified('qrPayload');
+    await pass.save();
+    passesUpdated += 1;
+  }
+
+  const grid = await getAttendanceHistoryGrid({
+    dateFrom: from,
+    dateTo: toDate,
+    search,
+    roleId,
+    limit,
+  });
+
+  let shiftDays = 0;
+  let presentDays = 0;
+  let partialDays = 0;
+  let absentDays = 0;
+  let totalPayroll = 0;
+
+  for (const emp of grid.employees || []) {
+    for (const day of emp.days || []) {
+      if (day.status === 'blank') continue;
+      if (day.shiftId || day.halfDayMinHours != null || day.fullDayMinHours != null) {
+        shiftDays += 1;
+      }
+      if (day.status === 'P') presentDays += 1;
+      else if (day.status === 'HD' || day.status === 'PT') partialDays += 1;
+      else if (day.status === 'A') absentDays += 1;
+    }
+    if (emp.payment?.totalAmount) totalPayroll += Number(emp.payment.totalAmount) || 0;
+  }
+
+  return {
+    ...grid,
+    recalculation: {
+      recalculatedAt: new Date().toISOString(),
+      dateFrom: from,
+      dateTo: toDate,
+      employeeCount: (grid.employees || []).length,
+      passesUpdated,
+      shiftsApplied: shiftMap.size,
+      shiftDays,
+      presentDays,
+      partialDays,
+      absentDays,
+      totalPayroll: Math.round(totalPayroll * 100) / 100,
+    },
   };
 }

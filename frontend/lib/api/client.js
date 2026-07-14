@@ -312,6 +312,11 @@ export const api = {
       const qs = new URLSearchParams(params).toString();
       return request(`/reports/attendance-history${qs ? `?${qs}` : ''}`);
     },
+    recalculateAttendanceHistory: (data = {}) =>
+      request('/reports/attendance-history/recalculate', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   },
 
   divisions: {

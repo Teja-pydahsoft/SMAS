@@ -110,14 +110,24 @@ function formatShortDate(value) {
 function dayStatusLabel(day) {
   if (!day || day.status === 'blank') return 'Not Registered';
   if (day.status === 'P') return 'Present';
+  if (day.status === 'HD') return day.label || 'Partial Day';
+  if (day.status === 'PT') return day.label || 'Hours Worked';
   if (day.status === 'A') return 'Absent';
   return day.label || day.code || '—';
 }
 
+function dayPayFactor(day) {
+  if (!day) return 0;
+  if (typeof day.payFactor === 'number') return day.payFactor;
+  if (day.status === 'P') return 1;
+  if (day.status === 'HD' || day.status === 'PT') return 0.5;
+  return 0;
+}
+
 function dayAmount(day, rate) {
   if (!day || day.status === 'blank') return '—';
-  if (day.status === 'P') return formatCurrency(Number(rate) || 0);
-  return formatCurrency(0);
+  const factor = dayPayFactor(day);
+  return formatCurrency((Number(rate) || 0) * factor);
 }
 
 function buildAttendanceBodyRow(date, day, rate) {
@@ -197,7 +207,9 @@ function buildPayDetailRows(reportData, options = {}) {
       payment?.payFrequencyLabel || formatPayFrequency(payFrequency, customPayDays),
     ],
     ['Per Day Amount', rate != null ? formatCurrency(rate) : '—'],
-    ['Present Days', hasRange ? String(payment?.paymentDays ?? summary?.present ?? 0) : '—'],
+    ['Full Days', hasRange ? String(payment?.fullDays ?? summary?.present ?? 0) : '—'],
+    ['Partial Days', hasRange ? String(payment?.halfDays ?? summary?.halfDay ?? 0) : '—'],
+    ['Payment Days', hasRange ? String(payment?.paymentDays ?? summary?.present ?? 0) : '—'],
     ['Absent Days', hasRange ? String(summary?.absent ?? 0) : '—'],
     ['Calculated Amount', payment ? formatCurrency(payment.totalAmount) : '—'],
   ];
@@ -390,7 +402,9 @@ function collectReportEntries(reportData, { dateFrom = '', dateTo = '' } = {}) {
   const rows = [];
 
   if (hasDateRange) {
-    const periodDays = (reportData?.attendanceRange?.days || []).filter((day) => day.status === 'P');
+    const periodDays = (reportData?.attendanceRange?.days || []).filter(
+      (day) => day.status === 'P' || day.status === 'HD' || day.status === 'PT'
+    );
     const entriesByDateMap = Object.fromEntries(
       (reportData?.entriesByDate || []).map((group) => [group.date, group.entries])
     );
@@ -459,6 +473,7 @@ function buildSummaryRows(reportData, { dateFrom = '', dateTo = '' } = {}, { inc
     rows.push(
       ['Report Period', `${formatExportDate(dateFrom)} — ${formatExportDate(dateTo)}`],
       ['Present Days', rangeSummary?.present ?? '—'],
+      ['Partial Days', rangeSummary?.halfDay ?? '—'],
       ['Absent Days', rangeSummary?.absent ?? '—'],
       ['Total Days', rangeSummary?.totalDays ?? '—']
     );
@@ -568,7 +583,9 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
   const hasDateRange = Boolean(options.dateFrom && options.dateTo);
 
   const periodDays = hasDateRange
-    ? (reportData?.attendanceRange?.days || []).filter((day) => day.status === 'P')
+    ? (reportData?.attendanceRange?.days || []).filter(
+        (day) => day.status === 'P' || day.status === 'HD' || day.status === 'PT'
+      )
     : [];
   const entriesByDateMap = Object.fromEntries(
     (reportData?.entriesByDate || []).map((group) => [group.date, group.entries || []])

@@ -41,6 +41,44 @@ function toIso(value) {
   return value?.toISOString?.() || value;
 }
 
+function toObjectIdArray(ids) {
+  return (ids || [])
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+}
+
+/**
+ * Registration ids that have any check-in activity (granted gate log or day pass)
+ * inside the given divisions, optionally constrained to a date range.
+ */
+async function registrationIdsWithDivisionActivity(divisionObjIds, { from, toDate } = {}) {
+  const logMatch = grantedGateLogFilter({
+    registrationId: { $ne: null },
+    divisionId: { $in: divisionObjIds },
+  });
+  const passMatch = {
+    passType: PASS_TYPES.DAY_PASS,
+    divisionId: { $in: divisionObjIds },
+  };
+  if (from && toDate) {
+    logMatch.createdAt = {
+      $gte: new Date(`${from}T00:00:00.000Z`),
+      $lte: new Date(`${toDate}T23:59:59.999Z`),
+    };
+    passMatch.validDate = { $gte: from, $lte: toDate };
+  }
+
+  const [logRegIds, passRegIds] = await Promise.all([
+    GateLog.distinct('registrationId', logMatch),
+    Pass.distinct('registrationId', passMatch),
+  ]);
+
+  const set = new Set();
+  for (const id of logRegIds) if (id) set.add(id.toString());
+  for (const id of passRegIds) if (id) set.add(id.toString());
+  return set;
+}
+
 function extractDayTimings(dayLogs, session) {
   const sorted = [...filterGrantedLogs(dayLogs)].sort(
     (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
@@ -95,6 +133,15 @@ function dayAbbrev(dateStr) {
 
 function dayNumber(dateStr) {
   return new Date(`${dateStr}T12:00:00.000Z`).getUTCDate();
+}
+
+function emptyAttendanceGrid(from, toDate, dates) {
+  return {
+    dateFrom: from,
+    dateTo: toDate,
+    dates: dates.map((date) => ({ date, day: dayNumber(date), weekday: dayAbbrev(date) })),
+    employees: [],
+  };
 }
 
 function formatTimeFromDate(value) {
@@ -274,14 +321,18 @@ function groupEntriesByDate(logs) {
     }));
 }
 
-async function buildTodayActiveForRegistration(registrationId) {
+async function buildTodayActiveForRegistration(registrationId, divisionObjIds = null) {
   const validDate = todayDateString();
-  const activePasses = await Pass.find({
+  const passQuery = {
     registrationId,
     passType: PASS_TYPES.DAY_PASS,
     validDate,
     isActive: true,
-  });
+  };
+  if (Array.isArray(divisionObjIds) && divisionObjIds.length) {
+    passQuery.divisionId = { $in: divisionObjIds };
+  }
+  const activePasses = await Pass.find(passQuery);
 
   const active = [];
 
@@ -321,9 +372,16 @@ async function buildTodayActiveForRegistration(registrationId) {
   return active;
 }
 
-export async function listRegistrationReports({ search = '', limit = 100 } = {}) {
+export async function listRegistrationReports({ search = '', limit = 100, divisionIds = null } = {}) {
+  const divisionScoped = Array.isArray(divisionIds);
+  const divisionObjIds = divisionScoped ? toObjectIdArray(divisionIds) : [];
+  if (divisionScoped && divisionObjIds.length === 0) return [];
+
+  const logMatch = grantedGateLogFilter({ registrationId: { $ne: null } });
+  if (divisionScoped) logMatch.divisionId = { $in: divisionObjIds };
+
   const matchedLogs = await GateLog.aggregate([
-    { $match: grantedGateLogFilter({ registrationId: { $ne: null } }) },
+    { $match: logMatch },
     {
       $group: {
         _id: '$registrationId',
@@ -386,7 +444,16 @@ export async function listRegistrationReports({ search = '', limit = 100 } = {})
   );
 }
 
-export async function getRegistrationReport(registrationId, { dateFrom = '', dateTo = '' } = {}) {
+export async function getRegistrationReport(
+  registrationId,
+  { dateFrom = '', dateTo = '', divisionIds = null } = {}
+) {
+  const divisionScoped = Array.isArray(divisionIds);
+  const divisionObjIds = divisionScoped ? toObjectIdArray(divisionIds) : [];
+  if (divisionScoped && divisionObjIds.length === 0) {
+    return null;
+  }
+
   const registration = await Registration.findById(registrationId)
     .select('-faceEmbedding')
     .populate('roleId', 'name slug')
@@ -405,6 +472,7 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
   const logQuery = grantedGateLogFilter({
     registrationId: registration._id,
   });
+  if (divisionScoped) logQuery.divisionId = { $in: divisionObjIds };
 
   if (hasDateRange) {
     logQuery.createdAt = {
@@ -430,7 +498,9 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
         }))
         .sort((a, b) => new Date(b.at) - new Date(a.at));
 
-  const todayActive = hasDateRange ? [] : await buildTodayActiveForRegistration(registration._id);
+  const todayActive = hasDateRange
+    ? []
+    : await buildTodayActiveForRegistration(registration._id, divisionScoped ? divisionObjIds : null);
   const entriesByDate = groupEntriesByDate(logs).map((group) => ({
     ...group,
     entries: group.entries.map((entry) => ({
@@ -446,6 +516,7 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
       registrationId: registration._id,
       passType: PASS_TYPES.DAY_PASS,
       validDate: { $gte: dateFrom, $lte: dateTo },
+      ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {}),
     })
       .select('registrationId validDate qrPayload createdAt')
       .lean();
@@ -555,24 +626,41 @@ export async function getRegistrationReport(registrationId, { dateFrom = '', dat
  * Returns all active roles, each with their verified registrations and
  * today's day-pass status for every person.
  */
-export async function getDailyPassByRole() {
+export async function getDailyPassByRole({ divisionIds = null } = {}) {
   const today = todayDateString();
 
   // 1. All active roles
   const roles = await Role.find({ isActive: true }).sort({ name: 1 }).lean();
 
-  // 2. All verified registrations, grouped by roleId
-  const registrations = await Registration.find({ status: REGISTRATION_STATUS.VERIFIED })
+  const divisionScoped = Array.isArray(divisionIds);
+  const divisionObjIds = divisionScoped ? toObjectIdArray(divisionIds) : [];
+  if (divisionScoped && divisionObjIds.length === 0) {
+    return { date: today, roles: [] };
+  }
+
+  // 2. Today's day passes (one per registration+division), scoped when applicable
+  const passQuery = { passType: PASS_TYPES.DAY_PASS, validDate: today };
+  if (divisionScoped) passQuery.divisionId = { $in: divisionObjIds };
+  const todayPasses = await Pass.find(passQuery).lean();
+
+  // 3. Verified registrations grouped by roleId. When division-scoped, restrict
+  //    to people who checked into an accessible division today.
+  const regQuery = { status: REGISTRATION_STATUS.VERIFIED };
+  if (divisionScoped) {
+    const scopedRegIds = [
+      ...new Set(todayPasses.map((p) => p.registrationId?.toString()).filter(Boolean)),
+    ];
+    if (scopedRegIds.length === 0) {
+      return { date: today, roles: [] };
+    }
+    regQuery._id = { $in: scopedRegIds.map((id) => new mongoose.Types.ObjectId(id)) };
+  }
+
+  const registrations = await Registration.find(regQuery)
     .select('-faceEmbedding')
     .populate('roleId', 'name slug isShiftBased')
     .populate('formId', 'fields')
     .lean();
-
-  // 3. All today's day passes (one per registration+division)
-  const todayPasses = await Pass.find({
-    passType: PASS_TYPES.DAY_PASS,
-    validDate: today,
-  }).lean();
 
   // Build a map: registrationId → array of today's passes
   const passesByReg = new Map();
@@ -669,6 +757,7 @@ export async function getAttendanceHistoryGrid({
   search = '',
   roleId = '',
   limit = 500,
+  divisionIds = null,
 } = {}) {
   const today = todayDateString();
   const from = dateFrom || today.slice(0, 8) + '01';
@@ -681,6 +770,21 @@ export async function getAttendanceHistoryGrid({
   const regQuery = { status: REGISTRATION_STATUS.VERIFIED };
   if (roleId) regQuery.roleId = roleId;
 
+  // Division-scope (RBAC): restrict to people with check-in activity in the
+  // user's accessible divisions, and only count activity from those divisions.
+  const divisionScoped = Array.isArray(divisionIds);
+  const divisionObjIds = divisionScoped ? toObjectIdArray(divisionIds) : [];
+  if (divisionScoped) {
+    if (divisionObjIds.length === 0) {
+      return emptyAttendanceGrid(from, toDate, dates);
+    }
+    const scopedRegIds = await registrationIdsWithDivisionActivity(divisionObjIds, { from, toDate });
+    if (scopedRegIds.size === 0) {
+      return emptyAttendanceGrid(from, toDate, dates);
+    }
+    regQuery._id = { $in: [...scopedRegIds].map((id) => new mongoose.Types.ObjectId(id)) };
+  }
+
   const registrations = await Registration.find(regQuery)
     .select('-faceEmbedding')
     .populate('roleId', 'name slug')
@@ -690,12 +794,7 @@ export async function getAttendanceHistoryGrid({
     .lean();
 
   if (registrations.length === 0) {
-    return {
-      dateFrom: from,
-      dateTo: toDate,
-      dates: dates.map((date) => ({ date, day: dayNumber(date), weekday: dayAbbrev(date) })),
-      employees: [],
-    };
+    return emptyAttendanceGrid(from, toDate, dates);
   }
 
   const registrationIds = registrations.map((reg) => reg._id);
@@ -707,6 +806,7 @@ export async function getAttendanceHistoryGrid({
       grantedGateLogFilter({
         registrationId: { $in: registrationIds },
         createdAt: { $gte: rangeStart, $lte: rangeEnd },
+        ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {}),
       })
     )
       .select('registrationId scanType eventType createdAt')
@@ -715,6 +815,7 @@ export async function getAttendanceHistoryGrid({
       registrationId: { $in: registrationIds },
       passType: PASS_TYPES.DAY_PASS,
       validDate: { $gte: from, $lte: toDate },
+      ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {}),
     })
       .select('registrationId validDate qrPayload createdAt')
       .lean(),
@@ -818,15 +919,50 @@ export async function recalculateAttendanceHistory({
   search = '',
   roleId = '',
   limit = 500,
+  divisionIds = null,
 } = {}) {
   const today = todayDateString();
   const from = dateFrom || today.slice(0, 8) + '01';
   const toDate = dateTo || today;
 
-  const passes = await Pass.find({
+  const divisionScoped = Array.isArray(divisionIds);
+  const divisionObjIds = divisionScoped ? toObjectIdArray(divisionIds) : [];
+
+  const passSyncQuery = {
     passType: PASS_TYPES.DAY_PASS,
     validDate: { $gte: from, $lte: toDate },
-  });
+  };
+  if (divisionScoped) {
+    if (divisionObjIds.length === 0) {
+      const emptyGrid = await getAttendanceHistoryGrid({
+        dateFrom: from,
+        dateTo: toDate,
+        search,
+        roleId,
+        limit,
+        divisionIds,
+      });
+      return {
+        ...emptyGrid,
+        recalculation: {
+          recalculatedAt: new Date().toISOString(),
+          dateFrom: from,
+          dateTo: toDate,
+          employeeCount: 0,
+          passesUpdated: 0,
+          shiftsApplied: 0,
+          shiftDays: 0,
+          presentDays: 0,
+          partialDays: 0,
+          absentDays: 0,
+          totalPayroll: 0,
+        },
+      };
+    }
+    passSyncQuery.divisionId = { $in: divisionObjIds };
+  }
+
+  const passes = await Pass.find(passSyncQuery);
 
   const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes.map((p) => p.toObject?.() || p)));
   let passesUpdated = 0;
@@ -874,6 +1010,7 @@ export async function recalculateAttendanceHistory({
     search,
     roleId,
     limit,
+    divisionIds,
   });
 
   let shiftDays = 0;

@@ -307,7 +307,11 @@ export const api = {
       const qs = new URLSearchParams(params).toString();
       return request(`/reports/registrations/${registrationId}${qs ? `?${qs}` : ''}`);
     },
-    dailyPasses: () => request('/reports/daily-passes'),
+    dailyPasses: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/reports/daily-passes${qs ? `?${qs}` : ''}`);
+    },
+    divisions: () => request('/reports/divisions'),
     attendanceHistory: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
       return request(`/reports/attendance-history${qs ? `?${qs}` : ''}`);

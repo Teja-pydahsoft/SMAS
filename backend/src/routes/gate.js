@@ -39,6 +39,7 @@ import {
   uploadToCloudinary,
 } from '../services/cloudinaryService.js';
 import { hasDivisionScope, hasDepartmentScope, hasGateScope } from '../middleware/auth.js';
+import { getScopedDivisionIds, resolveDivisionFilterIds } from '../services/accessScopeService.js';
 import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
 
 const router = Router();
@@ -79,7 +80,6 @@ router.get(
     const filter = {};
     if (req.query.registrationId) filter.registrationId = req.query.registrationId;
     if (req.query.eventType) filter.eventType = req.query.eventType;
-    if (req.query.divisionId) filter.divisionId = req.query.divisionId;
     if (req.query.departmentId) filter.departmentId = req.query.departmentId;
     if (req.query.gateRefId) filter.gateRefId = req.query.gateRefId;
     if (req.query.scanType) filter.scanType = req.query.scanType;
@@ -88,6 +88,14 @@ router.get(
     if (req.query.successOnly !== 'false') {
       filter.matched = true;
       filter.$or = [{ accessGranted: true }, { accessGranted: { $exists: false } }];
+    }
+
+    // RBAC division scoping: non-super-admins only see logs from their own
+    // divisions; the optional `divisionId` query narrows within that scope.
+    const scopedIds = req.user ? await getScopedDivisionIds(req.user) : null;
+    const divisionIds = resolveDivisionFilterIds(scopedIds, req.query.divisionId);
+    if (Array.isArray(divisionIds)) {
+      filter.divisionId = { $in: divisionIds };
     }
 
     const logs = await GateLog.find(filter)

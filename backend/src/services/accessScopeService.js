@@ -64,6 +64,63 @@ async function resolveDivisionIdsForUser(user, isSuperAdmin) {
   return [...derived];
 }
 
+/**
+ * Resolve the list of division ObjectId strings a user is allowed to see.
+ * Returns `null` for super admins (meaning "no restriction / all divisions").
+ * Returns an array (possibly empty) for scoped users.
+ */
+export async function getScopedDivisionIds(user) {
+  return resolveDivisionIdsForUser(user, Boolean(user.isSuperAdmin));
+}
+
+/**
+ * Combine a user's allowed divisions (`scopedIds`, null = all) with an optional
+ * requested division id (e.g. from a dropdown) into the effective filter list.
+ *   - returns `null`  → no restriction (query everything)
+ *   - returns `[]`    → restrict to nothing (user has no access / picked an out-of-scope division)
+ *   - returns [ids]   → restrict to these divisions
+ */
+export function resolveDivisionFilterIds(scopedIds, requestedDivisionId) {
+  const requested = requestedDivisionId ? String(requestedDivisionId).trim() : '';
+
+  if (scopedIds === null || scopedIds === undefined) {
+    return requested ? [requested] : null;
+  }
+
+  const scoped = scopedIds.map((id) => String(id));
+  if (requested) {
+    return scoped.includes(requested) ? [requested] : [];
+  }
+  return scoped;
+}
+
+/**
+ * Lightweight list of the divisions a user may filter reports by.
+ * Super admins get every active division; scoped users only their own.
+ */
+export async function getScopedDivisionOptions(user) {
+  const isSuperAdmin = Boolean(user.isSuperAdmin);
+  const scopedIds = await resolveDivisionIdsForUser(user, isSuperAdmin);
+
+  const filter = { isActive: true };
+  if (!isSuperAdmin) {
+    if (!scopedIds || scopedIds.length === 0) {
+      return { isSuperAdmin, divisions: [] };
+    }
+    filter._id = { $in: scopedIds };
+  }
+
+  const divisions = await Division.find(filter).select('name slug').sort({ name: 1 }).lean();
+  return {
+    isSuperAdmin,
+    divisions: divisions.map((d) => ({
+      _id: d._id.toString(),
+      name: d.name,
+      slug: d.slug,
+    })),
+  };
+}
+
 export async function getUserAccessScope(user) {
   const isSuperAdmin = Boolean(user.isSuperAdmin);
 

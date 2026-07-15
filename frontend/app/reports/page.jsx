@@ -859,6 +859,8 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
   const [filterStatus, setFilterStatus] = useState('all');
   const [payFreqFilter, setPayFreqFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
+  const [divisionFilter, setDivisionFilter] = useState('all');
+  const [divisions, setDivisions] = useState([]);
   const [selectionFilters, setSelectionFilters] = useState({});
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [printing, setPrinting] = useState(false);
@@ -872,18 +874,26 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
     ));
   }, []);
 
+  useEffect(() => {
+    api.reports.divisions()
+      .then((res) => setDivisions(Array.isArray(res?.divisions) ? res.divisions : []))
+      .catch(() => setDivisions([]));
+  }, []);
+
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const result = await api.reports.dailyPasses();
+      const params = {};
+      if (divisionFilter !== 'all') params.divisionId = divisionFilter;
+      const result = await api.reports.dailyPasses(params);
       setData(result);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [divisionFilter]);
 
   useEffect(() => {
     load();
@@ -956,6 +966,14 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
             <input type="search" className="rc-search-input" placeholder="Search name, code, role…"
               value={search} onChange={e => setSearch(e.target.value)} aria-label="Search" />
           </div>
+          {divisions.length > 0 && (
+            <select className="rc-select" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)} aria-label="Filter by division">
+              <option value="all">All Divisions</option>
+              {divisions.map(d => (
+                <option key={d._id} value={d._id}>{d.name}</option>
+              ))}
+            </select>
+          )}
           <select className="rc-select" value={roleFilter} onChange={e => setRoleFilter(e.target.value)} aria-label="Filter by role">
             <option value="all">All Roles</option>
             {roleOptions.map(role => (
@@ -1502,6 +1520,7 @@ function AttendanceAbstractTable({ employees, onViewPerson, selectionColumns = [
 function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [data, setData] = useState(null);
   const [roles, setRoles] = useState([]);
+  const [divisions, setDivisions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [recalculating, setRecalculating] = useState(false);
   const [error, setError] = useState('');
@@ -1516,11 +1535,15 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     dateFrom: '',
     dateTo: '',
     roleId: '',
+    divisionId: '',
     payFrequency: '',
   });
 
   useEffect(() => {
     api.roles.list().then((list) => setRoles(Array.isArray(list) ? list : [])).catch(() => setRoles([]));
+    api.reports.divisions()
+      .then((res) => setDivisions(Array.isArray(res?.divisions) ? res.divisions : []))
+      .catch(() => setDivisions([]));
   }, []);
 
   const resolveDateRange = useCallback(() => {
@@ -1551,6 +1574,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
 
       const params = { dateFrom, dateTo, limit: 500 };
       if (filters.roleId) params.roleId = filters.roleId;
+      if (filters.divisionId) params.divisionId = filters.divisionId;
 
       try {
         const result = await api.reports.attendanceHistory(params);
@@ -1566,7 +1590,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     })();
 
     return () => { cancelled = true; };
-  }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo, filters.roleId, resolveDateRange]);
+  }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo, filters.roleId, filters.divisionId, resolveDateRange]);
 
   const handleRecalculate = useCallback(async () => {
     const { dateFrom, dateTo } = resolveDateRange();
@@ -1586,6 +1610,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     try {
       const payload = { dateFrom, dateTo, limit: 500 };
       if (filters.roleId) payload.roleId = filters.roleId;
+      if (filters.divisionId) payload.divisionId = filters.divisionId;
 
       const result = await api.reports.recalculateAttendanceHistory(payload);
       setData(result);
@@ -1610,7 +1635,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     } finally {
       setRecalculating(false);
     }
-  }, [resolveDateRange, filters.roleId]);
+  }, [resolveDateRange, filters.roleId, filters.divisionId]);
 
   const handleRangeModeChange = (mode) => {
     setRangeMode(mode);
@@ -1722,6 +1747,18 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
               ))}
             </select>
           </div>
+
+          {divisions.length > 0 && (
+            <div className="form-group rc-filter-inline__item">
+              <label>Division</label>
+              <select value={filters.divisionId} onChange={e => setFilters(f => ({ ...f, divisionId: e.target.value }))} disabled={busy}>
+                <option value="">All Divisions</option>
+                {divisions.map(d => (
+                  <option key={d._id} value={d._id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="form-group rc-filter-inline__item">
             <label>Pay Frequency</label>

@@ -17,6 +17,29 @@
 
 .camera-viewport video { width: 100%; height: 100%; object-fit: cover; }
 .camera-viewport video.hidden { display: none; }
+.camera-viewport video.camera-viewport__video--mirrored { transform: scaleX(-1); }
+
+.camera-viewport__mirror-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: var(--text-12);
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s ease;
+}
+
+.camera-viewport__mirror-btn:hover { background: rgba(0, 0, 0, 0.6); }
 
 .camera-placeholder {
   display: flex;

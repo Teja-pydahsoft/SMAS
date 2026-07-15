@@ -627,6 +627,11 @@ export async function getDailyPassByRole() {
           gateExitAt,
           currentDepartmentName,
           shiftName,
+          selections: display.selections || [],
+          payFrequency: reg.payFrequency || null,
+          customPayDays: reg.customPayDays || null,
+          payAmount: reg.payAmount ?? null,
+          payFrequencyLabel: formatPayFrequencyLabel(reg.payFrequency, reg.customPayDays),
         };
       });
 
@@ -770,6 +775,7 @@ export async function getAttendanceHistoryGrid({
         roleName: reg.roleId?.name || '—',
         photoUrl: photoUrlFromPath(reg.photoPath),
         registeredAt: registeredAt?.toISOString?.() || registeredAt,
+        selections: display.selections || [],
         payFrequency: reg.payFrequency || null,
         customPayDays: reg.customPayDays || null,
         payAmount: reg.payAmount ?? null,

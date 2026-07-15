@@ -4,7 +4,7 @@ import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 're
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
-import { formatCurrency } from '@/lib/payFrequency';
+import { formatCurrency, PAY_FREQUENCY_LABELS, PAY_FREQUENCIES } from '@/lib/payFrequency';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -32,6 +32,87 @@ function printReportCenterFallback() {
 }
 
 function fmt(n) { return Number(n || 0).toLocaleString(); }
+
+/** Pay frequency filter dropdown options shared by both attendance views */
+const PAY_FREQUENCY_FILTER_OPTIONS = PAY_FREQUENCIES.map((value) => ({
+  value,
+  label: PAY_FREQUENCY_LABELS[value] || value,
+}));
+
+/** Collect the ordered set of unique select-field labels present across a set of people */
+function collectSelectionColumns(people = []) {
+  const labels = [];
+  const seen = new Set();
+  for (const person of people) {
+    for (const sel of person?.selections || []) {
+      if (sel?.label && !seen.has(sel.label)) {
+        seen.add(sel.label);
+        labels.push(sel.label);
+      }
+    }
+  }
+  return labels;
+}
+
+/** Read a person's selected value for a given select-field label */
+function selectionValueFor(person, label) {
+  const sel = (person?.selections || []).find((s) => s.label === label);
+  return sel && sel.value ? sel.value : '—';
+}
+
+/** Distinct, sorted values chosen for a given select-field label across a set of people */
+function selectionValueOptions(people = [], label) {
+  const set = new Set();
+  for (const person of people) {
+    const sel = (person?.selections || []).find((s) => s.label === label);
+    if (sel && sel.value) set.add(sel.value);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+/** Value used to sort a daily-activity person for a given column key */
+function dailySortValue(person, key) {
+  switch (key) {
+    case 'name': return person.displayName || '';
+    case 'role': return person.roleName || '';
+    case 'payFreq': return person.payFrequencyLabel || '';
+    case 'code': return person.registrationCode || '';
+    case 'entry': return person.gateEntryAt ? new Date(person.gateEntryAt).getTime() : 0;
+    case 'exit': return person.gateExitAt ? new Date(person.gateExitAt).getTime() : 0;
+    case 'status': return person.divisionInside ? 2 : person.hadActivityToday ? 1 : 0;
+    case 'shift': return person.shiftName || '';
+    default:
+      if (key.startsWith('sel:')) return selectionValueFor(person, key.slice(4));
+      return '';
+  }
+}
+
+/** Compare helper: numeric-aware for both numbers and alphanumeric codes */
+function compareSortValues(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+/** Clickable table header that toggles ascending/descending sort with an up/down arrow */
+function SortHeader({ label, columnKey, activeKey, dir, onSort, className = '' }) {
+  const active = activeKey === columnKey;
+  return (
+    <th
+      className={`rc-th-sortable${active ? ' rc-th-sortable--active' : ''}${className ? ` ${className}` : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      onClick={() => onSort(columnKey)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(columnKey); } }}
+      title={`Sort by ${label}`}
+    >
+      <span className="rc-th-sortable__label">{label}</span>
+      <span className="rc-th-sortable__arrow" aria-hidden="true">
+        {active ? (dir === 'asc' ? '▲' : '▼') : '↕'}
+      </span>
+    </th>
+  );
+}
 
 function calcDuration(entryAt, exitAt) {
   if (!entryAt) return '—';
@@ -776,9 +857,20 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [sortOrder, setSortOrder] = useState('role');
+  const [payFreqFilter, setPayFreqFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [selectionFilters, setSelectionFilters] = useState({});
+  const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [printing, setPrinting] = useState(false);
   const intervalRef = useRef(null);
+
+  const handleSort = useCallback((key) => {
+    setSort((prev) => (
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' }
+    ));
+  }, []);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -801,8 +893,11 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
 
   // Flatten all people from all roles
   const allPeople = (data?.roles || []).flatMap(r =>
-    r.people.map(p => ({ ...p, roleName: r.roleName, isShiftBased: r.isShiftBased }))
+    r.people.map(p => ({ ...p, roleId: r.roleId, roleName: r.roleName, isShiftBased: r.isShiftBased }))
   );
+
+  const selectionColumns = collectSelectionColumns(allPeople);
+  const roleOptions = (data?.roles || []).map(r => ({ id: r.roleId, name: r.roleName }));
 
   const filtered = allPeople.filter(p => {
     const q = search.toLowerCase();
@@ -815,12 +910,17 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
       (filterStatus === 'inside' && p.divisionInside) ||
       (filterStatus === 'outside' && !p.divisionInside && p.hadActivityToday) ||
       (filterStatus === 'inactive' && !p.divisionInside && !p.hadActivityToday);
-    return matchSearch && matchStatus;
+    const matchPayFreq = payFreqFilter === 'all' || p.payFrequency === payFreqFilter;
+    const matchRole = roleFilter === 'all' || p.roleId === roleFilter;
+    const matchSelections = selectionColumns.every(label => {
+      const wanted = selectionFilters[label];
+      if (!wanted || wanted === 'all') return true;
+      return selectionValueFor(p, label) === wanted;
+    });
+    return matchSearch && matchStatus && matchPayFreq && matchRole && matchSelections;
   }).sort((a, b) => {
-    if (sortOrder === 'name') return (a.displayName || '').localeCompare(b.displayName || '');
-    if (sortOrder === 'newest') return new Date(b.gateEntryAt || 0) - new Date(a.gateEntryAt || 0);
-    if (sortOrder === 'oldest') return new Date(a.gateEntryAt || 0) - new Date(b.gateEntryAt || 0);
-    return (a.roleName || '').localeCompare(b.roleName || '');
+    const res = compareSortValues(dailySortValue(a, sort.key), dailySortValue(b, sort.key));
+    return sort.dir === 'asc' ? res : -res;
   });
 
   const handlePrintPdf = useCallback(async () => {
@@ -856,18 +956,38 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
             <input type="search" className="rc-search-input" placeholder="Search name, code, role…"
               value={search} onChange={e => setSearch(e.target.value)} aria-label="Search" />
           </div>
+          <select className="rc-select" value={roleFilter} onChange={e => setRoleFilter(e.target.value)} aria-label="Filter by role">
+            <option value="all">All Roles</option>
+            {roleOptions.map(role => (
+              <option key={role.id} value={role.id}>{role.name}</option>
+            ))}
+          </select>
           <select className="rc-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)} aria-label="Filter by status">
             <option value="all">All Status</option>
             <option value="inside">Inside</option>
             <option value="outside">Outside</option>
             <option value="inactive">Not In Today</option>
           </select>
-          <select className="rc-select" value={sortOrder} onChange={e => setSortOrder(e.target.value)} aria-label="Sort by">
-            <option value="role">Sort: By Role</option>
-            <option value="name">Sort: Name</option>
-            <option value="newest">Sort: Newest Entry</option>
-            <option value="oldest">Sort: Oldest Entry</option>
+          <select className="rc-select" value={payFreqFilter} onChange={e => setPayFreqFilter(e.target.value)} aria-label="Filter by pay frequency">
+            <option value="all">All Pay Frequencies</option>
+            {PAY_FREQUENCY_FILTER_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
+          {selectionColumns.map(label => (
+            <select
+              key={`sel-filter-${label}`}
+              className="rc-select"
+              value={selectionFilters[label] || 'all'}
+              onChange={e => setSelectionFilters(prev => ({ ...prev, [label]: e.target.value }))}
+              aria-label={`Filter by ${label}`}
+            >
+              <option value="all">All · {label}</option>
+              {selectionValueOptions(allPeople, label).map(val => (
+                <option key={val} value={val}>{val}</option>
+              ))}
+            </select>
+          ))}
         </div>
         <div className="rc-filters-bar__right">
           <span className="rc-filter-pill">
@@ -895,7 +1015,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-          title={search || filterStatus !== 'all' ? 'No matching people' : 'No attendance today'}
+          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || Object.values(selectionFilters).some(v => v && v !== 'all') ? 'No matching people' : 'No attendance today'}
           desc={search ? 'Try adjusting your search or filters.' : 'No gate activity recorded today yet.'}
         />
       ) : (
@@ -903,14 +1023,18 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
           <table className="rc-table">
             <thead>
               <tr>
-                <th>Person</th>
-                <th>Role</th>
-                <th>Code</th>
-                <th>Entry Time</th>
-                <th>Exit Time</th>
+                <SortHeader label="Person" columnKey="name" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <SortHeader label="Role" columnKey="role" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                {selectionColumns.map(label => (
+                  <SortHeader key={`sel-head-${label}`} label={label} columnKey={`sel:${label}`} activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                ))}
+                <SortHeader label="Pay Frequency" columnKey="payFreq" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <SortHeader label="Code" columnKey="code" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <SortHeader label="Entry Time" columnKey="entry" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <SortHeader label="Exit Time" columnKey="exit" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
                 <th>Duration</th>
-                <th>Status</th>
-                <th>Shift</th>
+                <SortHeader label="Status" columnKey="status" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <SortHeader label="Shift" columnKey="shift" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
                 <th aria-label="Actions"></th>
               </tr>
             </thead>
@@ -931,6 +1055,10 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
                     </div>
                   </td>
                   <td><span className="rc-table__muted">{person.roleName || '—'}</span></td>
+                  {selectionColumns.map(label => (
+                    <td key={`sel-${person.registrationId}-${label}`} className="rc-table__muted">{selectionValueFor(person, label)}</td>
+                  ))}
+                  <td className="rc-table__muted">{person.payFrequencyLabel || '—'}</td>
                   <td><code className="rc-table__code">{person.registrationCode}</code></td>
                   <td className="rc-table__time">{formatTime(person.gateEntryAt)}</td>
                   <td className="rc-table__time">{person.gateExitAt ? formatTime(person.gateExitAt) : person.divisionInside ? <span className="rc-badge-live">Active</span> : '—'}</td>
@@ -1306,7 +1434,7 @@ function AttendanceDayDialog({ employee, day, onClose }) {
   );
 }
 
-function AttendanceAbstractTable({ employees, onViewPerson }) {
+function AttendanceAbstractTable({ employees, onViewPerson, selectionColumns = [] }) {
   return (
     <div className="rc-table-wrap">
       <table className="rc-table rc-att-abstract-table">
@@ -1317,6 +1445,9 @@ function AttendanceAbstractTable({ employees, onViewPerson }) {
             <th>Role</th>
             <th>ID</th>
             <th>Phone</th>
+            {selectionColumns.map(label => (
+              <th key={`abs-sel-head-${label}`}>{label}</th>
+            ))}
             <th>Total Days</th>
             <th>Present Days</th>
             <th>Partial Days</th>
@@ -1344,6 +1475,9 @@ function AttendanceAbstractTable({ employees, onViewPerson }) {
               <td><span className="rc-table__muted">{emp.roleName || '—'}</span></td>
               <td><code className="rc-table__code">{emp.registrationCode}</code></td>
               <td className="rc-table__muted">{emp.displayPhone || '—'}</td>
+              {selectionColumns.map(label => (
+                <td key={`abs-sel-${emp.registrationId}-${label}`} className="rc-table__muted">{selectionValueFor(emp, label)}</td>
+              ))}
               <td className="rc-att-abstract-table__num">{emp.summary.totalDays}</td>
               <td className="rc-att-abstract-table__num rc-att-abstract-table__num--present">{emp.summary.present}</td>
               <td className="rc-att-abstract-table__num">{emp.summary.halfDay ?? 0}</td>
@@ -1382,6 +1516,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     dateFrom: '',
     dateTo: '',
     roleId: '',
+    payFrequency: '',
   });
 
   useEffect(() => {
@@ -1488,7 +1623,11 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     }
   };
 
-  const employees = data?.employees || [];
+  const allEmployees = data?.employees || [];
+  const selectionColumns = collectSelectionColumns(allEmployees);
+  const employees = filters.payFrequency
+    ? allEmployees.filter((emp) => emp.payFrequency === filters.payFrequency)
+    : allEmployees;
   const dates = data?.dates || [];
 
   const handleViewPerson = useCallback((registrationId) => {
@@ -1584,6 +1723,16 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
             </select>
           </div>
 
+          <div className="form-group rc-filter-inline__item">
+            <label>Pay Frequency</label>
+            <select value={filters.payFrequency} onChange={e => setFilters(f => ({ ...f, payFrequency: e.target.value }))} disabled={busy}>
+              <option value="">All Pay Frequencies</option>
+              {PAY_FREQUENCY_FILTER_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="form-group rc-filter-inline__item rc-filter-inline__item--action">
             <label>&nbsp;</label>
             <button
@@ -1628,7 +1777,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
               </span>
             )}
           </div>
-          <AttendanceAbstractTable employees={employees} onViewPerson={handleViewPerson} />
+          <AttendanceAbstractTable employees={employees} onViewPerson={handleViewPerson} selectionColumns={selectionColumns} />
         </div>
       ) : (
         <div className="rc-att-grid-wrap">
@@ -1677,6 +1826,15 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
                           {emp.registeredAt && (
                             <span className="rc-att-grid__person-joined">Joined {formatDate(emp.registeredAt)}</span>
                           )}
+                          {selectionColumns.map(label => {
+                            const val = selectionValueFor(emp, label);
+                            if (val === '—') return null;
+                            return (
+                              <span key={`grid-sel-${emp.registrationId}-${label}`} className="rc-att-grid__person-joined">
+                                {label}: {val}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                     </td>

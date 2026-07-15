@@ -388,6 +388,30 @@
   white-space: nowrap;
 }
 
+.rc-th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.rc-th-sortable:hover { color: var(--text-primary); }
+
+.rc-th-sortable__arrow {
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 0.72em;
+  line-height: 1;
+  color: #9ca3af;
+  opacity: 0.5;
+  transition: opacity var(--transition), color var(--transition);
+}
+
+.rc-th-sortable:hover .rc-th-sortable__arrow { opacity: 0.8; }
+
+.rc-th-sortable--active .rc-th-sortable__arrow {
+  opacity: 1;
+  color: var(--color-primary, #2563eb);
+}
+
 .rc-table td {
   padding: 11px 14px;
   vertical-align: middle;

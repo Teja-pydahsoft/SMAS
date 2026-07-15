@@ -61,6 +61,7 @@ export function buildDisplayInfo(formData, fields = []) {
   const sorted = [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const details = [];
   const mediaDetails = [];
+  const selections = [];
   let displayName = null;
   let displayPhone = null;
 
@@ -84,6 +85,10 @@ export function buildDisplayInfo(formData, fields = []) {
     const text = String(value);
     details.push({ label: field.label, value: text });
 
+    if (field.type === 'select') {
+      selections.push({ fieldId: field.fieldId, label: field.label, value: text });
+    }
+
     const label = field.label.toLowerCase();
     if (!displayName && (label.includes('name') || field.type === 'text')) {
       displayName = text;
@@ -103,7 +108,7 @@ export function buildDisplayInfo(formData, fields = []) {
 
   const hasMediaFields = fields.some((f) => f.type === 'media');
 
-  return { displayName, displayPhone, details, mediaDetails, hasMediaFields };
+  return { displayName, displayPhone, details, mediaDetails, selections, hasMediaFields };
 }
 
 export function photoUrlFromPath(photoPath) {

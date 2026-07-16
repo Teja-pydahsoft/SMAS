@@ -165,18 +165,87 @@ function applyGender(registration, role, gender) {
   return null;
 }
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Match registration code or any string value in formData (name, phone, etc.). */
+function buildListFilter(query = {}) {
+  const filter = {};
+  if (query.roleId) filter.roleId = query.roleId;
+  if (query.status) filter.status = query.status;
+
+  const search = String(query.search || '').trim();
+  if (!search) return filter;
+
+  const pattern = escapeRegex(search);
+  const searchClause = {
+    $or: [
+      { registrationCode: { $regex: pattern, $options: 'i' } },
+      {
+        $expr: {
+          $gt: [
+            {
+              $size: {
+                $filter: {
+                  input: { $objectToArray: { $ifNull: ['$formData', {}] } },
+                  as: 'entry',
+                  cond: {
+                    $and: [
+                      { $eq: [{ $type: '$$entry.v' }, 'string'] },
+                      {
+                        $regexMatch: {
+                          input: '$$entry.v',
+                          regex: pattern,
+                          options: 'i',
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            0,
+          ],
+        },
+      },
+    ],
+  };
+
+  return Object.keys(filter).length ? { $and: [filter, searchClause] } : searchClause;
+}
+
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const filter = {};
-    if (req.query.roleId) filter.roleId = req.query.roleId;
-    if (req.query.status) filter.status = req.query.status;
+    const filter = buildListFilter(req.query);
 
-    const registrations = await Registration.find(filter)
+    const wantsPagination = req.query.page != null || req.query.limit != null;
+    const page = Math.max(1, parseInt(req.query.page || '1', 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '25', 10) || 25));
+    const skip = (page - 1) * limit;
+
+    const query = Registration.find(filter)
       .select('-faceEmbedding')
       .populate('roleId', 'name slug payFrequencies customPayDaysOptions')
       .populate('formId', 'fields')
       .sort({ createdAt: -1 });
+
+    if (wantsPagination) {
+      query.skip(skip).limit(limit);
+    }
+
+    const [registrations, total, verifiedCount] = await Promise.all([
+      query,
+      wantsPagination ? Registration.countDocuments(filter) : Promise.resolve(null),
+      wantsPagination
+        ? Registration.countDocuments(
+            Object.keys(filter).length
+              ? { $and: [filter, { status: REGISTRATION_STATUS.VERIFIED }] }
+              : { status: REGISTRATION_STATUS.VERIFIED }
+          )
+        : Promise.resolve(null),
+    ]);
 
     const verifiedIds = registrations
       .filter((r) => r.status === REGISTRATION_STATUS.VERIFIED)
@@ -192,18 +261,48 @@ router.get(
       activePasses.map((p) => [p.registrationId.toString(), p.passCode])
     );
 
-    res.json(
-      registrations.map((reg) => {
-        const obj = reg.toObject();
-        const enriched = enrichRegistrationResponse(obj, obj.formId?.fields || []);
-        const regId = reg._id.toString();
-        return {
-          ...enriched,
-          hasRegistrationPass: passByRegistration.has(regId),
-          passCode: passByRegistration.get(regId) || null,
-        };
-      })
-    );
+    const items = registrations.map((reg) => {
+      const obj = reg.toObject();
+      const enriched = enrichRegistrationResponse(obj, obj.formId?.fields || []);
+      const regId = reg._id.toString();
+      return {
+        ...enriched,
+        hasRegistrationPass: passByRegistration.has(regId),
+        passCode: passByRegistration.get(regId) || null,
+      };
+    });
+
+    // Backward compatible: callers without page/limit still get a plain array
+    if (!wantsPagination) {
+      return res.json(items);
+    }
+
+    let withPassCount = 0;
+    if (verifiedCount > 0) {
+      const verifiedFilter = Object.keys(filter).length
+        ? { $and: [filter, { status: REGISTRATION_STATUS.VERIFIED }] }
+        : { status: REGISTRATION_STATUS.VERIFIED };
+      const verifiedIdList = await Registration.distinct('_id', verifiedFilter);
+      withPassCount = await Pass.countDocuments({
+        registrationId: { $in: verifiedIdList },
+        passType: PASS_TYPES.REGISTRATION,
+        isActive: true,
+      });
+    }
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    res.json({
+      items,
+      total,
+      page,
+      limit,
+      totalPages,
+      hasMore: page < totalPages,
+      summary: {
+        verified: verifiedCount,
+        withPass: withPassCount,
+      },
+    });
   })
 );
 

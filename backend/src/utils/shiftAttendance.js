@@ -1,3 +1,5 @@
+import { MIN_ATTENDANCE_HOURS } from '../constants/index.js';
+
 /**
  * Compute on-site activity window (login → logout) and hours for a day.
  * Prefer gate entry → gate exit; if still inside today, use now as the end.
@@ -184,7 +186,8 @@ export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, ch
   if (!hasHalf && !hasFull) return null;
 
   const hours = Number(activityHours) || 0;
-  if (hours <= 0) {
+  // Less than 1 hour on site counts as Absent (pay 0)
+  if (hours < MIN_ATTENDANCE_HOURS) {
     return {
       status: 'A',
       code: 'A',

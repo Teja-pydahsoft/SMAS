@@ -206,8 +206,13 @@ export const api = {
 
   registrations: {
     list: (params = {}) => {
-      const qs = new URLSearchParams(params).toString();
-      return request(`/registrations${qs ? `?${qs}` : ''}`);
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        qs.set(key, String(value));
+      });
+      const query = qs.toString();
+      return request(`/registrations${query ? `?${query}` : ''}`);
     },
     get: (id) => request(`/registrations/${id}`),
     create: (data) => request('/registrations', { method: 'POST', body: JSON.stringify(data) }),

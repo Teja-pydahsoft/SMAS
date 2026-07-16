@@ -1433,8 +1433,8 @@ function AttendanceDayDialog({ employee, day, onClose }) {
             )}
             {day.status === 'A' && activityHoursLabel && (
               <p className="rc-att-day-detail__empty" style={{ marginTop: '0.75rem' }}>
-                Activity was {activityHoursLabel}, which is below the half-day minimum
-                {day.halfDayMinHours != null ? ` (${day.halfDayMinHours}h)` : ''}.
+                Activity was {activityHoursLabel}, which is below the required minimum of 1 hour
+                {day.halfDayMinHours != null ? ` (half-day minimum ${day.halfDayMinHours}h)` : ''}.
               </p>
             )}
             {day.status === 'PT' && activityHoursLabel && (

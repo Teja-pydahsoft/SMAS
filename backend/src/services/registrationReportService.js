@@ -4,7 +4,7 @@ import Pass from '../models/Pass.js';
 import Role from '../models/Role.js';
 import Shift from '../models/Shift.js';
 import mongoose from 'mongoose';
-import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS } from '../constants/index.js';
+import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS, MIN_ATTENDANCE_HOURS } from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import {
   getActiveDivisionSession,
@@ -210,7 +210,20 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
     };
   }
 
-  // No shift thresholds configured — any activity counts as full present
+  // No shift thresholds configured — still require at least 1 hour on site
+  if (activityHours < MIN_ATTENDANCE_HOURS) {
+    return {
+      status: 'A',
+      code: 'A',
+      label: 'Absent',
+      checkInTime: formatTimeFromDate(timings.checkIn),
+      payFactor: 0,
+      halfSide: null,
+      ...timings,
+      ...shiftMeta,
+    };
+  }
+
   return {
     status: 'P',
     code: 'P',

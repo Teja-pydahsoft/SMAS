@@ -6,9 +6,54 @@ import { resolvePhotoUrl } from '@/lib/photoUrl';
 
 /** @typedef {'a4-half' | 'a5-landscape'} PassPrintSize */
 
+const PRINT_BORDER_CSS = `
+#pass-print-root { padding: 5mm !important; box-sizing: border-box !important; }
+#pass-print-root .pass-card {
+  border: 2.5pt solid #000 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+#pass-print-root .pass-card__fields {
+  border: 1.5pt solid #000 !important;
+  box-sizing: border-box !important;
+}
+#pass-print-root .pass-card__details-col {
+  border-right: 1.25pt solid #000 !important;
+}
+#pass-print-root .pass-card__field {
+  border-bottom: 0.75pt solid #444 !important;
+}
+#pass-print-root .pass-card__field-label {
+  border-right: 0.75pt solid #666 !important;
+}
+#pass-print-root .pass-card__header {
+  border-bottom: 1pt solid #000 !important;
+}
+#pass-print-root .pass-card__footer {
+  border-top: 1pt solid #000 !important;
+}
+#pass-print-root .pass-card__photo,
+#pass-print-root .pass-card__photo--placeholder,
+#pass-print-root .pass-card__qr,
+#pass-print-root .pass-card__qr--placeholder {
+  border: 1pt solid #000 !important;
+}`;
+
 const PRINT_PAGE_STYLES = {
-  'a4-half': '@page { size: A4 portrait; margin: 0; }',
-  'a5-landscape': '@page { size: A5 landscape; margin: 0; }',
+  'a4-half': `@page { size: A4 portrait; margin: 0; }
+@media print { ${PRINT_BORDER_CSS} }`,
+  'a5-landscape': `@page { size: A5 landscape; margin: 0; }
+@media print {
+  ${PRINT_BORDER_CSS}
+  #pass-print-root { padding: 4mm !important; }
+  #pass-print-root .pass-card {
+    height: auto !important;
+    max-height: calc(148mm - 8mm) !important;
+  }
+}`,
 };
 
 const PRINT_SIZE_CLASS = {
@@ -56,6 +101,35 @@ function runPassPrint(cardEl, printSize) {
 
   const clone = cardEl.cloneNode(true);
   clone.querySelectorAll('.no-print, .pass-card__print-controls').forEach((el) => el.remove());
+
+  // Inline print borders so the frame is visible even if CSS is clipped/overridden
+  clone.style.border = '2.5pt solid #000';
+  clone.style.boxSizing = 'border-box';
+  clone.style.borderRadius = '0';
+  clone.style.boxShadow = 'none';
+  clone.style.outline = 'none';
+
+  const fields = clone.querySelector('.pass-card__fields');
+  if (fields) {
+    fields.style.border = '1.5pt solid #000';
+    fields.style.boxSizing = 'border-box';
+  }
+
+  const detailsCol = clone.querySelector('.pass-card__details-col');
+  if (detailsCol) {
+    detailsCol.style.borderRight = '1.25pt solid #000';
+  }
+
+  clone.querySelectorAll('.pass-card__field').forEach((row) => {
+    row.style.borderBottom = '0.75pt solid #444';
+  });
+  clone.querySelectorAll('.pass-card__field-label').forEach((label) => {
+    label.style.borderRight = '0.75pt solid #666';
+  });
+  clone.querySelectorAll('.pass-card__photo, .pass-card__qr, .pass-card__photo--placeholder, .pass-card__qr--placeholder').forEach((el) => {
+    el.style.border = '1pt solid #000';
+  });
+
   root.appendChild(clone);
   document.body.appendChild(root);
 

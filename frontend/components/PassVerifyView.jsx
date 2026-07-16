@@ -374,7 +374,9 @@ export default function PassVerifyView({
     <div className="pass-verify">
       <div className="pass-verify-header">
         <div className="pass-verify-brand">
-          <span className="pass-brand-icon">S</span>
+          <span className="pass-brand-icon pass-brand-icon--logo" aria-hidden="true">
+            <img src="/icons/icon-192.png" alt="" />
+          </span>
           <div>
             <p className="pass-brand-name">SAMS</p>
             <p className="pass-brand-sub">{subtitle || title}</p>

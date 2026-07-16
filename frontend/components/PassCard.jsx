@@ -186,7 +186,9 @@ export default function PassCard({ pass, onPrint }) {
 
       <header className="pass-card__header">
         <div className="pass-card__brand">
-          <span className="pass-brand-icon" aria-hidden="true">S</span>
+          <span className="pass-brand-icon pass-brand-icon--logo" aria-hidden="true">
+            <img src="/icons/icon-192.png" alt="" />
+          </span>
           <div className="pass-card__brand-text">
             <p className="pass-brand-name">SAMS</p>
             <p className="pass-brand-sub">Smart Access Management System</p>

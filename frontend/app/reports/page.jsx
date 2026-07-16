@@ -6,6 +6,7 @@ import { api } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
 import { formatCurrency, PAY_FREQUENCY_LABELS, PAY_FREQUENCIES } from '@/lib/payFrequency';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
+import PassCard from '@/components/PassCard';
 
 /* ═══════════════════════════════════════════════════════════════
    UTILITIES
@@ -527,12 +528,19 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
   const hasDateRange = Boolean(dateFrom && dateTo);
   const [activeInnerTab, setActiveInnerTab] = useState(hasDateRange ? 'history' : 'today');
   const [exporting, setExporting] = useState('');
+  const [dayPass, setDayPass] = useState(null);
+  const [dayPassLoading, setDayPassLoading] = useState(false);
+  const [dayPassError, setDayPassError] = useState('');
+  const [showDayPass, setShowDayPass] = useState(false);
 
   useEffect(() => {
     if (!registrationId) return;
     setLoading(true);
     setError('');
     setActiveInnerTab(hasDateRange ? 'history' : 'today');
+    setDayPass(null);
+    setDayPassError('');
+    setShowDayPass(false);
     const params = {};
     if (dateFrom) params.dateFrom = dateFrom;
     if (dateTo) params.dateTo = dateTo;
@@ -540,6 +548,29 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
       .then(d => { setData(d); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, [registrationId, dateFrom, dateTo, hasDateRange]);
+
+  // Prefetch today's day pass when opened from Daily attendance (no date range)
+  useEffect(() => {
+    if (!registrationId || hasDateRange) return undefined;
+    let cancelled = false;
+    setDayPassLoading(true);
+    setDayPassError('');
+    api.passes.getTodayDayPass(registrationId)
+      .then((pass) => {
+        if (!cancelled) setDayPass(pass);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setDayPass(null);
+          // 404 = no pass yet — not a hard error for the dialog
+          if (e?.status !== 404) setDayPassError(e.message || 'Failed to load day pass');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDayPassLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [registrationId, hasDateRange]);
 
   if (!registrationId) return null;
 
@@ -550,10 +581,17 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
   const session = data?.sessionState || {};
   const rangeSummary = data?.attendanceRange?.summary;
   const paymentSummary = data?.attendanceRange?.payment;
-  const periodDays = (data?.attendanceRange?.days || []).filter(
-    (day) => day.status === 'P' || day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT'
-  );
   const entriesByDateMap = Object.fromEntries(entriesByDate.map((g) => [g.date, g.entries]));
+  // Include Present/Partial days AND any day that has scans / check-in activity
+  // (previously Absent-with-scans were hidden → false "No activity in selected period").
+  const periodDays = (data?.attendanceRange?.days || []).filter((day) => {
+    if (day.status === 'blank') return false;
+    if (day.status === 'P' || day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT') {
+      return true;
+    }
+    const scanCount = entriesByDateMap[day.date]?.length || 0;
+    return Boolean(day.checkIn || day.lastActivityAt || day.checkInTime || scanCount > 0);
+  });
   const rangeLabel = hasDateRange
     ? `${formatDate(dateFrom)} — ${formatDate(dateTo)}`
     : null;
@@ -579,6 +617,26 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
       await downloadPersonReportPdf(data, exportOptions);
     } finally {
       setExporting('');
+    }
+  };
+
+  const handleOpenDayPass = async () => {
+    if (dayPass) {
+      setShowDayPass(true);
+      return;
+    }
+    setDayPassLoading(true);
+    setDayPassError('');
+    try {
+      const pass = await api.passes.getTodayDayPass(registrationId);
+      setDayPass(pass);
+      setShowDayPass(true);
+    } catch (e) {
+      setDayPassError(e?.status === 404
+        ? 'No day pass for today yet. It appears after a successful gate entry.'
+        : (e.message || 'Failed to load day pass'));
+    } finally {
+      setDayPassLoading(false);
     }
   };
 
@@ -752,16 +810,32 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
               {activeInnerTab === 'history' && (
                 <div>
                   {hasDateRange ? (
-                    periodDays.length === 0 ? (
+                    periodDays.length === 0 && entriesByDate.length === 0 ? (
                       <EmptyState icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>}
                         title="No activity in selected period"
                         desc={`No check-in or check-out activity between ${formatDate(dateFrom)} and ${formatDate(dateTo)}.`} />
-                    ) : (
+                    ) : periodDays.length > 0 ? (
                       <PeriodDaySessionsTable
                         periodDays={periodDays}
                         entriesByDateMap={entriesByDateMap}
                         payAmount={paymentSummary?.payAmount ?? details.payAmount}
                       />
+                    ) : (
+                      <div className="rc-history-list">
+                        {entriesByDate.map(group => (
+                          <div key={group.date} className="rc-history-day">
+                            <div className="rc-history-day__header">
+                              <span className="rc-history-day__date">{formatDate(group.date)}</span>
+                              <span className="badge badge-info">{group.entries.length} events</span>
+                            </div>
+                            <div className="rc-timeline" style={{ paddingLeft: 0 }}>
+                              {group.entries.map((e, i) => (
+                                <TimelineEvent key={e.id || i} entry={e} isLast={i === group.entries.length - 1} />
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )
                   ) : entriesByDate.length === 0 ? (
                     <EmptyState icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>}
@@ -818,9 +892,28 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
           )}
         </div>
 
+        {dayPassError && !showDayPass && (
+          <p className="error-msg" style={{ margin: '0 1.5rem' }}>{dayPassError}</p>
+        )}
+
         <div className="rc-dialog__footer">
           {!loading && !error && data && (
             <>
+              {!hasDateRange && (
+                <button
+                  type="button"
+                  className="btn-primary rc-download-btn"
+                  onClick={handleOpenDayPass}
+                  disabled={dayPassLoading}
+                  title={dayPass ? "View today's day pass" : 'Day pass appears after a successful gate entry'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <path d="M7 8h10M7 12h6" />
+                  </svg>
+                  <span>{dayPassLoading ? 'Loading…' : 'Today Day Pass'}</span>
+                </button>
+              )}
               <button
                 type="button"
                 className="btn-secondary rc-download-btn"
@@ -844,6 +937,41 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
           <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>
+
+      {showDayPass && dayPass && (
+        <div
+          className="rc-dialog-overlay rc-day-pass-overlay"
+          onClick={() => setShowDayPass(false)}
+          role="dialog"
+          aria-modal
+          aria-label="Today Day Pass"
+        >
+          <div className="rc-day-pass-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="rc-day-pass-modal__header">
+              <div>
+                <h3 className="rc-day-pass-modal__title">Today Day Pass</h3>
+                <p className="rc-day-pass-modal__sub">
+                  {details.holderName || '—'}
+                  {details.registrationCode ? ` · ${details.registrationCode}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rc-dialog__close"
+                onClick={() => setShowDayPass(false)}
+                aria-label="Close day pass"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div className="rc-day-pass-modal__body">
+              <PassCard pass={dayPass} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1529,6 +1657,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [viewMode, setViewMode] = useState('abstract');
   const [selectedDay, setSelectedDay] = useState(null);
   const [printing, setPrinting] = useState(false);
+  const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({
     month: currentMonthValue(),
     week: currentIsoWeekValue(),
@@ -1554,23 +1683,29 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
 
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       const { dateFrom, dateTo } = resolveDateRange();
       if (!dateFrom || !dateTo) {
-        setData(null);
-        setLoading(false);
+        if (!cancelled) {
+          setData(null);
+          setLoading(false);
+        }
         return;
       }
       if (dateFrom > dateTo) {
-        setError('From date cannot be after To date.');
-        setData(null);
-        setLoading(false);
+        if (!cancelled) {
+          setError('From date cannot be after To date.');
+          setLoading(false);
+        }
         return;
       }
 
-      setLoading(true);
-      setError('');
-      setSuccess('');
+      if (!cancelled) {
+        setLoading(true);
+        setError('');
+        setSuccess('');
+      }
 
       const params = { dateFrom, dateTo, limit: 500 };
       if (filters.roleId) params.roleId = filters.roleId;
@@ -1581,8 +1716,8 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
         if (!cancelled) setData(result);
       } catch (e) {
         if (!cancelled) {
-          setError(e.message);
-          setData(null);
+          // Keep previous rows on transient proxy/backend blips (ECONNRESET during restart).
+          setError(e.message || 'Failed to load attendance history');
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -1590,7 +1725,35 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     })();
 
     return () => { cancelled = true; };
-  }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo, filters.roleId, filters.divisionId, resolveDateRange]);
+  }, [resolveDateRange, filters.roleId, filters.divisionId]);
+
+  const loadHistory = useCallback(async ({ silent = false } = {}) => {
+    const { dateFrom, dateTo } = resolveDateRange();
+    if (!dateFrom || !dateTo) return null;
+    if (dateFrom > dateTo) return null;
+
+    if (!silent) {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+    }
+
+    const params = { dateFrom, dateTo, limit: 500 };
+    if (filters.roleId) params.roleId = filters.roleId;
+    if (filters.divisionId) params.divisionId = filters.divisionId;
+
+    try {
+      const result = await api.reports.attendanceHistory(params);
+      setData(result);
+      if (silent) setError('');
+      return result;
+    } catch (e) {
+      setError(e.message || 'Failed to load attendance history');
+      return null;
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [resolveDateRange, filters.roleId, filters.divisionId]);
 
   const handleRecalculate = useCallback(async () => {
     const { dateFrom, dateTo } = resolveDateRange();
@@ -1632,10 +1795,12 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
       }
     } catch (e) {
       setError(e.message || 'Failed to recalculate attendance');
+      // If recalculate died mid-proxy (backend restart), reload the last saved grid.
+      await loadHistory({ silent: true });
     } finally {
       setRecalculating(false);
     }
-  }, [resolveDateRange, filters.roleId, filters.divisionId]);
+  }, [resolveDateRange, filters.roleId, filters.divisionId, loadHistory]);
 
   const handleRangeModeChange = (mode) => {
     setRangeMode(mode);
@@ -1650,9 +1815,17 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
 
   const allEmployees = data?.employees || [];
   const selectionColumns = collectSelectionColumns(allEmployees);
-  const employees = filters.payFrequency
-    ? allEmployees.filter((emp) => emp.payFrequency === filters.payFrequency)
-    : allEmployees;
+  const searchQ = search.trim().toLowerCase();
+  const employees = allEmployees.filter((emp) => {
+    if (filters.payFrequency && emp.payFrequency !== filters.payFrequency) return false;
+    if (!searchQ) return true;
+    return (
+      (emp.displayName || '').toLowerCase().includes(searchQ) ||
+      (emp.registrationCode || '').toLowerCase().includes(searchQ) ||
+      (emp.roleName || '').toLowerCase().includes(searchQ) ||
+      (emp.displayPhone || '').toLowerCase().includes(searchQ)
+    );
+  });
   const dates = data?.dates || [];
 
   const handleViewPerson = useCallback((registrationId) => {
@@ -1738,6 +1911,27 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
             </select>
           </div>
 
+          <div className="form-group rc-filter-inline__item rc-filter-inline__item--search">
+            <label htmlFor="att-history-search">Search</label>
+            <div className="rc-search-wrap">
+              <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                id="att-history-search"
+                type="search"
+                className="rc-search-input"
+                placeholder="Search name, code, role…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                disabled={recalculating || printing}
+                aria-label="Search attendance history"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
           <div className="form-group rc-filter-inline__item">
             <label>Role</label>
             <select value={filters.roleId} onChange={e => setFilters(f => ({ ...f, roleId: e.target.value }))} disabled={busy}>
@@ -1792,7 +1986,19 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
         </div>
       </div>
 
-      {error && <p className="error-msg" style={{ marginBottom: '1rem' }}>{error}</p>}
+      {error && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+          <p className="error-msg" style={{ margin: 0 }}>{error}</p>
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={() => loadHistory()}
+            disabled={busy}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {success && <p className="success-msg" style={{ marginBottom: '1rem' }}>{success}</p>}
 
       {loading && !data ? (
@@ -1802,8 +2008,13 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
       ) : employees.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>}
-          title="No employees found"
-          desc="No registered people match the selected filters." />
+          title={error && !data ? 'Could not load attendance' : search.trim() ? 'No matching people' : 'No employees found'}
+          desc={error && !data
+            ? `${error} Click Retry above after the backend is ready.`
+            : search.trim()
+              ? `No registered people match “${search.trim()}” for the selected filters.`
+              : 'No registered people match the selected filters.'}
+        />
       ) : viewMode === 'abstract' ? (
         <div className="rc-att-abstract-wrap">
           <div className="rc-table-meta rc-att-grid-meta">

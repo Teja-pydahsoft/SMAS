@@ -7,6 +7,7 @@ import {
   getOrCreateRegistrationPass,
   syncAllRegistrationPasses,
   getDayPassByGateLog,
+  getTodayDayPass,
   getPassByCode,
   formatPassResponse,
 } from '../services/passService.js';
@@ -47,6 +48,15 @@ router.post(
   asyncHandler(async (req, res) => {
     const pass = await createRegistrationPass(req.params.registrationId);
     res.status(201).json(pass);
+  })
+);
+
+router.get(
+  '/day/registration/:registrationId',
+  asyncHandler(async (req, res) => {
+    const pass = await getTodayDayPass(req.params.registrationId);
+    if (!pass) return res.status(404).json({ error: 'No day pass found for today' });
+    res.json(pass);
   })
 );
 

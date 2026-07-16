@@ -6,6 +6,7 @@ import GateLog from '../models/GateLog.js';
 import Gate from '../models/Gate.js';
 import Department from '../models/Department.js';
 import Pass from '../models/Pass.js';
+import Shift from '../models/Shift.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { REGISTRATION_STATUS, GATE_EVENT_TYPES, GATE_TYPES, SCAN_TYPES } from '../constants/index.js';
 import {
@@ -30,7 +31,9 @@ import {
   resolveAutoDepartmentEventType,
   isOppositeGateEvent,
   GATE_DENIAL_REASONS,
+  todayDateString,
 } from '../services/attendanceService.js';
+import { resolveDayPassValidUntil } from '../utils/istTime.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
 import { createMulter } from '../utils/storage.js';
@@ -162,22 +165,51 @@ router.patch(
     const log = await GateLog.findById(req.params.id);
     if (!log) return res.status(404).json({ error: 'Gate log not found' });
 
-    log.metadata = { ...(log.metadata || {}), shiftId, shiftName };
+    const shift = await Shift.findById(shiftId).select('name startTime endTime');
+    if (!shift) return res.status(404).json({ error: 'Shift not found' });
+
+    const resolvedShiftName = shiftName || shift.name || '';
+    const shiftStartTime = shift.startTime || '';
+    const shiftEndTime = shift.endTime || '';
+
+    log.metadata = {
+      ...(log.metadata || {}),
+      shiftId,
+      shiftName: resolvedShiftName,
+      shiftStartTime,
+      shiftEndTime,
+    };
     log.markModified('metadata');
     await log.save();
 
-    // Also patch the day pass qrPayload so shift is visible on the pass
+    // Also patch the day pass: shift + Expected Out = shift end (IST)
+    const workDate = todayDateString(log.createdAt || new Date());
     const dayPass = log.registrationId
       ? await Pass.findOne({
           registrationId: log.registrationId,
           passType: 'day_pass',
           isActive: true,
-          validDate: log.createdAt.toISOString().slice(0, 10),
+          validDate: workDate,
         })
       : null;
 
     if (dayPass) {
-      dayPass.qrPayload = { ...(dayPass.qrPayload || {}), shiftId, shiftName };
+      const validUntil = resolveDayPassValidUntil({
+        validDate: dayPass.validDate || workDate,
+        startTime: shiftStartTime,
+        endTime: shiftEndTime,
+        fallbackDate: log.createdAt || new Date(),
+      });
+
+      dayPass.validUntil = validUntil;
+      dayPass.qrPayload = {
+        ...(dayPass.qrPayload || {}),
+        shiftId,
+        shiftName: resolvedShiftName,
+        shiftStartTime,
+        shiftEndTime,
+        validUntil: validUntil.toISOString(),
+      };
       dayPass.markModified('qrPayload');
       await dayPass.save();
     }

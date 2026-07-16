@@ -3,8 +3,14 @@ import Pass from '../models/Pass.js';
 import Registration from '../models/Registration.js';
 import RegistrationForm from '../models/RegistrationForm.js';
 import Role from '../models/Role.js';
+import Shift from '../models/Shift.js';
 import { PASS_TYPES } from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
+import { formatPayFrequencyLabel } from '../utils/paymentCalculation.js';
+import {
+  todayDateStringIst,
+  resolveDayPassValidUntil,
+} from '../utils/istTime.js';
 
 function generatePassCode(prefix) {
   const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -12,13 +18,36 @@ function generatePassCode(prefix) {
 }
 
 function todayDateString(date = new Date()) {
-  return date.toISOString().slice(0, 10);
+  return todayDateStringIst(date);
 }
 
-function endOfDay(date = new Date()) {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
+const PAY_AMOUNT_DETAIL_LABELS = new Set([
+  'pay amount',
+  'amount',
+  'per day amount',
+  'pay amount (per day)',
+  'salary',
+  'wage',
+  'wages',
+]);
+
+/** Strip pay amounts from pass detail rows (registration + day passes). */
+function sanitizePassDetails(details = []) {
+  return (details || [])
+    .filter((d) => {
+      const label = String(d?.label || '').trim().toLowerCase();
+      return !PAY_AMOUNT_DETAIL_LABELS.has(label);
+    })
+    .map((d) => {
+      const label = String(d?.label || '').trim().toLowerCase();
+      if (label !== 'pay frequency') return d;
+      // "Weekly · ₹300" → "Weekly"
+      const value = String(d?.value || '')
+        .replace(/\s*[·•|\-–—]\s*₹[\d,]+(?:\.\d+)?/gi, '')
+        .replace(/\s*₹[\d,]+(?:\.\d+)?/gi, '')
+        .trim();
+      return { ...d, value: value || d.value };
+    });
 }
 
 export function buildPassVerifyUrl(passCode) {
@@ -62,12 +91,52 @@ async function loadRegistrationContext(registrationId) {
 
 export { loadRegistrationContext };
 
+/**
+ * Expected out / expiry for a day pass: shift end in IST when known,
+ * otherwise end of IST work day. Actual checkout keeps stored validUntil.
+ */
+async function resolveDisplayValidUntil(pass) {
+  if (pass.passType !== PASS_TYPES.DAY_PASS) {
+    return pass.validUntil || null;
+  }
+  if (pass.qrPayload?.gateExitAt) {
+    return pass.validUntil || null;
+  }
+
+  let startTime = pass.qrPayload?.shiftStartTime || '';
+  let endTime = pass.qrPayload?.shiftEndTime || '';
+  const shiftId = pass.qrPayload?.shiftId;
+
+  if ((!endTime || !startTime) && shiftId) {
+    try {
+      const shift = await Shift.findById(shiftId).select('startTime endTime').lean();
+      if (shift) {
+        startTime = startTime || shift.startTime || '';
+        endTime = endTime || shift.endTime || '';
+      }
+    } catch {
+      // keep stored validUntil
+    }
+  }
+
+  const validDate = pass.validDate || pass.qrPayload?.validDate || todayDateString();
+  return resolveDayPassValidUntil({
+    validDate,
+    startTime,
+    endTime,
+    fallbackDate: new Date(),
+  });
+}
+
 export async function formatPassResponse(passDoc, qrDataUrl = null) {
   const pass = passDoc.toObject ? passDoc.toObject() : passDoc;
   const qr = qrDataUrl || (pass.passCode ? await buildQrDataUrl(pass.passCode) : null);
+  const validUntil = await resolveDisplayValidUntil(pass);
 
   return {
     ...pass,
+    validUntil,
+    details: sanitizePassDetails(pass.details),
     qrDataUrl: qr,
     passTitle: pass.passType === PASS_TYPES.REGISTRATION ? 'Registration Pass' : 'Day Pass',
   };
@@ -97,15 +166,12 @@ function buildRegistrationSystemDetails(registration, role) {
     extras.push({ label: 'Gender', value: registration.gender });
   }
 
-  // Pay Frequency + Amount
+  // Pay frequency only — never include pay amount on the printed pass
   if (registration.payFrequency) {
-    const freqMap = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
-    let payStr = freqMap[registration.payFrequency] || registration.payFrequency;
-    if (registration.payAmount != null) payStr += ` · ₹${registration.payAmount}`;
-    if (registration.payFrequency === 'custom' && registration.customPayDays) {
-      payStr += ` (every ${registration.customPayDays} days)`;
-    }
-    extras.push({ label: 'Pay Frequency', value: payStr });
+    extras.push({
+      label: 'Pay Frequency',
+      value: formatPayFrequencyLabel(registration.payFrequency, registration.customPayDays),
+    });
   }
 
   // Status (table col 5)
@@ -178,6 +244,7 @@ export async function createDayPass(registrationId, gateLogId) {
   const { registration, role, display } = await loadRegistrationContext(registrationId);
   const now = new Date();
   const validDate = todayDateString(now);
+  const validUntil = resolveDayPassValidUntil({ validDate, fallbackDate: now });
 
   const passCode = generatePassCode('DAY');
   const qrPayload = {
@@ -189,7 +256,7 @@ export async function createDayPass(registrationId, gateLogId) {
     holderName: display.displayName,
     role: role.name,
     validDate,
-    validUntil: endOfDay(now).toISOString(),
+    validUntil: validUntil.toISOString(),
     issuedAt: now.toISOString(),
   };
 
@@ -201,7 +268,7 @@ export async function createDayPass(registrationId, gateLogId) {
     gateLogId,
     validDate,
     validFrom: now,
-    validUntil: endOfDay(now),
+    validUntil,
     holderName: display.displayName,
     holderPhotoUrl: photoUrlFromPath(registration.photoPath),
     roleName: role.name,
@@ -266,6 +333,19 @@ export async function syncAllRegistrationPasses() {
 
 export async function getDayPassByGateLog(gateLogId) {
   const pass = await Pass.findOne({ gateLogId, passType: PASS_TYPES.DAY_PASS });
+  if (!pass) return null;
+  return formatPassResponse(pass);
+}
+
+/** Today's day pass for a registration (prefer active / most recent). */
+export async function getTodayDayPass(registrationId) {
+  const validDate = todayDateString();
+  const pass = await Pass.findOne({
+    registrationId,
+    passType: PASS_TYPES.DAY_PASS,
+    validDate,
+  }).sort({ isActive: -1, createdAt: -1 });
+
   if (!pass) return null;
   return formatPassResponse(pass);
 }

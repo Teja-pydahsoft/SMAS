@@ -3,6 +3,8 @@ import { MIN_ATTENDANCE_HOURS } from '../constants/index.js';
 /**
  * Compute on-site activity window (login → logout) and hours for a day.
  * Prefer gate entry → gate exit; if still inside today, use now as the end.
+ * Past days with check-in but no checkout close at end-of-day so hours
+ * are not zeroed (which was marking those days Absent incorrectly).
  */
 export function computeActivityWindow(dayLogs = [], session = null, date, { now = new Date(), today } = {}) {
   const todayKey = today || new Date().toISOString().slice(0, 10);
@@ -22,8 +24,9 @@ export function computeActivityWindow(dayLogs = [], session = null, date, { now 
   if (start && !end) {
     if (date === todayKey) {
       end = now;
-    } else if (sorted.length) {
-      end = new Date(sorted[sorted.length - 1].createdAt);
+    } else {
+      // Open session on a past day (forgot checkout) — close at end of that day
+      end = new Date(`${date}T23:59:59.999Z`);
     }
   }
 

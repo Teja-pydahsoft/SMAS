@@ -248,6 +248,7 @@ export const api = {
     syncAllRegistrationPasses: () =>
       request('/passes/registration/sync-all', { method: 'POST' }),
     getDayPassByGateLog: (gateLogId) => request(`/passes/day/gate-log/${gateLogId}`),
+    getTodayDayPass: (registrationId) => request(`/passes/day/registration/${registrationId}`),
     verify: (passCode) => request(`/passes/verify/${passCode}`),
     listByRegistration: (registrationId) => request(`/passes/registration/${registrationId}/list`),
   },

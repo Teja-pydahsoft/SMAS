@@ -734,6 +734,50 @@
   gap: 0.45rem;
 }
 
+.rc-day-pass-overlay {
+  z-index: calc(var(--z-modal) + 2);
+}
+
+.rc-day-pass-modal {
+  background: var(--surface-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2xl);
+  width: min(720px, 96vw);
+  max-height: 92vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-modal);
+}
+
+.rc-day-pass-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-secondary);
+}
+
+.rc-day-pass-modal__title {
+  margin: 0;
+  font-size: var(--text-16);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.rc-day-pass-modal__sub {
+  margin: 0.2rem 0 0;
+  font-size: var(--text-12);
+  color: var(--text-secondary);
+}
+
+.rc-day-pass-modal__body {
+  padding: 1rem 1.25rem 1.25rem;
+  overflow-y: auto;
+}
+
 /* ── Person profile (inside dialog) ── */
 .rc-person-profile {
   display: flex;
@@ -1755,6 +1799,16 @@
 
 .rc-filter-inline__item--week {
   min-width: 280px;
+}
+
+.rc-filter-inline__item--search {
+  min-width: 240px;
+  flex: 1 1 220px;
+}
+
+.rc-filter-inline__item--search .rc-search-wrap,
+.rc-filter-inline__item--search .rc-search-input {
+  width: 100%;
 }
 
 .rc-week-picker {

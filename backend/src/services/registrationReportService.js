@@ -18,9 +18,15 @@ import {
   getShiftDurationHours,
   resolveShiftDayStatus,
 } from '../utils/shiftAttendance.js';
+import {
+  todayDateStringIst,
+  startOfDayIst,
+  endOfDayIst,
+  resolveDayPassValidUntil,
+} from '../utils/istTime.js';
 
 function logDateKey(date) {
-  return new Date(date).toISOString().slice(0, 10);
+  return todayDateStringIst(date);
 }
 
 function eachDateInRange(dateFrom, dateTo) {
@@ -62,8 +68,8 @@ async function registrationIdsWithDivisionActivity(divisionObjIds, { from, toDat
   };
   if (from && toDate) {
     logMatch.createdAt = {
-      $gte: new Date(`${from}T00:00:00.000Z`),
-      $lte: new Date(`${toDate}T23:59:59.999Z`),
+      $gte: startOfDayIst(from),
+      $lte: endOfDayIst(toDate),
     };
     passMatch.validDate = { $gte: from, $lte: toDate };
   }
@@ -212,10 +218,13 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
 
   // No shift thresholds configured — still require at least 1 hour on site
   if (activityHours < MIN_ATTENDANCE_HOURS) {
+    const hasActivity = hasDayActivity(dayLogs, session);
     return {
       status: 'A',
       code: 'A',
-      label: 'Absent',
+      label: hasActivity
+        ? `Absent (< ${MIN_ATTENDANCE_HOURS}h on site)`
+        : 'Absent',
       checkInTime: formatTimeFromDate(timings.checkIn),
       payFactor: 0,
       halfSide: null,
@@ -489,8 +498,8 @@ export async function getRegistrationReport(
 
   if (hasDateRange) {
     logQuery.createdAt = {
-      $gte: new Date(`${dateFrom}T00:00:00.000Z`),
-      $lte: new Date(`${dateTo}T23:59:59.999Z`),
+      $gte: startOfDayIst(dateFrom),
+      $lte: endOfDayIst(dateTo),
     };
   }
 
@@ -811,8 +820,8 @@ export async function getAttendanceHistoryGrid({
   }
 
   const registrationIds = registrations.map((reg) => reg._id);
-  const rangeStart = new Date(`${from}T00:00:00.000Z`);
-  const rangeEnd = new Date(`${toDate}T23:59:59.999Z`);
+  const rangeStart = startOfDayIst(from);
+  const rangeEnd = endOfDayIst(toDate);
 
   const [logs, passes] = await Promise.all([
     GateLog.find(
@@ -993,13 +1002,22 @@ export async function recalculateAttendanceHistory({
     const nextEnd = shift.endTime || '';
     const nextHalf = shift.halfDayMinHours ?? null;
     const nextFull = shift.fullDayMinHours ?? null;
+    const nextValidUntil = resolveDayPassValidUntil({
+      validDate: pass.validDate || payload.validDate,
+      startTime: nextStart,
+      endTime: nextEnd,
+    });
+    const hasExited = Boolean(payload.gateExitAt);
 
     const changed =
       payload.shiftName !== nextName ||
       payload.shiftStartTime !== nextStart ||
       payload.shiftEndTime !== nextEnd ||
       payload.halfDayMinHours !== nextHalf ||
-      payload.fullDayMinHours !== nextFull;
+      payload.fullDayMinHours !== nextFull ||
+      (!hasExited &&
+        nextValidUntil &&
+        new Date(pass.validUntil || 0).getTime() !== nextValidUntil.getTime());
 
     if (!changed) continue;
 
@@ -1011,7 +1029,13 @@ export async function recalculateAttendanceHistory({
       shiftEndTime: nextEnd,
       halfDayMinHours: nextHalf,
       fullDayMinHours: nextFull,
+      ...(!hasExited && nextValidUntil
+        ? { validUntil: nextValidUntil.toISOString() }
+        : {}),
     };
+    if (!hasExited && nextValidUntil) {
+      pass.validUntil = nextValidUntil;
+    }
     pass.markModified('qrPayload');
     await pass.save();
     passesUpdated += 1;

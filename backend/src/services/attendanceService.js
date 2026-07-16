@@ -7,15 +7,23 @@ import { getRequiredSteps } from '../constants/accessRules.js';
 import { buildQrDataUrl, formatPassResponse } from './passService.js';
 import { photoUrlFromPath } from '../utils/displayInfo.js';
 import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
+import {
+  todayDateStringIst,
+  startOfDayIst,
+  endOfDayIst,
+  resolveDayPassValidUntil,
+} from '../utils/istTime.js';
 
 export function todayDateString(date = new Date()) {
-  return date.toISOString().slice(0, 10);
+  return todayDateStringIst(date);
+}
+
+export function startOfDay(date = new Date()) {
+  return startOfDayIst(date);
 }
 
 export function endOfDay(date = new Date()) {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
+  return endOfDayIst(date);
 }
 
 export async function getActiveDayPass(registrationId, divisionId) {
@@ -106,15 +114,15 @@ export async function buildDepartmentVisitsFromLogs(registrationId, divisionId) 
   if (!registrationId || !divisionId) return [];
 
   const validDate = todayDateString();
-  const startOfDay = new Date(`${validDate}T00:00:00.000Z`);
-  const endOfDayDate = endOfDay();
+  const dayStart = startOfDay(validDate);
+  const endOfDayDate = endOfDay(validDate);
 
   const logs = await GateLog.find(
     grantedGateLogFilter({
       registrationId,
       divisionId,
       scanType: SCAN_TYPES.DEPARTMENT,
-      createdAt: { $gte: startOfDay, $lte: endOfDayDate },
+      createdAt: { $gte: dayStart, $lte: endOfDayDate },
     })
   )
     .populate('departmentId', 'name')
@@ -230,8 +238,8 @@ export function isOppositeGateEvent(personInside, eventType) {
 
 export async function getActiveDivisionSession(registrationId) {
   const validDate = todayDateString();
-  const startOfDay = new Date(`${validDate}T00:00:00.000Z`);
-  const endOfDayDate = endOfDay();
+  const dayStart = startOfDay(validDate);
+  const endOfDayDate = endOfDay(validDate);
 
   const activePasses = await Pass.find({
     registrationId,
@@ -255,7 +263,7 @@ export async function getActiveDivisionSession(registrationId) {
   const divisionIds = await GateLog.distinct('divisionId', grantedGateLogFilter({
     registrationId,
     scanType: SCAN_TYPES.GATE,
-    createdAt: { $gte: startOfDay, $lte: endOfDayDate },
+    createdAt: { $gte: dayStart, $lte: endOfDayDate },
   }));
 
   for (const divId of divisionIds) {
@@ -388,15 +396,15 @@ export async function hasTodayGateEntry(registrationId, divisionId) {
   }
 
   const validDate = todayDateString();
-  const startOfDay = new Date(`${validDate}T00:00:00.000Z`);
-  const endOfDayDate = endOfDay();
+  const dayStart = startOfDay(validDate);
+  const endOfDayDate = endOfDay(validDate);
 
   const lastGateEntry = await GateLog.findOne(grantedGateLogFilter({
     registrationId,
     divisionId,
     scanType: SCAN_TYPES.GATE,
     eventType: GATE_EVENT_TYPES.ENTRY,
-    createdAt: { $gte: startOfDay, $lte: endOfDayDate },
+    createdAt: { $gte: dayStart, $lte: endOfDayDate },
   })).sort({ createdAt: -1 });
 
   if (!lastGateEntry) {
@@ -420,15 +428,15 @@ export async function hasTodayGateEntry(registrationId, divisionId) {
 export async function madeGateEntryToday(registrationId, divisionId) {
   if (!registrationId || !divisionId) return false;
   const validDate = todayDateString();
-  const startOfDay = new Date(`${validDate}T00:00:00.000Z`);
-  const endOfDayDate = endOfDay();
+  const dayStart = startOfDay(validDate);
+  const endOfDayDate = endOfDay(validDate);
 
   const count = await GateLog.countDocuments(grantedGateLogFilter({
     registrationId,
     divisionId,
     scanType: SCAN_TYPES.GATE,
     eventType: GATE_EVENT_TYPES.ENTRY,
-    createdAt: { $gte: startOfDay, $lte: endOfDayDate },
+    createdAt: { $gte: dayStart, $lte: endOfDayDate },
   }));
 
   return count > 0;
@@ -548,6 +556,7 @@ export async function createOrRefreshDayPass({
 }) {
   const now = new Date();
   const validDate = todayDateString(now);
+  const validUntil = resolveDayPassValidUntil({ validDate, fallbackDate: now });
 
   const existing = await getActiveDayPass(registration._id, divisionId);
   if (existing) {
@@ -581,7 +590,7 @@ export async function createOrRefreshDayPass({
     holderName: display.displayName,
     role: role.name,
     validDate,
-    validUntil: endOfDay(now).toISOString(),
+    validUntil: validUntil.toISOString(),
     issuedAt: now.toISOString(),
     gateEntryAt: now.toISOString(),
     gateExitAt: null,
@@ -600,7 +609,7 @@ export async function createOrRefreshDayPass({
     divisionId,
     validDate,
     validFrom: now,
-    validUntil: endOfDay(now),
+    validUntil,
     holderName: display.displayName,
     holderPhotoUrl: photoUrlFromPath(registration.photoPath),
     roleName: role.name,

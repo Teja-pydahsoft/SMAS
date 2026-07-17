@@ -2,7 +2,7 @@ import Pass from '../models/Pass.js';
 import GateLog from '../models/GateLog.js';
 import Division from '../models/Division.js';
 import Department from '../models/Department.js';
-import { PASS_TYPES, GATE_EVENT_TYPES, SCAN_TYPES, MIN_CHECKOUT_INTERVAL_MS } from '../constants/index.js';
+import { PASS_TYPES, GATE_EVENT_TYPES, SCAN_TYPES, MIN_CHECKOUT_INTERVAL_MS, DAY_PASS_DURATION_MS } from '../constants/index.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { buildQrDataUrl, formatPassResponse } from './passService.js';
 import { photoUrlFromPath } from '../utils/displayInfo.js';
@@ -26,15 +26,68 @@ export function endOfDay(date = new Date()) {
   return endOfDayIst(date);
 }
 
+/**
+ * Expected session end for access: stored validUntil, else gateEntryAt + 24h.
+ */
+function resolvePassSessionEnd(pass) {
+  if (!pass) return null;
+
+  const entryRaw =
+    pass.qrPayload?.gateEntryAt || pass.validFrom || pass.createdAt || null;
+  const entryAt = entryRaw ? new Date(entryRaw) : null;
+  const fromEntry =
+    entryAt && !Number.isNaN(entryAt.getTime())
+      ? new Date(entryAt.getTime() + DAY_PASS_DURATION_MS)
+      : null;
+
+  if (pass.validUntil) {
+    const stored = new Date(pass.validUntil);
+    if (!Number.isNaN(stored.getTime())) {
+      // Prefer the later of stored vs entry+24h so older calendar-midnight
+      // / shift-end expiries still cover overnight sessions under the new rule.
+      if (fromEntry && fromEntry.getTime() > stored.getTime()) return fromEntry;
+      return stored;
+    }
+  }
+
+  return fromEntry;
+}
+
+/**
+ * True when a pass is still a live gate session within the 24h access window.
+ */
+function isLiveOpenSession(pass, now = new Date()) {
+  if (!pass?.isActive) return false;
+  if (!getPassSessionState(pass).divisionInside) return false;
+  const sessionEnd = resolvePassSessionEnd(pass);
+  if (!sessionEnd) return false;
+  return sessionEnd.getTime() >= now.getTime();
+}
+
+/**
+ * Active day pass for a registration + division.
+ * Uses a rolling 24h window from gate check-in (not IST calendar midnight),
+ * so overnight shifts stay valid across the day boundary.
+ */
 export async function getActiveDayPass(registrationId, divisionId) {
-  const validDate = todayDateString();
-  return Pass.findOne({
+  if (!registrationId || !divisionId) return null;
+
+  const now = new Date();
+  const candidates = await Pass.find({
     registrationId,
     divisionId,
     passType: PASS_TYPES.DAY_PASS,
-    validDate,
     isActive: true,
-  }).sort({ createdAt: -1 });
+  })
+    .sort({ createdAt: -1 })
+    .limit(5);
+
+  const liveOpen = candidates.find((pass) => isLiveOpenSession(pass, now));
+  if (liveOpen) return liveOpen;
+
+  // Same calendar day fallback (e.g. pass still active but already checked out of division).
+  const validDate = todayDateString();
+  return candidates.find((pass) => pass.validDate === validDate) || null;
 }
 
 export const DEPARTMENT_DENIAL_REASONS = {
@@ -116,14 +169,20 @@ export function getPassSessionState(pass) {
 }
 
 /**
- * Rebuild today's department visit pairs from GateLog (source of truth for in/out times).
+ * Rebuild department visit pairs from GateLog (source of truth for in/out times).
+ * Window follows the active pass from work-date start through the 24h access window
+ * so overnight sessions keep department visits across IST midnight.
  */
-export async function buildDepartmentVisitsFromLogs(registrationId, divisionId) {
+export async function buildDepartmentVisitsFromLogs(registrationId, divisionId, sessionPass = null) {
   if (!registrationId || !divisionId) return [];
 
-  const validDate = todayDateString();
-  const dayStart = startOfDay(validDate);
-  const endOfDayDate = endOfDay(validDate);
+  const pass = sessionPass || (await getActiveDayPass(registrationId, divisionId));
+  const workDate = pass?.validDate || todayDateString();
+  const dayStart = startOfDay(workDate);
+  const todayEnd = endOfDay(todayDateString());
+  const sessionEnd = resolvePassSessionEnd(pass) || todayEnd;
+  const endOfDayDate =
+    sessionEnd.getTime() > todayEnd.getTime() ? sessionEnd : todayEnd;
 
   const logs = await GateLog.find(
     grantedGateLogFilter({
@@ -186,7 +245,7 @@ export async function buildDepartmentVisitsFromLogs(registrationId, divisionId) 
 export async function syncDepartmentVisitsFromLogs(pass, registrationId, divisionId) {
   if (!pass) return getPassSessionState(pass);
 
-  const visits = await buildDepartmentVisitsFromLogs(registrationId, divisionId);
+  const visits = await buildDepartmentVisitsFromLogs(registrationId, divisionId, pass);
   const payload = { ...(pass.qrPayload || {}) };
   payload.departmentVisits = visits;
   payload.updatedAt = new Date().toISOString();
@@ -246,19 +305,23 @@ export function isOppositeGateEvent(personInside, eventType) {
 
 export async function getActiveDivisionSession(registrationId) {
   const validDate = todayDateString();
+  const now = new Date();
   const dayStart = startOfDay(validDate);
   const endOfDayDate = endOfDay(validDate);
 
   const activePasses = await Pass.find({
     registrationId,
     passType: PASS_TYPES.DAY_PASS,
-    validDate,
     isActive: true,
-  }).populate('divisionId', 'name');
+  })
+    .populate('divisionId', 'name')
+    .sort({ createdAt: -1 })
+    .limit(10);
 
   for (const pass of activePasses) {
     const state = getPassSessionState(pass);
     if (!state.divisionInside) continue;
+    if (!isLiveOpenSession(pass, now)) continue;
     const divisionId = pass.divisionId?._id?.toString() || pass.divisionId?.toString();
     return {
       divisionId,
@@ -435,6 +498,11 @@ export async function hasTodayGateEntry(registrationId, divisionId) {
 
 export async function madeGateEntryToday(registrationId, divisionId) {
   if (!registrationId || !divisionId) return false;
+
+  // Open session within the 24h check-in window still counts after IST midnight.
+  const openEntry = await hasTodayGateEntry(registrationId, divisionId);
+  if (openEntry.ok) return true;
+
   const validDate = todayDateString();
   const dayStart = startOfDay(validDate);
   const endOfDayDate = endOfDay(validDate);
@@ -564,7 +632,7 @@ export async function createOrRefreshDayPass({
 }) {
   const now = new Date();
   const validDate = todayDateString(now);
-  const validUntil = resolveDayPassValidUntil({ validDate, fallbackDate: now });
+  const validUntil = resolveDayPassValidUntil({ entryAt: now, fallbackDate: now });
 
   const existing = await getActiveDayPass(registration._id, divisionId);
   if (existing) {
@@ -574,12 +642,12 @@ export async function createOrRefreshDayPass({
     }
   }
 
+  // Deactivate any prior day pass for this division (including expired overnight sessions).
   await Pass.updateMany(
     {
       registrationId: registration._id,
       divisionId,
       passType: PASS_TYPES.DAY_PASS,
-      validDate,
       isActive: true,
     },
     { isActive: false }

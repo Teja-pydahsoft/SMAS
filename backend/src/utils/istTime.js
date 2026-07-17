@@ -1,3 +1,5 @@
+import { DAY_PASS_DURATION_MS } from '../constants/index.js';
+
 /** India Standard Time helpers for attendance / day-pass expiry. */
 export const IST_TIMEZONE = 'Asia/Kolkata';
 export const IST_OFFSET = '+05:30';
@@ -78,17 +80,21 @@ export function shiftEndAtIst(validDate, startTime, endTime) {
 }
 
 /**
- * Resolve expected out / pass expiry for a day pass in IST.
- * Prefer shift end; fall back to end of IST work day.
+ * Day-pass access expiry: rolling 24 hours from gate check-in (IST-safe absolute duration).
+ * Avoids calendar-midnight cutoffs that break overnight shifts (e.g. 21:30–07:00).
+ * Shift end is for Expected Out display only — see shiftEndAtIst.
  */
 export function resolveDayPassValidUntil({
-  validDate,
-  startTime = '',
-  endTime = '',
+  entryAt = null,
   fallbackDate = new Date(),
+  // retained for callers; access window is no longer tied to shift/calendar day
+  validDate: _validDate,
+  startTime: _startTime,
+  endTime: _endTime,
 } = {}) {
-  const workDate = validDate || todayDateStringIst(fallbackDate);
-  const fromShift = shiftEndAtIst(workDate, startTime, endTime);
-  if (fromShift) return fromShift;
-  return endOfDayIst(workDate);
+  const base = entryAt ? new Date(entryAt) : new Date(fallbackDate);
+  if (Number.isNaN(base.getTime())) {
+    return new Date(Date.now() + DAY_PASS_DURATION_MS);
+  }
+  return new Date(base.getTime() + DAY_PASS_DURATION_MS);
 }

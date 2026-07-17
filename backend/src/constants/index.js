@@ -53,6 +53,9 @@ export const GATE_EVENT_TYPES = {
 /** Minimum time after check-in before check-out is allowed (gate and department). */
 export const MIN_CHECKOUT_INTERVAL_MS = 2 * 60 * 1000;
 
+/** Day-pass / gate session access window from gate check-in (covers overnight shifts). */
+export const DAY_PASS_DURATION_MS = 24 * 60 * 60 * 1000;
+
 /** Minimum on-site hours required for a day to count as attendance (else Absent). */
 export const MIN_ATTENDANCE_HOURS = 1;
 

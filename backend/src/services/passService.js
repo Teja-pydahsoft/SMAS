@@ -10,6 +10,7 @@ import { formatPayFrequencyLabel } from '../utils/paymentCalculation.js';
 import {
   todayDateStringIst,
   resolveDayPassValidUntil,
+  shiftEndAtIst,
 } from '../utils/istTime.js';
 
 function generatePassCode(prefix) {
@@ -92,8 +93,9 @@ async function loadRegistrationContext(registrationId) {
 export { loadRegistrationContext };
 
 /**
- * Expected out / expiry for a day pass: shift end in IST when known,
- * otherwise end of IST work day. Actual checkout keeps stored validUntil.
+ * Expected out for display: shift end in IST when known,
+ * otherwise the 24h access window from gate check-in.
+ * Actual checkout keeps stored validUntil.
  */
 async function resolveDisplayValidUntil(pass) {
   if (pass.passType !== PASS_TYPES.DAY_PASS) {
@@ -120,10 +122,13 @@ async function resolveDisplayValidUntil(pass) {
   }
 
   const validDate = pass.validDate || pass.qrPayload?.validDate || todayDateString();
+  const fromShift = shiftEndAtIst(validDate, startTime, endTime);
+  if (fromShift) return fromShift;
+
+  const entryAt =
+    pass.qrPayload?.gateEntryAt || pass.validFrom || pass.createdAt || null;
   return resolveDayPassValidUntil({
-    validDate,
-    startTime,
-    endTime,
+    entryAt,
     fallbackDate: new Date(),
   });
 }
@@ -244,7 +249,7 @@ export async function createDayPass(registrationId, gateLogId) {
   const { registration, role, display } = await loadRegistrationContext(registrationId);
   const now = new Date();
   const validDate = todayDateString(now);
-  const validUntil = resolveDayPassValidUntil({ validDate, fallbackDate: now });
+  const validUntil = resolveDayPassValidUntil({ entryAt: now, fallbackDate: now });
 
   const passCode = generatePassCode('DAY');
   const qrPayload = {

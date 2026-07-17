@@ -1070,9 +1070,8 @@ export async function recalculateAttendanceHistory({
     const nextHalf = shift.halfDayMinHours ?? null;
     const nextFull = shift.fullDayMinHours ?? null;
     const nextValidUntil = resolveDayPassValidUntil({
-      validDate: pass.validDate || payload.validDate,
-      startTime: nextStart,
-      endTime: nextEnd,
+      entryAt: payload.gateEntryAt || pass.validFrom || pass.createdAt,
+      fallbackDate: pass.validFrom || new Date(),
     });
     const hasExited = Boolean(payload.gateExitAt);
 

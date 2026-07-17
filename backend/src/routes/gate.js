@@ -182,7 +182,8 @@ router.patch(
     log.markModified('metadata');
     await log.save();
 
-    // Also patch the day pass: shift + Expected Out = shift end (IST)
+    // Also patch the day pass with shift details. Access window stays entry+24h;
+    // Expected Out display uses shift end separately.
     const workDate = todayDateString(log.createdAt || new Date());
     const dayPass = log.registrationId
       ? await Pass.findOne({
@@ -194,10 +195,13 @@ router.patch(
       : null;
 
     if (dayPass) {
+      const entryAt =
+        dayPass.qrPayload?.gateEntryAt ||
+        dayPass.validFrom ||
+        log.createdAt ||
+        new Date();
       const validUntil = resolveDayPassValidUntil({
-        validDate: dayPass.validDate || workDate,
-        startTime: shiftStartTime,
-        endTime: shiftEndTime,
+        entryAt,
         fallbackDate: log.createdAt || new Date(),
       });
 

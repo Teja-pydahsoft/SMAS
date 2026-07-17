@@ -474,6 +474,12 @@ function buildSummaryRows(reportData, { dateFrom = '', dateTo = '' } = {}, { inc
     ['Total Scans', details.totalScans ?? '—'],
     ['Divisions Visited', (details.divisionsVisited || []).join(', ') || '—'],
     ['Shift', details.shiftName || '—'],
+    [
+      'Shift Timing',
+      details.shiftStartTime || details.shiftEndTime
+        ? [details.shiftStartTime, details.shiftEndTime].filter(Boolean).join(' – ')
+        : '—',
+    ],
     ['Pay Frequency', details.payFrequencyLabel || '—'],
     ['Gender', details.genderLabel || '—']
   );

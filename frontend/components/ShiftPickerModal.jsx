@@ -6,14 +6,15 @@ import { api } from '@/lib/api/client';
 /**
  * ShiftPickerModal
  *
- * Shows after a successful gate entry when the role has isShiftBased = true.
- * Lets the operator pick a shift for this person's check-in.
+ * Shows after every successful gate entry when the role has isShiftBased = true
+ * (shift breakdown). Operators must pick a shift on each gate check-in,
+ * including mid-day re-entries after a gate exit.
  *
  * Props:
  *   logId       – GateLog _id to patch once a shift is selected
  *   personName  – display name shown in the heading
  *   onConfirm(shiftId, shiftName) – called after the shift is saved
- *   onSkip()    – called if operator skips (shouldn't happen for mandatory, but kept as escape)
+ *   onSkip()    – only when no active shifts exist (escape hatch)
  */
 export default function ShiftPickerModal({ logId, personName, onConfirm, onSkip }) {
   const [shifts, setShifts] = useState([]);
@@ -55,8 +56,9 @@ export default function ShiftPickerModal({ logId, personName, onConfirm, onSkip 
       <div className="shift-picker-modal">
         <h3 className="shift-picker-modal__title">Select Shift</h3>
         <p className="shift-picker-modal__desc">
-          <strong>{personName || 'This person'}</strong> is assigned to a shift-based role.
-          Choose their shift for this check-in.
+          <strong>{personName || 'This person'}</strong> is on a shift-breakdown role.
+          Choose their shift for <strong>this gate entry</strong> (required on every check-in,
+          including after a mid-day gate exit).
         </p>
 
         {fetchLoading ? (

@@ -6,6 +6,7 @@ import { api } from '@/lib/api/client';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
 import { formatCurrency, PAY_FREQUENCY_LABELS, PAY_FREQUENCIES } from '@/lib/payFrequency';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
+import { formatShiftWindow } from '@/lib/shiftTiming';
 import PassCard from '@/components/PassCard';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -382,35 +383,81 @@ function TimelineEvent({ entry, isLast, showPhoto = true }) {
   );
 }
 
+function isDeptScan(entry) {
+  return entry?.scanType === 'department';
+}
+
+function isExitScan(entry) {
+  return (entry?.eventType || '').toLowerCase() === 'exit';
+}
+
+function isGateExitScan(entry) {
+  return !isDeptScan(entry) && isExitScan(entry);
+}
+
+function isGateEntryScan(entry) {
+  return !isDeptScan(entry) && !isExitScan(entry);
+}
+
+/** Clear label for last activity / track steps */
+function scanActivityLabel(entry) {
+  if (!entry) return '—';
+  if (isDeptScan(entry)) return isExitScan(entry) ? 'Dept Out' : 'Dept In';
+  return isExitScan(entry) ? 'Gate Out' : 'Gate In';
+}
+
 function PeriodTrackStep({ entry }) {
-  const isEntry = (entry.eventType || '').toLowerCase().includes('entry');
+  const isEntry = !isExitScan(entry);
+  const kind = isDeptScan(entry) ? 'dept' : 'gate';
   return (
     <div className="rc-day-track__step" title={entryLocationTitle(entry)}>
       <span className={`rc-day-track__step-dot rc-day-track__step-dot--${isEntry ? 'entry' : 'exit'}`} />
       <span className="rc-day-track__step-time">{formatTime(entry.at)}</span>
-      <span className="rc-day-track__step-label">{entry.eventType || (isEntry ? 'Entry' : 'Exit')}</span>
+      <span className={`rc-day-track__step-label rc-day-track__step-label--${kind}`}>
+        {scanActivityLabel(entry)}
+      </span>
       <EntryLocationMeta entry={entry} compact />
     </div>
   );
 }
 
+/**
+ * Day track: Gate In on the left, Gate Out on the right when checked out.
+ * If still inside, right side shows "Latest" (not "End") so a department
+ * check-in is never mistaken for day checkout.
+ */
 function PeriodDayTrack({ entries }) {
   const sorted = [...entries].sort((a, b) => new Date(a.at) - new Date(b.at));
   if (sorted.length === 0) return null;
 
-  const first = sorted[0];
-  const last = sorted[sorted.length - 1];
-  const middle = sorted.length > 2 ? sorted.slice(1, -1) : [];
-  const isSingle = sorted.length === 1;
+  const left = sorted.find((e) => isGateEntryScan(e)) || sorted[0];
+  const lastGate = [...sorted].reverse().find((e) => !isDeptScan(e)) || null;
+  const checkedOut = Boolean(lastGate && isGateExitScan(lastGate));
+  const lastEvent = sorted[sorted.length - 1];
+  const right = checkedOut ? lastGate : lastEvent;
+
+  const leftT = new Date(left.at).getTime();
+  const rightT = new Date(right.at).getTime();
+  const isSingle = sorted.length === 1 || left === right || leftT === rightT;
+
+  const middle = isSingle
+    ? []
+    : sorted.filter((e) => {
+        const t = new Date(e.at).getTime();
+        return t > leftT && t < rightT;
+      });
+
+  const rightLabel = checkedOut ? 'Gate Out' : 'Latest';
+  const rightKind = checkedOut ? 'end' : 'latest';
 
   return (
     <div className={`rc-day-track ${isSingle ? 'rc-day-track--single' : ''}`}>
       <div className="rc-day-track__endpoint rc-day-track__endpoint--start">
-        <ScanPhoto url={first.photoUrl} label="Start scan photo" className="rc-day-track__photo" />
+        <ScanPhoto url={left.photoUrl} label="Gate in scan photo" className="rc-day-track__photo" />
         <div className="rc-day-track__endpoint-info">
-          <span className="rc-day-track__endpoint-label">Start</span>
-          <span className="rc-day-track__endpoint-time">{formatTime(first.at)}</span>
-          <EntryLocationMeta entry={first} compact />
+          <span className="rc-day-track__endpoint-label">Gate In</span>
+          <span className="rc-day-track__endpoint-time">{formatTime(left.at)}</span>
+          <EntryLocationMeta entry={left} compact />
         </div>
       </div>
 
@@ -422,19 +469,32 @@ function PeriodDayTrack({ entries }) {
               <div className="rc-day-track__steps-scroll">
                 <div className="rc-day-track__steps">
                   {middle.map((entry, i) => (
-                    <PeriodTrackStep key={entry.id || i} entry={entry} />
+                    <PeriodTrackStep key={entry.id || `${entry.at}-${i}`} entry={entry} />
                   ))}
                 </div>
               </div>
             )}
+            {middle.length === 0 && checkedOut && (
+              <p className="rc-day-track__rail-hint">No department scans between gate in and gate out</p>
+            )}
+            {middle.length === 0 && !checkedOut && (
+              <p className="rc-day-track__rail-hint">Still inside · no gate out yet</p>
+            )}
           </div>
 
-          <div className="rc-day-track__endpoint rc-day-track__endpoint--end">
-            <ScanPhoto url={last.photoUrl} label="End scan photo" className="rc-day-track__photo" />
+          <div className={`rc-day-track__endpoint rc-day-track__endpoint--${rightKind}`}>
+            <ScanPhoto
+              url={right.photoUrl}
+              label={checkedOut ? 'Gate out scan photo' : 'Latest scan photo'}
+              className="rc-day-track__photo"
+            />
             <div className="rc-day-track__endpoint-info">
-              <span className="rc-day-track__endpoint-label">End</span>
-              <span className="rc-day-track__endpoint-time">{formatTime(last.at)}</span>
-              <EntryLocationMeta entry={last} compact />
+              <span className="rc-day-track__endpoint-label">{rightLabel}</span>
+              {!checkedOut && (
+                <span className="rc-day-track__endpoint-kind">{scanActivityLabel(right)}</span>
+              )}
+              <span className="rc-day-track__endpoint-time">{formatTime(right.at)}</span>
+              <EntryLocationMeta entry={right} compact />
             </div>
           </div>
         </>
@@ -454,9 +514,11 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
           <tr>
             <th>Date</th>
             <th>Status</th>
-            <th>Check-In</th>
+            <th>Gate In</th>
             <th>Last Activity</th>
+            <th>Shift</th>
             <th>Hours</th>
+            <th>Break</th>
             <th>Day Amount</th>
             <th>Sessions</th>
           </tr>
@@ -464,9 +526,17 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
         <tbody>
           {sortedDays.map((day) => {
             const entries = entriesByDateMap[day.date] || [];
-            const lastLabel = day.lastActivityType === 'exit' ? 'Check-Out' : 'Check-In';
+            const lastEntry = [...entries].sort((a, b) => new Date(a.at) - new Date(b.at)).at(-1);
+            const lastLabel = lastEntry
+              ? scanActivityLabel(lastEntry)
+              : day.lastActivityType === 'exit'
+                ? 'Gate Out'
+                : 'Gate In';
             const hoursLabel = formatCellHours(day.activityHours) || '—';
+            const breakLabel = formatCellHours(day.breakHours) || '—';
             const earned = dayEarnedAmount(day, rate);
+            const shiftWindow = formatShiftWindow(day.shiftStartTime, day.shiftEndTime);
+            const breakSegments = Array.isArray(day.breaks) ? day.breaks : [];
 
             return (
               <Fragment key={day.date}>
@@ -484,14 +554,44 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
                       <span className="rc-period-sessions-table__activity-type">{lastLabel}</span>
                     </span>
                   </td>
+                  <td className="rc-period-sessions-table__shift">
+                    {shiftWindow || day.shiftName ? (
+                      <span className="rc-period-sessions-table__shift-cell">
+                        {day.shiftName && (
+                          <span className="rc-period-sessions-table__shift-name">{day.shiftName}</span>
+                        )}
+                        {shiftWindow && (
+                          <span className="rc-period-sessions-table__shift-window">{shiftWindow}</span>
+                        )}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="rc-period-sessions-table__hours">{hoursLabel}</td>
+                  <td className="rc-period-sessions-table__break">
+                    {day.breakHours > 0 ? (
+                      <span className="rc-period-sessions-table__break-cell">
+                        <span className="rc-period-sessions-table__break-total">{breakLabel}</span>
+                        {breakSegments.length > 0 && (
+                          <span className="rc-period-sessions-table__break-detail">
+                            {breakSegments
+                              .map((b) => `${formatTime(b.from)}–${formatTime(b.to)}`)
+                              .join(', ')}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="rc-period-sessions-table__amount">
                     {earned != null ? formatCurrency(earned) : '—'}
                   </td>
                   <td className="rc-period-sessions-table__count">{entries.length}</td>
                 </tr>
                 <tr className="rc-period-sessions-table__track-row">
-                  <td colSpan={7}>
+                  <td colSpan={9}>
                     {entries.length === 0 ? (
                       <p className="rc-period-day-timeline__empty">No scan events recorded for this day.</p>
                     ) : (
@@ -521,7 +621,7 @@ function DownloadIcon() {
   );
 }
 
-function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
+function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -544,14 +644,15 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
     const params = {};
     if (dateFrom) params.dateFrom = dateFrom;
     if (dateTo) params.dateTo = dateTo;
+    if (divisionId) params.divisionId = divisionId;
     api.reports.getRegistration(registrationId, params)
       .then(d => { setData(d); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [registrationId, dateFrom, dateTo, hasDateRange]);
+  }, [registrationId, dateFrom, dateTo, divisionId, hasDateRange]);
 
   // Prefetch today's day pass when opened from Daily attendance (no date range)
   useEffect(() => {
-    if (!registrationId || hasDateRange) return undefined;
+    if (!registrationId || hasDateRange || divisionId) return undefined;
     let cancelled = false;
     setDayPassLoading(true);
     setDayPassError('');
@@ -570,7 +671,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
         if (!cancelled) setDayPassLoading(false);
       });
     return () => { cancelled = true; };
-  }, [registrationId, hasDateRange]);
+  }, [registrationId, hasDateRange, divisionId]);
 
   if (!registrationId) return null;
 
@@ -723,6 +824,24 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
                         <span className="rc-person-profile__stat-label">Last Activity</span>
                         <span className="rc-person-profile__stat-value">{formatDateTime(details.lastScanAt)}</span>
                       </div>
+                      {(details.shiftName || details.shiftStartTime || details.shiftEndTime) && (
+                        <>
+                          {details.shiftName && (
+                            <div className="rc-person-profile__stat">
+                              <span className="rc-person-profile__stat-label">Shift</span>
+                              <span className="rc-person-profile__stat-value">{details.shiftName}</span>
+                            </div>
+                          )}
+                          {(details.shiftStartTime || details.shiftEndTime) && (
+                            <div className="rc-person-profile__stat">
+                              <span className="rc-person-profile__stat-label">Shift Timing</span>
+                              <span className="rc-person-profile__stat-value">
+                                {formatShiftWindow(details.shiftStartTime, details.shiftEndTime) || '—'}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )}
                       {paymentSummary && (
                         <>
                           <div className="rc-person-profile__stat">
@@ -768,6 +887,17 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
                         <div className="rc-person-profile__stat">
                           <span className="rc-person-profile__stat-label">Shift</span>
                           <span className="rc-person-profile__stat-value">{details.shiftName}</span>
+                        </div>
+                      )}
+                      {(details.shiftStartTime || details.shiftEndTime || session?.shiftStartTime || session?.shiftEndTime) && (
+                        <div className="rc-person-profile__stat">
+                          <span className="rc-person-profile__stat-label">Shift Timing</span>
+                          <span className="rc-person-profile__stat-value">
+                            {formatShiftWindow(
+                              details.shiftStartTime || session?.shiftStartTime,
+                              details.shiftEndTime || session?.shiftEndTime
+                            ) || '—'}
+                          </span>
                         </div>
                       )}
                       {session?.currentDepartmentName && (
@@ -871,6 +1001,10 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
                     { label: 'Total Scans', value: details.totalScans },
                     { label: 'Divisions Visited', value: (details.divisionsVisited || []).join(', ') || '—' },
                     { label: 'Shift', value: details.shiftName || '—' },
+                    {
+                      label: 'Shift Timing',
+                      value: formatShiftWindow(details.shiftStartTime, details.shiftEndTime) || '—',
+                    },
                     { label: 'Pay Frequency', value: details.payFrequencyLabel || '—' },
                     { label: 'Gender', value: details.genderLabel || '—' },
                     { label: 'Pay Amount (per day)', value: details.payAmount != null ? formatCurrency(details.payAmount) : '—' },
@@ -899,7 +1033,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
         <div className="rc-dialog__footer">
           {!loading && !error && data && (
             <>
-              {!hasDateRange && (
+              {!hasDateRange && !divisionId && (
                 <button
                   type="button"
                   className="btn-primary rc-download-btn"
@@ -979,7 +1113,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, onClose }) {
 /* ═══════════════════════════════════════════════════════════════
    TAB 1 — TODAY'S ACTIVITY
 ════════════════════════════════════════════════════════════════ */
-function TodayActivityTab({ onViewPerson, onPrintReady }) {
+function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -987,7 +1121,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
   const [filterStatus, setFilterStatus] = useState('all');
   const [payFreqFilter, setPayFreqFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [divisionFilter, setDivisionFilter] = useState('all');
+  const [divisionFilter, setDivisionFilter] = useState(divisionRequired ? '' : 'all');
   const [divisions, setDivisions] = useState([]);
   const [selectionFilters, setSelectionFilters] = useState({});
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
@@ -1009,6 +1143,11 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
   }, []);
 
   const load = useCallback(async (silent = false) => {
+    if (divisionRequired && !divisionFilter) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     if (!silent) setLoading(true);
     setError('');
     try {
@@ -1021,13 +1160,18 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
     } finally {
       setLoading(false);
     }
-  }, [divisionFilter]);
+  }, [divisionFilter, divisionRequired]);
 
   useEffect(() => {
+    if (divisionRequired && !divisionFilter) {
+      setData(null);
+      setLoading(false);
+      return undefined;
+    }
     load();
     intervalRef.current = setInterval(() => load(true), 30000);
     return () => clearInterval(intervalRef.current);
-  }, [load]);
+  }, [load, divisionFilter, divisionRequired]);
 
   // Flatten all people from all roles
   const allPeople = (data?.roles || []).flatMap(r =>
@@ -1036,6 +1180,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
 
   const selectionColumns = collectSelectionColumns(allPeople);
   const roleOptions = (data?.roles || []).map(r => ({ id: r.roleId, name: r.roleName }));
+  const selectedDivision = divisions.find(d => d._id === divisionFilter);
 
   const filtered = allPeople.filter(p => {
     const q = search.toLowerCase();
@@ -1062,17 +1207,24 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
   });
 
   const handlePrintPdf = useCallback(async () => {
+    if (divisionRequired && !selectedDivision) {
+      setError('Select a division before exporting attendance.');
+      return;
+    }
     setPrinting(true);
     try {
       const { downloadDailyAttendancePdf } = await import('@/lib/pdfReportCenter');
-      await downloadDailyAttendancePdf(filtered, { date: new Date() });
+      await downloadDailyAttendancePdf(filtered, {
+        date: new Date(),
+        divisionName: selectedDivision?.name,
+      });
     } catch (e) {
       console.error(e);
       setError(e.message || 'Failed to generate PDF');
     } finally {
       setPrinting(false);
     }
-  }, [filtered]);
+  }, [filtered, divisionRequired, selectedDivision]);
 
   useEffect(() => {
     onPrintReady?.(handlePrintPdf);
@@ -1094,9 +1246,11 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
             <input type="search" className="rc-search-input" placeholder="Search name, code, role…"
               value={search} onChange={e => setSearch(e.target.value)} aria-label="Search" />
           </div>
-          {divisions.length > 0 && (
+          {(divisionRequired || divisions.length > 0) && (
             <select className="rc-select" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)} aria-label="Filter by division">
-              <option value="all">All Divisions</option>
+              <option value={divisionRequired ? '' : 'all'}>
+                {divisionRequired ? 'Select Division' : 'All Divisions'}
+              </option>
               {divisions.map(d => (
                 <option key={d._id} value={d._id}>{d.name}</option>
               ))}
@@ -1112,7 +1266,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
             <option value="all">All Status</option>
             <option value="inside">Inside</option>
             <option value="outside">Outside</option>
-            <option value="inactive">Not In Today</option>
+            {!divisionRequired && <option value="inactive">Not In Today</option>}
           </select>
           <select className="rc-select" value={payFreqFilter} onChange={e => setPayFreqFilter(e.target.value)} aria-label="Filter by pay frequency">
             <option value="all">All Pay Frequencies</option>
@@ -1154,7 +1308,13 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
 
       {error && <p className="error-msg" style={{ marginBottom: '1rem' }}>{error}</p>}
 
-      {loading && !data ? (
+      {divisionRequired && !divisionFilter ? (
+        <EmptyState
+          icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1M9 13h1m4 0h1M9 17h1m4 0h1" /></svg>}
+          title="Select a division"
+          desc="Choose a division to view only its attendance for today."
+        />
+      ) : loading && !data ? (
         <div className="rc-table-loading">
           {[...Array(5)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
         </div>
@@ -1187,10 +1347,10 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
             <tbody>
               {filtered.map(person => (
                 <tr key={person.registrationId} className="rc-table__row"
-                  onClick={() => onViewPerson(person.registrationId)}
+                  onClick={() => onViewPerson(person.registrationId, divisionFilter !== 'all' ? divisionFilter : '')}
                   tabIndex={0} role="button"
                   aria-label={`View report for ${person.displayName || 'Unnamed'}`}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPerson(person.registrationId); } }}>
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPerson(person.registrationId, divisionFilter !== 'all' ? divisionFilter : ''); } }}>
                   <td>
                     <div className="rc-table__person">
                       <div className="rc-table__status-dot-wrap">
@@ -1212,7 +1372,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady }) {
                   <td><StatusBadge inside={person.divisionInside} hadActivity={person.hadActivityToday} /></td>
                   <td>{person.shiftName ? <span className="badge badge-info">{person.shiftName}</span> : <span className="rc-table__muted">—</span>}</td>
                   <td>
-                    <button className="rc-table__view-btn" onClick={e => { e.stopPropagation(); onViewPerson(person.registrationId); }}>
+                    <button className="rc-table__view-btn" onClick={e => { e.stopPropagation(); onViewPerson(person.registrationId, divisionFilter !== 'all' ? divisionFilter : ''); }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                       View
                     </button>
@@ -1444,7 +1604,7 @@ function AttendanceDayDialog({ employee, day, onClose }) {
   if (!employee || !day) return null;
 
   const statusLabel = day.label || day.code || '—';
-  const lastActivityLabel = day.lastActivityType === 'exit' ? 'Check-Out' : 'Check-In';
+  const lastActivityLabel = day.lastActivityType === 'exit' ? 'Exit' : 'Entry';
   const hasPresence = day.status === 'P' || day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT';
   const halfSideLabel =
     day.halfSide === 'first' ? 'First Half' : day.halfSide === 'second' ? 'Second Half' : null;
@@ -1495,7 +1655,7 @@ function AttendanceDayDialog({ employee, day, onClose }) {
             {hasPresence || day.checkIn ? (
               <div className="rc-att-day-detail__grid rc-att-day-detail__grid--two">
                 <div className="rc-att-day-detail__item">
-                  <span className="rc-att-day-detail__label">Check-In Time</span>
+                  <span className="rc-att-day-detail__label">Gate In Time</span>
                   <span className="rc-att-day-detail__value rc-color-success">{formatTime(day.checkIn)}</span>
                 </div>
                 <div className="rc-att-day-detail__item">
@@ -1508,6 +1668,21 @@ function AttendanceDayDialog({ employee, day, onClose }) {
                   <div className="rc-att-day-detail__item">
                     <span className="rc-att-day-detail__label">Activity Hours</span>
                     <span className="rc-att-day-detail__value">{activityHoursLabel}</span>
+                  </div>
+                )}
+                {day.breakHours > 0 && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Division Break</span>
+                    <span className="rc-att-day-detail__value">
+                      {formatCellHours(day.breakHours)}
+                      {Array.isArray(day.breaks) && day.breaks.length > 0 && (
+                        <span className="rc-att-day-detail__label" style={{ display: 'block', marginTop: '0.25rem', fontWeight: 400 }}>
+                          {day.breaks
+                            .map((b) => `${formatTime(b.from)} – ${formatTime(b.to)}`)
+                            .join(', ')}
+                        </span>
+                      )}
+                    </span>
                   </div>
                 )}
                 {halfSideLabel && (
@@ -1528,6 +1703,14 @@ function AttendanceDayDialog({ employee, day, onClose }) {
                   <div className="rc-att-day-detail__item">
                     <span className="rc-att-day-detail__label">Shift</span>
                     <span className="rc-att-day-detail__value">{day.shiftName}</span>
+                  </div>
+                )}
+                {(day.shiftStartTime || day.shiftEndTime) && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Shift Timing</span>
+                    <span className="rc-att-day-detail__value">
+                      {formatShiftWindow(day.shiftStartTime, day.shiftEndTime) || '—'}
+                    </span>
                   </div>
                 )}
                 {day.shiftTotalHours != null && (
@@ -1580,7 +1763,13 @@ function AttendanceDayDialog({ employee, day, onClose }) {
   );
 }
 
-function AttendanceAbstractTable({ employees, onViewPerson, selectionColumns = [] }) {
+function AttendanceAbstractTable({
+  employees,
+  onViewPerson,
+  selectionColumns = [],
+  pinSortDir,
+  onPinSort,
+}) {
   return (
     <div className="rc-table-wrap">
       <table className="rc-table rc-att-abstract-table">
@@ -1589,7 +1778,13 @@ function AttendanceAbstractTable({ employees, onViewPerson, selectionColumns = [
             <th>#</th>
             <th>Person</th>
             <th>Role</th>
-            <th>ID</th>
+            <SortHeader
+              label="PIN / ID"
+              columnKey="code"
+              activeKey="code"
+              dir={pinSortDir}
+              onSort={onPinSort}
+            />
             <th>Phone</th>
             {selectionColumns.map(label => (
               <th key={`abs-sel-head-${label}`}>{label}</th>
@@ -1658,6 +1853,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [selectedDay, setSelectedDay] = useState(null);
   const [printing, setPrinting] = useState(false);
   const [search, setSearch] = useState('');
+  const [pinSortDir, setPinSortDir] = useState('asc');
   const [filters, setFilters] = useState({
     month: currentMonthValue(),
     week: currentIsoWeekValue(),
@@ -1825,8 +2021,16 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
       (emp.roleName || '').toLowerCase().includes(searchQ) ||
       (emp.displayPhone || '').toLowerCase().includes(searchQ)
     );
+  }).sort((a, b) => {
+    const result = compareSortValues(a.registrationCode, b.registrationCode);
+    if (result !== 0) return pinSortDir === 'asc' ? result : -result;
+    return compareSortValues(a.displayName, b.displayName);
   });
   const dates = data?.dates || [];
+
+  const handlePinSort = useCallback(() => {
+    setPinSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+  }, []);
 
   const handleViewPerson = useCallback((registrationId) => {
     const { dateFrom, dateTo } = resolveDateRange();
@@ -2025,7 +2229,13 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
               </span>
             )}
           </div>
-          <AttendanceAbstractTable employees={employees} onViewPerson={handleViewPerson} selectionColumns={selectionColumns} />
+          <AttendanceAbstractTable
+            employees={employees}
+            onViewPerson={handleViewPerson}
+            selectionColumns={selectionColumns}
+            pinSortDir={pinSortDir}
+            onPinSort={handlePinSort}
+          />
         </div>
       ) : (
         <div className="rc-att-grid-wrap">
@@ -2042,7 +2252,14 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
               <thead>
                 <tr>
                   <th className="rc-att-grid__sticky rc-att-grid__index">#</th>
-                  <th className="rc-att-grid__sticky rc-att-grid__employee">Employee</th>
+                  <SortHeader
+                    label="Employee / PIN"
+                    columnKey="code"
+                    activeKey="code"
+                    dir={pinSortDir}
+                    onSort={handlePinSort}
+                    className="rc-att-grid__sticky rc-att-grid__employee"
+                  />
                   {dates.map(col => (
                     <th key={col.date} className="rc-att-grid__day">
                       <span className="rc-att-grid__day-num">{col.day}</span>
@@ -2473,6 +2690,7 @@ function ExportCenterTab() {
 ════════════════════════════════════════════════════════════════ */
 const REPORT_TABS = [
   { id: 'today',    label: "Today's Activity" },
+  { id: 'division', label: 'Division Activity' },
   { id: 'history', label: 'Attendance History' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'export',  label: 'Export Center' },
@@ -2562,7 +2780,7 @@ function ReportsContent() {
             className="btn-secondary btn-sm"
             onClick={handleHeaderPrint}
             disabled={printing}
-            title={tab === 'today' || tab === 'history' ? 'Download professional PDF report' : 'Print current report'}
+            title={tab === 'today' || tab === 'division' || tab === 'history' ? 'Download professional PDF report' : 'Print current report'}
             aria-label="Print"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -2578,7 +2796,14 @@ function ReportsContent() {
         <div className="rc-tab-content admin-fade-in" key={tab}>
           {tab === 'today' && (
             <TodayActivityTab
-              onViewPerson={(id) => setSelectedPerson({ registrationId: id })}
+              onViewPerson={(id, divisionId) => setSelectedPerson({ registrationId: id, divisionId })}
+              onPrintReady={registerTabPrint}
+            />
+          )}
+          {tab === 'division' && (
+            <TodayActivityTab
+              divisionRequired
+              onViewPerson={(id, divisionId) => setSelectedPerson({ registrationId: id, divisionId })}
               onPrintReady={registerTabPrint}
             />
           )}
@@ -2598,6 +2823,7 @@ function ReportsContent() {
           registrationId={selectedPerson.registrationId}
           dateFrom={selectedPerson.dateFrom}
           dateTo={selectedPerson.dateTo}
+          divisionId={selectedPerson.divisionId}
           onClose={() => setSelectedPerson(null)}
         />
       )}

@@ -177,7 +177,7 @@ function EntryExitContent() {
     setRemarkPicker(null);
   }, []);
 
-  // After a successful gate ENTRY, check if the role requires a shift selection
+  // After every successful gate ENTRY, require shift selection for shift-breakdown roles
   const maybePromptShift = useCallback((res) => {
     const isEntry =
       res.scanType === 'gate' &&

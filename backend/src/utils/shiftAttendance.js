@@ -1,45 +1,128 @@
-import { MIN_ATTENDANCE_HOURS } from '../constants/index.js';
+import { MIN_ATTENDANCE_HOURS, SCAN_TYPES } from '../constants/index.js';
+
+function isGateScanLog(log) {
+  if (!log) return false;
+  // Older logs may omit scanType; treat entry/exit without department markers as gate
+  if (log.scanType === SCAN_TYPES.GATE || log.scanType === 'gate') return true;
+  if (!log.scanType && (log.eventType === 'entry' || log.eventType === 'exit') && !log.departmentId) {
+    return true;
+  }
+  return false;
+}
+
+function sortedGateLogs(dayLogs = []) {
+  return [...(dayLogs || [])]
+    .filter((log) => isGateScanLog(log) && (log.eventType === 'entry' || log.eventType === 'exit'))
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+}
 
 /**
- * Compute on-site activity window (login → logout) and hours for a day.
- * Prefer gate entry → gate exit; if still inside today, use now as the end.
- * Past days with check-in but no checkout close at end-of-day so hours
- * are not zeroed (which was marking those days Absent incorrectly).
+ * Mid-day division break gaps: each Main Gate exit followed later by a gate entry.
+ * Used for shift-breakdown roles that leave and re-enter the division.
  */
-export function computeActivityWindow(dayLogs = [], session = null, date, { now = new Date(), today } = {}) {
-  const todayKey = today || new Date().toISOString().slice(0, 10);
+export function computeDivisionBreaks(dayLogs = []) {
+  const gateLogs = sortedGateLogs(dayLogs);
+  const breaks = [];
+  let pendingExit = null;
 
-  let start = session?.gateEntryAt ? new Date(session.gateEntryAt) : null;
-  let end = session?.gateExitAt ? new Date(session.gateExitAt) : null;
+  for (const log of gateLogs) {
+    const at = new Date(log.createdAt);
+    if (Number.isNaN(at.getTime())) continue;
 
-  const sorted = [...(dayLogs || [])].sort(
-    (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
-  );
-  const entries = sorted.filter((l) => l.eventType === 'entry');
-  const exits = sorted.filter((l) => l.eventType === 'exit');
+    if (log.eventType === 'exit') {
+      pendingExit = at;
+      continue;
+    }
 
-  if (!start && entries[0]?.createdAt) start = new Date(entries[0].createdAt);
-  if (!end && exits.length) end = new Date(exits[exits.length - 1].createdAt);
-
-  if (start && !end) {
-    if (date === todayKey) {
-      end = now;
-    } else {
-      // Open session on a past day (forgot checkout) — close at end of that day
-      end = new Date(`${date}T23:59:59.999Z`);
+    if (log.eventType === 'entry' && pendingExit) {
+      const ms = at.getTime() - pendingExit.getTime();
+      if (Number.isFinite(ms) && ms > 0) {
+        breaks.push({
+          from: pendingExit.toISOString(),
+          to: at.toISOString(),
+          hours: roundHours(ms / (1000 * 60 * 60)),
+        });
+      }
+      pendingExit = null;
     }
   }
 
-  if (!start || !end) {
-    return { start: null, end: null, hours: 0 };
+  const breakHours = roundHours(breaks.reduce((sum, item) => sum + item.hours, 0));
+  return { breakHours, breaks };
+}
+
+/**
+ * On-site segments from gate entry → gate exit pairs.
+ * Open sessions close at `now` (today) or end-of-day (past days).
+ */
+function buildOnSiteSegments(dayLogs = [], session = null, date, { now = new Date(), today } = {}) {
+  const todayKey = today || new Date().toISOString().slice(0, 10);
+  const gateLogs = sortedGateLogs(dayLogs);
+  const segments = [];
+  let openStart = null;
+
+  for (const log of gateLogs) {
+    const at = new Date(log.createdAt);
+    if (Number.isNaN(at.getTime())) continue;
+
+    if (log.eventType === 'entry') {
+      if (!openStart) openStart = at;
+      continue;
+    }
+
+    if (log.eventType === 'exit' && openStart) {
+      if (at.getTime() > openStart.getTime()) {
+        segments.push({ start: openStart, end: at });
+      }
+      openStart = null;
+    }
   }
 
-  const ms = end.getTime() - start.getTime();
-  if (!Number.isFinite(ms) || ms <= 0) {
-    return { start, end, hours: 0 };
+  if (openStart) {
+    const end =
+      date === todayKey
+        ? now
+        : new Date(`${date}T23:59:59.999Z`);
+    if (end.getTime() > openStart.getTime()) {
+      segments.push({ start: openStart, end });
+    }
   }
 
-  return { start, end, hours: roundHours(ms / (1000 * 60 * 60)) };
+  // Fallback when gate logs are missing but the day-pass session has times
+  if (!segments.length && (session?.gateEntryAt || session?.gateExitAt)) {
+    let start = session?.gateEntryAt ? new Date(session.gateEntryAt) : null;
+    let end = session?.gateExitAt ? new Date(session.gateExitAt) : null;
+    if (start && !end) {
+      end = date === todayKey ? now : new Date(`${date}T23:59:59.999Z`);
+    }
+    if (start && end && end.getTime() > start.getTime()) {
+      segments.push({ start, end });
+    }
+  }
+
+  return segments;
+}
+
+/**
+ * Compute on-site activity window and hours for a day.
+ * Hours = sum of gate on-site segments (exit→re-entry gaps are excluded as breaks).
+ */
+export function computeActivityWindow(dayLogs = [], session = null, date, options = {}) {
+  const segments = buildOnSiteSegments(dayLogs, session, date, options);
+  if (!segments.length) {
+    return { start: null, end: null, hours: 0, segments: [] };
+  }
+
+  const hours = roundHours(
+    segments.reduce((sum, seg) => sum + (seg.end.getTime() - seg.start.getTime()) / (1000 * 60 * 60), 0)
+  );
+
+  return {
+    start: segments[0].start,
+    end: segments[segments.length - 1].end,
+    hours,
+    segments,
+  };
 }
 
 /**

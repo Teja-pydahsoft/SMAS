@@ -1189,12 +1189,45 @@
 
 .rc-day-track__endpoint--start .rc-day-track__endpoint-label { color: #047857; }
 .rc-day-track__endpoint--end .rc-day-track__endpoint-label { color: #b91c1c; }
+.rc-day-track__endpoint--latest .rc-day-track__endpoint-label { color: #b45309; }
+
+.rc-day-track__endpoint-kind {
+  display: inline-block;
+  margin-top: 0.1rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #fff7ed;
+  color: #c2410c;
+}
 
 .rc-day-track__endpoint-time {
   font-size: var(--text-13);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
+}
+
+.rc-day-track__rail-hint {
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.rc-day-track__step-label--gate {
+  color: #047857;
+}
+
+.rc-day-track__step-label--dept {
+  color: #b45309;
 }
 
 .rc-day-track__endpoint-desc {
@@ -2294,6 +2327,56 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.rc-period-sessions-table__shift {
+  min-width: 7.5rem;
+  max-width: 11rem;
+}
+
+.rc-period-sessions-table__shift-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  line-height: 1.25;
+}
+
+.rc-period-sessions-table__shift-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rc-period-sessions-table__shift-window {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+}
+
+.rc-period-sessions-table__break {
+  min-width: 6.5rem;
+  max-width: 10rem;
+}
+
+.rc-period-sessions-table__break-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  line-height: 1.25;
+}
+
+.rc-period-sessions-table__break-total {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #b45309;
+  white-space: nowrap;
+}
+
+.rc-period-sessions-table__break-detail {
+  font-size: 0.68rem;
+  color: var(--text-muted, #6b7280);
+  white-space: normal;
 }
 
 .rc-period-sessions-table__amount {

@@ -92,6 +92,10 @@ export function getPassSessionState(pass) {
       departmentVisits: [],
       shiftId: null,
       shiftName: null,
+      shiftStartTime: null,
+      shiftEndTime: null,
+      halfDayMinHours: null,
+      fullDayMinHours: null,
     };
   }
   const payload = pass.qrPayload;
@@ -104,6 +108,10 @@ export function getPassSessionState(pass) {
     gateExitAt: payload.gateExitAt || null,
     shiftId: payload.shiftId || null,
     shiftName: payload.shiftName || null,
+    shiftStartTime: payload.shiftStartTime || null,
+    shiftEndTime: payload.shiftEndTime || null,
+    halfDayMinHours: payload.halfDayMinHours ?? null,
+    fullDayMinHours: payload.fullDayMinHours ?? null,
   };
 }
 

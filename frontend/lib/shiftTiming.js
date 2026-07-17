@@ -36,6 +36,30 @@ export function formatDurationHours(hours) {
 }
 
 /**
+ * Format HH:mm (24h) as 12-hour clock, e.g. "09:00" → "9:00 AM".
+ */
+export function formatShiftTime(value) {
+  if (!value) return null;
+  const [hStr, mStr] = String(value).split(':');
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (Number.isNaN(h) || Number.isNaN(m)) return String(value);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+/**
+ * Format assigned shift window, e.g. "9:00 AM – 6:00 PM".
+ */
+export function formatShiftWindow(startTime, endTime) {
+  const start = formatShiftTime(startTime);
+  const end = formatShiftTime(endTime);
+  if (start && end) return `${start} – ${end}`;
+  return start || end || null;
+}
+
+/**
  * Validate half/full day mins against shift window.
  * @returns {string|null} error message or null if ok
  */

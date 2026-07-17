@@ -124,10 +124,11 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
   const margin = 28;
   const headerH = 48;
   const footerReserve = 28;
+  const divisionName = String(options.divisionName || '').trim();
 
   drawReportHeader(doc, {
-    title: 'SAMS — Day Report',
-    subtitle: `Daily Attendance  ·  ${formatPdfDateLong(reportDate)}  ·  Generated ${formatPdfDateTime(new Date())}`,
+    title: divisionName ? `SAMS — ${divisionName} Attendance` : 'SAMS — Day Report',
+    subtitle: `${divisionName ? 'Division Attendance' : 'Daily Attendance'}  ·  ${formatPdfDateLong(reportDate)}  ·  Generated ${formatPdfDateTime(new Date())}`,
     pageWidth,
     margin,
     headerH,
@@ -197,10 +198,11 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
   drawFooters(doc, {
     margin,
     pageHeight,
-    footerLeft: `SAMS Day Report · ${formatPdfDate(reportDate)} · ${body.length} people`,
+    footerLeft: `${divisionName ? `${divisionName} Attendance` : 'SAMS Day Report'} · ${formatPdfDate(reportDate)} · ${body.length} people`,
   });
 
-  doc.save(`SAMS_Day_Report_${safeFilePart(reportDate.toISOString().slice(0, 10))}.pdf`);
+  const reportName = divisionName ? `SAMS_${safeFilePart(divisionName)}_Attendance` : 'SAMS_Day_Report';
+  doc.save(`${reportName}_${safeFilePart(reportDate.toISOString().slice(0, 10))}.pdf`);
 }
 
 /**

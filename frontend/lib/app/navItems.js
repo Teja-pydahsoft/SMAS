@@ -27,6 +27,7 @@ export const APP_NAV_ITEMS = [
     section: 'MANAGEMENT',
     children: [
       { path: '/reports?tab=today', label: "Today's Activity", module: 'reports' },
+      { path: '/reports?tab=division', label: 'Division Activity', module: 'reports' },
       { path: '/reports?tab=history', label: 'Attendance History', module: 'reports' },
       { path: '/reports?tab=analytics', label: 'Analytics', module: 'reports' },
       { path: '/reports?tab=export', label: 'Export Center', module: 'reports' },

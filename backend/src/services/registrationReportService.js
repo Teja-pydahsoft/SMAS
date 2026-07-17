@@ -15,6 +15,7 @@ import { calculatePaymentSummary, formatPayFrequencyLabel } from '../utils/payme
 import { grantedGateLogFilter, filterGrantedLogs } from '../utils/gateLogFilters.js';
 import {
   computeActivityWindow,
+  computeDivisionBreaks,
   getShiftDurationHours,
   resolveShiftDayStatus,
 } from '../utils/shiftAttendance.js';
@@ -165,13 +166,20 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
     today: todayDateString(),
   });
   const activityHours = activityWindow.hours;
+  const divisionBreaks = computeDivisionBreaks(grantedLogs);
+  const shiftStartTime = shift?.startTime || session?.shiftStartTime || null;
+  const shiftEndTime = shift?.endTime || session?.shiftEndTime || null;
   const shiftMeta = {
     activityHours,
+    breakHours: divisionBreaks.breakHours,
+    breaks: divisionBreaks.breaks,
     shiftId: shift?._id?.toString?.() || shift?.id || session?.shiftId || null,
     shiftName: shift?.name || session?.shiftName || null,
-    shiftTotalHours: shift ? getShiftDurationHours(shift.startTime, shift.endTime) : null,
-    halfDayMinHours: shift?.halfDayMinHours ?? null,
-    fullDayMinHours: shift?.fullDayMinHours ?? null,
+    shiftStartTime,
+    shiftEndTime,
+    shiftTotalHours: getShiftDurationHours(shiftStartTime, shiftEndTime),
+    halfDayMinHours: shift?.halfDayMinHours ?? session?.halfDayMinHours ?? null,
+    fullDayMinHours: shift?.fullDayMinHours ?? session?.fullDayMinHours ?? null,
   };
 
   if (date < joinDate) {
@@ -289,7 +297,28 @@ async function loadShiftMap(shiftIds) {
 function shiftFromSession(session, shiftMap) {
   const shiftId = session?.shiftId ? String(session.shiftId) : null;
   if (!shiftId) return null;
-  return shiftMap.get(shiftId) || null;
+  const fromMap = shiftMap.get(shiftId);
+  if (fromMap) return fromMap;
+
+  // Pass still has shift snapshot even if the Shift document was removed
+  if (
+    !session?.shiftName &&
+    !session?.shiftStartTime &&
+    !session?.shiftEndTime &&
+    session?.halfDayMinHours == null &&
+    session?.fullDayMinHours == null
+  ) {
+    return null;
+  }
+
+  return {
+    _id: shiftId,
+    name: session.shiftName || null,
+    startTime: session.shiftStartTime || null,
+    endTime: session.shiftEndTime || null,
+    halfDayMinHours: session.halfDayMinHours ?? null,
+    fullDayMinHours: session.fullDayMinHours ?? null,
+  };
 }
 
 function formatLogEntry(log) {
@@ -551,10 +580,18 @@ export async function getRegistrationReport(
     }
 
     const passByDate = new Map();
+    const initialShiftPassByDate = new Map();
     for (const pass of passes) {
       const existing = passByDate.get(pass.validDate);
       if (!existing || pass.createdAt > existing.createdAt) {
         passByDate.set(pass.validDate, pass);
+      }
+
+      if (pass.qrPayload?.shiftId) {
+        const initialShiftPass = initialShiftPassByDate.get(pass.validDate);
+        if (!initialShiftPass || pass.createdAt < initialShiftPass.createdAt) {
+          initialShiftPassByDate.set(pass.validDate, pass);
+        }
       }
     }
 
@@ -564,7 +601,11 @@ export async function getRegistrationReport(
       const dayLogs = logsByDate.get(date) || [];
       const pass = passByDate.get(date);
       const session = pass ? getPassSessionState(pass) : null;
-      const shift = shiftFromSession(session, shiftMap);
+      const initialShiftPass = initialShiftPassByDate.get(date);
+      const shiftSession = initialShiftPass
+        ? getPassSessionState(initialShiftPass)
+        : session;
+      const shift = shiftFromSession(shiftSession, shiftMap);
       return {
         date,
         ...resolveDayAttendance({
@@ -600,6 +641,17 @@ export async function getRegistrationReport(
 
   const divisionNames = [...new Set(logs.map((log) => log.divisionId?.name).filter(Boolean))];
 
+  const rangeShiftDay = (attendanceRange?.days || [])
+    .slice()
+    .reverse()
+    .find((day) => day.shiftName || day.shiftStartTime || day.shiftEndTime);
+  const assignedShiftName =
+    rangeShiftDay?.shiftName || sessionState.shiftName || null;
+  const assignedShiftStartTime =
+    rangeShiftDay?.shiftStartTime || sessionState.shiftStartTime || null;
+  const assignedShiftEndTime =
+    rangeShiftDay?.shiftEndTime || sessionState.shiftEndTime || null;
+
   return {
     valid: Boolean(activeSession?.sessionState?.divisionInside),
     expired: false,
@@ -624,6 +676,9 @@ export async function getRegistrationReport(
       totalScans: logs.length,
       divisionsVisited: divisionNames,
       lastScanAt: logs[0]?.createdAt || null,
+      shiftName: assignedShiftName,
+      shiftStartTime: assignedShiftStartTime,
+      shiftEndTime: assignedShiftEndTime,
       payFrequency: registration.payFrequency || null,
       customPayDays: registration.customPayDays || null,
       payAmount: registration.payAmount ?? null,
@@ -853,11 +908,19 @@ export async function getAttendanceHistoryGrid({
   }
 
   const passByRegDate = new Map();
+  const initialShiftPassByRegDate = new Map();
   for (const pass of passes) {
     const key = `${pass.registrationId.toString()}|${pass.validDate}`;
     const existing = passByRegDate.get(key);
     if (!existing || pass.createdAt > existing.createdAt) {
       passByRegDate.set(key, pass);
+    }
+
+    if (pass.qrPayload?.shiftId) {
+      const initialShiftPass = initialShiftPassByRegDate.get(key);
+      if (!initialShiftPass || pass.createdAt < initialShiftPass.createdAt) {
+        initialShiftPassByRegDate.set(key, pass);
+      }
     }
   }
 
@@ -876,7 +939,11 @@ export async function getAttendanceHistoryGrid({
         const dayLogs = logsByRegDate.get(key) || [];
         const pass = passByRegDate.get(key);
         const session = pass ? getPassSessionState(pass) : null;
-        const shift = shiftFromSession(session, shiftMap);
+        const initialShiftPass = initialShiftPassByRegDate.get(key);
+        const shiftSession = initialShiftPass
+          ? getPassSessionState(initialShiftPass)
+          : session;
+        const shift = shiftFromSession(shiftSession, shiftMap);
 
         return {
           date,

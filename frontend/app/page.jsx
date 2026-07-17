@@ -13,9 +13,7 @@ function fmt(n) { return Number(n || 0).toLocaleString(); }
 
 /* ── Static demo data for sections not yet API-backed ── */
 const ENTRY_TREND = [8, 14, 11, 22, 17, 26, 19, 31, 24, 28, 22, 35];
-const ENTRY_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAILY_DATA   = [24, 18, 32, 27, 41, 36, 29];
-const DAILY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const ACCURACY_AREA = [88, 91, 89, 93, 92, 96, 94, 97, 95, 98, 96, 99];
 
 const QUICK_ACTIONS = [
@@ -84,6 +82,7 @@ export default function DashboardPage() {
   const [divisions,     setDivisions]     = useState([]);
   const [departments,   setDepartments]   = useState([]);
   const [gates,         setGates]         = useState([]);
+  const [dashboardStats,setDashboardStats]= useState(null);
   const [loading,       setLoading]       = useState(true);
 
   useEffect(() => {
@@ -98,7 +97,8 @@ export default function DashboardPage() {
       api.divisions.list().catch(() => []),
       api.departments.list().catch(() => []),
       api.gates.list().catch(() => []),
-    ]).then(([h, regs, logs, rl, divs, depts, gts]) => {
+      api.dashboard.stats().catch(() => null),
+    ]).then(([h, regs, logs, rl, divs, depts, gts, stats]) => {
       setHealth(h);
       setRegistrations(Array.isArray(regs) ? regs : []);
       setGateLogs(Array.isArray(logs) ? logs : []);
@@ -106,6 +106,7 @@ export default function DashboardPage() {
       setDivisions(Array.isArray(divs) ? divs : []);
       setDepartments(Array.isArray(depts) ? depts : []);
       setGates(Array.isArray(gts) ? gts : []);
+      setDashboardStats(stats);
       setLoading(false);
     });
   }, [authLoading, user]);
@@ -134,9 +135,25 @@ export default function DashboardPage() {
   /* today's gate logs */
   const today = new Date().toDateString();
   const todayLogs  = gateLogs.filter(l => new Date(l.createdAt).toDateString() === today);
-  const todayEntry = todayLogs.filter(l => l.eventType === 'entry' && l.matched).length;
+  const todayEntry = Number.isFinite(dashboardStats?.todayEntries)
+    ? dashboardStats.todayEntries
+    : todayLogs.filter(l => l.eventType === 'entry' && l.matched).length;
   const todayExit  = todayLogs.filter(l => l.eventType === 'exit'  && l.matched).length;
   const insideNow  = Math.max(todayEntry - todayExit, 0);
+
+  const weeklyRegistrationData = dashboardStats?.weeklyRegistrations?.length
+    ? dashboardStats.weeklyRegistrations.map(item => item.count)
+    : Array(7).fill(0);
+  const weeklyRegistrationLabels = dashboardStats?.weeklyRegistrations?.length
+    ? dashboardStats.weeklyRegistrations.map(item => item.label)
+    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const currentWeekRegistrations = weeklyRegistrationData.reduce((sum, count) => sum + count, 0);
+  const weeklyEntryData = dashboardStats?.weeklyEntries?.length
+    ? dashboardStats.weeklyEntries.map(item => item.count)
+    : Array(7).fill(0);
+  const weeklyEntryLabels = dashboardStats?.weeklyEntries?.length
+    ? dashboardStats.weeklyEntries.map(item => item.label)
+    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   /* accuracy estimate from matchScore */
   const scoredLogs = gateLogs.filter(l => l.matched && l.matchScore);
@@ -171,10 +188,10 @@ export default function DashboardPage() {
 
         {/* ─── METRICS GRID ─── */}
         <section className="admin-metrics-grid">
-          <MetricCard icon="registrations" iconColor="primary"   label="Total Registrations" value={totalReg}    trend={12} trendUp sparkData={ENTRY_TREND} loading={loading} href="/registrations" />
+          <MetricCard icon="registrations" iconColor="primary"   label="Total Registrations" value={totalReg}    sparkData={weeklyRegistrationData} loading={loading} href="/registrations" />
           <MetricCard icon="approvals"     iconColor="success"   label="Verified Users"       value={verified}   trend={8}  trendUp sparkData={ENTRY_TREND.map(v=>v*0.7)} loading={loading} href="/registrations" />
           <MetricCard icon="alert"         iconColor="warning"   label="Pending Approvals"    value={pending}    trend={pending > 5 ? 3 : undefined} trendUp={false} sparkData={DAILY_DATA} loading={loading} href="/registrations" />
-          <MetricCard icon="entryExit"     iconColor="accent"    label="Today's Entries"      value={todayEntry} trend={5}  trendUp sparkData={DAILY_DATA} loading={loading} href="/reports" />
+          <MetricCard icon="entryExit"     iconColor="accent"    label="Today's Entries"      value={todayEntry} sparkData={weeklyEntryData} loading={loading} href="/reports" />
           <MetricCard icon="shield"        iconColor="secondary" label="Currently Inside"      value={insideNow}  sparkData={DAILY_DATA.slice(0,5)} loading={loading} />
           <MetricCard icon="divisions"     iconColor="primary"   label="Active Divisions"     value={activeDivs}  sparkData={[3,3,4,4,5,activeDivs]} loading={loading} href="/divisions/manage" />
           <MetricCard icon="departments"   iconColor="accent"    label="Departments"           value={activeDepts} sparkData={[4,6,7,8,activeDepts]} loading={loading} href="/departments/manage" />
@@ -187,11 +204,11 @@ export default function DashboardPage() {
         <section className="admin-section-grid admin-section-grid--analytics">
 
           {/* Area chart — entry trend */}
-          <Panel title="Monthly Entry Trend" meta="Last 12 months">
+          <Panel title="Weekly Registration Trend" meta="Current week">
             <div className="admin-stat-highlight">
-              <AnimatedCounter value={totalReg} /><span>total registrations</span>
+              <AnimatedCounter value={currentWeekRegistrations} /><span>registrations this week</span>
             </div>
-            <AreaChart data={ENTRY_TREND} />
+            <AreaChart data={weeklyRegistrationData} labels={weeklyRegistrationLabels} />
           </Panel>
 
           {/* Bar chart — daily */}
@@ -199,7 +216,7 @@ export default function DashboardPage() {
             <div className="admin-stat-highlight">
               <AnimatedCounter value={todayEntry} /><span>today's entries</span>
             </div>
-            <BarChart data={DAILY_DATA} labels={DAILY_LABELS} />
+            <BarChart data={weeklyEntryData} labels={weeklyEntryLabels} />
           </Panel>
 
           {/* Pie — registration status */}

@@ -38,7 +38,7 @@ export function BarChart({ data, labels }) {
   );
 }
 
-export function AreaChart({ data }) {
+export function AreaChart({ data, labels }) {
   const values = data?.length ? data : [8, 12, 10, 18, 14, 22, 19, 25, 21];
   const max = Math.max(...values, 1);
   const width = 320;
@@ -52,16 +52,42 @@ export function AreaChart({ data }) {
   const areaPoints = `0,${height} ${linePoints} ${width},${height}`;
 
   return (
-    <svg className="admin-area-chart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden>
-      <defs>
-        <linearGradient id="adminAreaFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(37, 99, 235, 0.22)" />
-          <stop offset="100%" stopColor="rgba(37, 99, 235, 0)" />
-        </linearGradient>
-      </defs>
-      <polygon points={areaPoints} fill="url(#adminAreaFill)" />
-      <polyline fill="none" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" points={linePoints} />
-    </svg>
+    <div className="admin-area-chart-wrap">
+      <div className="admin-area-chart__plot">
+        <svg className="admin-area-chart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden>
+          <defs>
+            <linearGradient id="adminAreaFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(37, 99, 235, 0.22)" />
+              <stop offset="100%" stopColor="rgba(37, 99, 235, 0)" />
+            </linearGradient>
+          </defs>
+          <polygon points={areaPoints} fill="url(#adminAreaFill)" />
+          <polyline fill="none" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" points={linePoints} />
+        </svg>
+        {labels?.length === values.length && values.map((value, index) => {
+          const left = (index / Math.max(values.length - 1, 1)) * 100;
+          const top = ((height - (value / max) * (height - 8) - 4) / height) * 100;
+          const edgeClass = index === 0 ? ' is-first' : index === values.length - 1 ? ' is-last' : '';
+          return (
+            <span
+              key={labels[index]}
+              className={`admin-area-chart__point${edgeClass}`}
+              style={{ left: `${left}%`, top: `${top}%` }}
+              tabIndex={0}
+              aria-label={`${labels[index]}: ${value} registrations`}
+            >
+              <span className="admin-area-chart__dot" />
+              <span className="admin-area-chart__tooltip">{labels[index]}: {value}</span>
+            </span>
+          );
+        })}
+      </div>
+      {labels?.length === values.length && (
+        <div className="admin-area-chart__labels">
+          {labels.map(label => <span key={label}>{label}</span>)}
+        </div>
+      )}
+    </div>
   );
 }
 

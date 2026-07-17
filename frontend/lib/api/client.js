@@ -156,6 +156,9 @@ export function warmBackend() {
 
 export const api = {
   health: () => request('/health'),
+  dashboard: {
+    stats: () => request('/dashboard'),
+  },
 
   auth: {
     precheck: (username) =>

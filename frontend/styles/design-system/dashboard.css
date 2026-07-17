@@ -276,6 +276,105 @@
   letter-spacing: 0;
 }
 
+/* ── Area chart ── */
+.admin-area-chart-wrap {
+  width: 100%;
+}
+
+.admin-area-chart__plot {
+  position: relative;
+  width: 100%;
+  height: 120px;
+}
+
+.admin-area-chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.admin-area-chart__point {
+  position: absolute;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  outline: none;
+}
+
+.admin-area-chart__dot {
+  position: absolute;
+  inset: 4px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.admin-area-chart__tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--text-primary);
+  color: white;
+  font-size: var(--text-11);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.admin-area-chart__point.is-first .admin-area-chart__tooltip {
+  left: 0;
+  transform: none;
+}
+
+.admin-area-chart__point.is-last .admin-area-chart__tooltip {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.admin-area-chart__point:hover .admin-area-chart__dot,
+.admin-area-chart__point:focus .admin-area-chart__dot,
+.admin-area-chart__point:hover .admin-area-chart__tooltip,
+.admin-area-chart__point:focus .admin-area-chart__tooltip {
+  opacity: 1;
+}
+
+.admin-area-chart__point:hover .admin-area-chart__dot,
+.admin-area-chart__point:focus .admin-area-chart__dot {
+  transform: scale(1.2);
+}
+
+.admin-area-chart__labels {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-top: 4px;
+}
+
+.admin-area-chart__labels span {
+  color: var(--text-muted);
+  font-size: var(--text-10);
+  text-align: center;
+}
+
+.admin-area-chart__labels span:first-child {
+  text-align: left;
+}
+
+.admin-area-chart__labels span:last-child {
+  text-align: right;
+}
+
 /* ── Bar chart ── */
 .admin-bar-chart {
   display: flex;

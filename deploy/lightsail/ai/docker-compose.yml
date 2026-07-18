@@ -4,14 +4,22 @@
 #   cp .env.example .env   (adjust model/threads if needed)
 #   docker compose up -d --build
 #
-# SECURITY: do NOT open port 8000 in the Lightsail firewall. The backend
-# reaches this instance over the AWS private network (private IP), which
-# bypasses the public firewall. Both instances must be in the same region.
+# SECURITY: do NOT open ports 8000/8001 in the Lightsail firewall. Backends
+# reach this instance over the AWS private network (private IP), which
+# bypasses the public firewall. All instances must be in the same region.
+#
+# SECOND PROJECT: each project needs its OWN AI server container (the FAISS
+# index is single-tenant — a backend's startup sync wipes everyone else's
+# faces). To serve a second project from this same instance:
+#   cp second.env.example second.env    (use buffalo_s to save RAM)
+#   docker compose --profile second up -d
+# Point the second project's backend at http://<this-private-ip>:8001
 
 services:
   ai-server:
     build:
       context: ../../../ai-server
+    image: smas-ai-server
     restart: unless-stopped
     env_file: .env
     environment:
@@ -26,6 +34,25 @@ services:
       # InsightFace model cache — avoids re-downloading ~300MB on rebuild
       - insightface-models:/root/.insightface
 
+  # Second, fully isolated AI server for another project (port 8001).
+  # Reuses the image built above — enable with: docker compose --profile second up -d
+  ai-server-2:
+    image: smas-ai-server
+    restart: unless-stopped
+    profiles: ["second"]
+    env_file: second.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      INDEX_DIR: /data
+    ports:
+      - "8001:8000"
+    volumes:
+      - ai-index-2:/data
+      # Model cache is shared read-only style data — safe to reuse
+      - insightface-models:/root/.insightface
+
 volumes:
   ai-index:
+  ai-index-2:
   insightface-models:

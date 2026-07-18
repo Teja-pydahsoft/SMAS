@@ -1,11 +1,12 @@
 # SMAS — App instance (frontend + backend + MongoDB + Caddy)
 #
 # Run from this directory:
-#   cp .env.example .env   (then fill in values)
+#   cp .env.example .env                    (Caddy: domain only)
+#   cp backend.env.example backend.env      (backend: DB, secrets, AI URL)
 #   docker compose up -d --build
 #
 # The AI server runs on a separate Lightsail instance — set AI_SERVER_URL in
-# .env to that instance's PRIVATE IP (http://172.26.x.x:8000).
+# backend.env to that instance's PRIVATE IP (http://172.26.x.x:8000).
 
 services:
   mongodb:
@@ -23,12 +24,13 @@ services:
     restart: unless-stopped
     depends_on:
       - mongodb
-    env_file: .env
+    # All backend configuration (MONGODB_URI, JWT, AI server, Cloudinary…)
+    # lives in backend.env — edit that file, then: docker compose up -d
+    env_file: backend.env
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3001
-      MONGODB_URI: mongodb://mongodb:27017/smas
       UPLOAD_DIR: /app/uploads
     volumes:
       - uploads:/app/uploads

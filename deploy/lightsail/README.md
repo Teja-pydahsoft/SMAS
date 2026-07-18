@@ -91,13 +91,21 @@ Note the private IP for the next step: Lightsail → `smas-ai` → Networking �
 
 ```bash
 git clone <your-repo-url> smas && cd smas/deploy/lightsail/app
-cp .env.example .env
+cp .env.example .env                  # Caddy: domain only
+cp backend.env.example backend.env    # backend: DB, secrets, AI URL
 nano .env
+nano backend.env
 ```
 
-Fill in `.env`:
+`.env` (used by Caddy for HTTPS):
 
-- `DOMAIN` / `FRONTEND_URL` — the client's domain.
+- `DOMAIN` — the client's domain (bare hostname, no `https://`).
+
+`backend.env` (everything the backend needs):
+
+- `MONGODB_URI` — leave the default to use the bundled Mongo container,
+  or point it at MongoDB Atlas / any external Mongo.
+- `FRONTEND_URL` — the client's domain with `https://` prefix.
 - `AI_SERVER_URL` — `http://<AI-private-IP>:8000`.
 - `JWT_SECRET` — `openssl rand -hex 32`.
 - `SUPER_ADMIN_PASSWORD` — strong, unique per client.

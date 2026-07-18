@@ -11,7 +11,7 @@
 # SECOND PROJECT: each project needs its OWN AI server container (the FAISS
 # index is single-tenant — a backend's startup sync wipes everyone else's
 # faces). To serve a second project from this same instance:
-#   cp second.env.example second.env    (use buffalo_s to save RAM)
+#   cp second.env.example second.env
 #   docker compose --profile second up -d
 # Point the second project's backend at http://<this-private-ip>:8001
 

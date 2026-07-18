@@ -7,6 +7,7 @@ import { useAuth } from '@/components/AuthProvider';
 import AnimatedCounter from '@/components/admin/AnimatedCounter';
 import { Sparkline, BarChart, AreaChart, PieChart } from '@/components/admin/AdminCharts';
 import AdminIcon from '@/components/admin/AdminIcons';
+import NotificationBell from '@/components/NotificationBell';
 
 /* ── tiny helpers ── */
 function fmt(n) { return Number(n || 0).toLocaleString(); }
@@ -184,7 +185,25 @@ export default function DashboardPage() {
     <div className="dash-scroll-area">
       <div className="admin-dashboard">
 
-
+        {/* ─── TOP BAR ─── */}
+        <section
+          className="admin-fade-in"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            marginBottom: '1rem',
+          }}
+        >
+          <div>
+            <h1 style={{ margin: 0, fontSize: '1.25rem' }}>Dashboard</h1>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Welcome back, {user.displayName}
+            </p>
+          </div>
+          <NotificationBell />
+        </section>
 
         {/* ─── METRICS GRID ─── */}
         <section className="admin-metrics-grid">

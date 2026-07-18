@@ -1,7 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api/client';
+import {
+  filterShiftsNearCurrentTime,
+  formatShiftWindow,
+} from '@/lib/shiftTiming';
 
 /**
  * ShiftPickerModal
@@ -9,6 +13,10 @@ import { api } from '@/lib/api/client';
  * Shows after every successful gate entry when the role has isShiftBased = true
  * (shift breakdown). Operators must pick a shift on each gate check-in,
  * including mid-day re-entries after a gate exit.
+ *
+ * Only shifts starting within ±4 hours of the current IST time are offered
+ * (e.g. at 8 AM only shifts starting between 4 AM and 12 PM). If none match,
+ * the operator can reveal the full list as a fallback.
  *
  * Props:
  *   logId       – GateLog _id to patch once a shift is selected
@@ -22,6 +30,7 @@ export default function ShiftPickerModal({ logId, personName, onConfirm, onSkip 
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     api.shifts
@@ -30,6 +39,10 @@ export default function ShiftPickerModal({ logId, personName, onConfirm, onSkip 
       .catch((e) => setError(e.message))
       .finally(() => setFetchLoading(false));
   }, []);
+
+  const nearbyShifts = useMemo(() => filterShiftsNearCurrentTime(shifts), [shifts]);
+  const hasHiddenShifts = nearbyShifts.length < shifts.length;
+  const visibleShifts = showAll ? shifts : nearbyShifts;
 
   async function handleConfirm() {
     if (!selected) {
@@ -74,28 +87,52 @@ export default function ShiftPickerModal({ logId, personName, onConfirm, onSkip 
           </div>
         ) : (
           <>
-            <div className="shift-picker-modal__options">
-              {shifts.map((shift) => (
-                <label
-                  key={shift._id}
-                  className={`shift-picker-modal__option ${selected === shift._id ? 'shift-picker-modal__option--selected' : ''}`}
-                >
-                  <input
-                    type="radio"
-                    name="shift"
-                    value={shift._id}
-                    checked={selected === shift._id}
-                    onChange={() => { setSelected(shift._id); setError(''); }}
-                  />
-                  <div className="shift-picker-modal__option-body">
-                    <span className="shift-picker-modal__option-name">{shift.name}</span>
-                    {shift.description && (
-                      <span className="shift-picker-modal__option-desc">{shift.description}</span>
-                    )}
-                  </div>
-                </label>
-              ))}
-            </div>
+            {visibleShifts.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                No shifts start within 4 hours of the current time.
+              </p>
+            ) : (
+              <div className="shift-picker-modal__options">
+                {visibleShifts.map((shift) => (
+                  <label
+                    key={shift._id}
+                    className={`shift-picker-modal__option ${selected === shift._id ? 'shift-picker-modal__option--selected' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="shift"
+                      value={shift._id}
+                      checked={selected === shift._id}
+                      onChange={() => { setSelected(shift._id); setError(''); }}
+                    />
+                    <div className="shift-picker-modal__option-body">
+                      <span className="shift-picker-modal__option-name">{shift.name}</span>
+                      {formatShiftWindow(shift.startTime, shift.endTime) && (
+                        <span className="shift-picker-modal__option-desc">
+                          {formatShiftWindow(shift.startTime, shift.endTime)}
+                        </span>
+                      )}
+                      {shift.description && (
+                        <span className="shift-picker-modal__option-desc">{shift.description}</span>
+                      )}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {hasHiddenShifts && (
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ marginTop: '0.75rem' }}
+                onClick={() => { setShowAll((v) => !v); setSelected(''); setError(''); }}
+              >
+                {showAll
+                  ? 'Show only shifts near current time'
+                  : `Show all shifts (${shifts.length})`}
+              </button>
+            )}
 
             {error && <p className="error-msg" style={{ marginTop: '0.75rem' }}>{error}</p>}
 

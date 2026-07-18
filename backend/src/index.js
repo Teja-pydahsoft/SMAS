@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -27,6 +28,8 @@ import systemUsersRouter from './routes/systemUsers.js';
 import reportsRouter from './routes/reports.js';
 import shiftsRouter from './routes/shifts.js';
 import dashboardRouter from './routes/dashboard.js';
+import pushRouter from './routes/push.js';
+import { startOverstayMonitor } from './services/overstayMonitor.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -52,16 +55,26 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+// Gzip JSON responses — report/attendance payloads shrink ~10x, which matters
+// a lot on the free-tier network. Small responses (<1KB) are left untouched.
+app.use(compression({ threshold: 1024 }));
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static(uploadDir));
+app.use('/uploads', express.static(uploadDir, { maxAge: '7d', immutable: false }));
 
 // Instant wake-up probe for login — no DB or AI calls (used before auth on cold hosts).
 app.get('/api/ping', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/health', async (req, res) => {
+// AI status is cached so repeated health checks never hammer (or block on)
+// the AI server. A stale answer is fine here — the gate scan endpoints talk
+// to the AI server directly anyway.
+const AI_HEALTH_CACHE_MS = 60 * 1000;
+let aiHealthCache = { at: 0, aiOnline: false, faceIndex: null };
+let aiHealthRefreshing = null;
+
+async function refreshAiHealth() {
   const aiOnline = await checkAiServerHealth();
   let faceIndex = null;
   if (aiOnline) {
@@ -71,10 +84,31 @@ app.get('/api/health', async (req, res) => {
       faceIndex = null;
     }
   }
+  aiHealthCache = { at: Date.now(), aiOnline, faceIndex };
+  return aiHealthCache;
+}
+
+app.get('/api/health', async (req, res) => {
+  const isFresh = Date.now() - aiHealthCache.at < AI_HEALTH_CACHE_MS;
+  if (!isFresh) {
+    if (!aiHealthRefreshing) {
+      aiHealthRefreshing = refreshAiHealth().finally(() => {
+        aiHealthRefreshing = null;
+      });
+    }
+    // First-ever check has no cache to serve — wait for it once.
+    if (aiHealthCache.at === 0) {
+      try {
+        await aiHealthRefreshing;
+      } catch {
+        // fall through with defaults
+      }
+    }
+  }
   res.json({
     status: 'ok',
-    services: { ai: aiOnline ? 'online' : 'offline' },
-    faceIndex,
+    services: { ai: aiHealthCache.aiOnline ? 'online' : 'offline' },
+    faceIndex: aiHealthCache.faceIndex,
   });
 });
 
@@ -95,13 +129,17 @@ app.use('/api/system-users', systemUsersRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/shifts', shiftsRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/push', pushRouter);
 
 app.use(notFound);
 app.use(errorHandler);
 
-async function start() {
-  await connectDB();
-
+/**
+ * One-off bootstrap work that must NOT block the HTTP port from opening.
+ * Render restarts instances that don't bind the port quickly, and the AI
+ * wait loop alone can take 30s+ when the Hugging Face space is cold.
+ */
+async function runBackgroundBootstrap() {
   try {
     const migration = await migrateDepartmentsToMultiDivision();
     if (migration.migrated > 0) {
@@ -151,8 +189,18 @@ async function start() {
     }
   }
 
+  startOverstayMonitor();
+}
+
+async function start() {
+  await connectDB();
+
   app.listen(PORT, HOST, () => {
     console.log(`SAMS Backend running on http://${HOST}:${PORT}`);
+  });
+
+  runBackgroundBootstrap().catch((err) => {
+    console.warn('Background bootstrap failed:', err.message);
   });
 }
 

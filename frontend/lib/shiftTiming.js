@@ -49,6 +49,59 @@ export function formatShiftTime(value) {
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
+const IST_TIMEZONE = 'Asia/Kolkata';
+const MINUTES_PER_DAY = 24 * 60;
+
+/** Gate-entry shift picker: only offer shifts starting within ±4h of now (IST). */
+export const SHIFT_PICKER_WINDOW_MINUTES = 4 * 60;
+
+/**
+ * Current time-of-day in IST as minutes from midnight,
+ * independent of the device's local timezone.
+ */
+export function currentIstMinutes(date = new Date()) {
+  const formatted = new Intl.DateTimeFormat('en-GB', {
+    timeZone: IST_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+  const [h, m] = formatted.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+/**
+ * Shortest distance between two times-of-day on a 24h clock, in minutes.
+ * Wraps midnight: distance(23:00, 01:00) = 120.
+ */
+export function clockDistanceMinutes(a, b) {
+  const diff = Math.abs(a - b) % MINUTES_PER_DAY;
+  return Math.min(diff, MINUTES_PER_DAY - diff);
+}
+
+/**
+ * Whether a shift's start time falls within ±windowMinutes of nowMinutes.
+ * Shifts without a valid start time are kept (can't be compared).
+ */
+export function isShiftNearTime(shift, nowMinutes, windowMinutes = SHIFT_PICKER_WINDOW_MINUTES) {
+  if (nowMinutes === null || nowMinutes === undefined) return true;
+  const start = timeToMinutes(shift?.startTime);
+  if (start === null) return true;
+  return clockDistanceMinutes(start, nowMinutes) <= windowMinutes;
+}
+
+/**
+ * Filter shifts to those starting within ±windowMinutes of the current IST time.
+ */
+export function filterShiftsNearCurrentTime(
+  shifts,
+  { now = new Date(), windowMinutes = SHIFT_PICKER_WINDOW_MINUTES } = {}
+) {
+  const nowMinutes = currentIstMinutes(now);
+  return (shifts || []).filter((shift) => isShiftNearTime(shift, nowMinutes, windowMinutes));
+}
+
 /**
  * Format assigned shift window, e.g. "9:00 AM – 6:00 PM".
  */

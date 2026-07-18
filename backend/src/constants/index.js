@@ -53,8 +53,21 @@ export const GATE_EVENT_TYPES = {
 /** Minimum time after check-in before check-out is allowed (gate and department). */
 export const MIN_CHECKOUT_INTERVAL_MS = 2 * 60 * 1000;
 
-/** Day-pass / gate session access window from gate check-in (covers overnight shifts). */
+/** Fallback day-pass access window from gate check-in when no shift is assigned. */
 export const DAY_PASS_DURATION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Working-window grace after the assigned shift ends. The session window is
+ * shift end + this grace; past it the session is expired/overstayed and new
+ * scans must start with a fresh gate entry.
+ */
+export const SHIFT_OVERSTAY_GRACE_MS = 4 * 60 * 60 * 1000;
+
+/** How often the backend checks for overstayed open sessions. */
+export const OVERSTAY_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+/** Minimum gap between repeated overstay push notifications for the same worker. */
+export const OVERSTAY_RENOTIFY_INTERVAL_MS = 30 * 60 * 1000;
 
 /** Minimum on-site hours required for a day to count as attendance (else Absent). */
 export const MIN_ATTENDANCE_HOURS = 1;

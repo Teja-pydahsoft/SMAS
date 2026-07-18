@@ -1072,6 +1072,9 @@ export async function recalculateAttendanceHistory({
     const nextValidUntil = resolveDayPassValidUntil({
       entryAt: payload.gateEntryAt || pass.validFrom || pass.createdAt,
       fallbackDate: pass.validFrom || new Date(),
+      validDate: pass.validDate || payload.validDate || null,
+      startTime: nextStart,
+      endTime: nextEnd,
     });
     const hasExited = Boolean(payload.gateExitAt);
 

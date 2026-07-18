@@ -239,6 +239,7 @@ export const api = {
       if (excludeId) form.append('excludeId', excludeId);
       return request('/registrations/check-duplicate', { method: 'POST', body: form });
     },
+    getDuplicates: (id) => request(`/registrations/${id}/duplicates`),
     verify: (id, data) =>
       request(`/registrations/${id}/verify`, { method: 'POST', body: JSON.stringify(data) }),
     delete: (id) => request(`/registrations/${id}`, { method: 'DELETE' }),
@@ -363,6 +364,14 @@ export const api = {
     create: (data) => request('/departments', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => request(`/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id) => request(`/departments/${id}`, { method: 'DELETE' }),
+  },
+
+  push: {
+    publicKey: () => request('/push/public-key'),
+    subscribe: (subscription) =>
+      request('/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription }) }),
+    unsubscribe: (endpoint) =>
+      request('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }),
   },
 
   shifts: {

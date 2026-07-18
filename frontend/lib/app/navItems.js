@@ -43,6 +43,7 @@ export const APP_NAV_ITEMS = [
     children: [
       { path: '/system/roles/manage', label: 'Manage Roles', module: 'system_roles' },
       { path: '/system/users/manage', label: 'Manage Users', module: 'system_users' },
+      { path: '/system/audit-logs', label: 'Audit Logs', module: 'system_users' },
     ],
   },
 ];

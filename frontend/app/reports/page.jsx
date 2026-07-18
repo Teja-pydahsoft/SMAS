@@ -1121,6 +1121,8 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const [filterStatus, setFilterStatus] = useState('all');
   const [payFreqFilter, setPayFreqFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
+  const [shiftFilter, setShiftFilter] = useState('all');
+  const [shiftOptions, setShiftOptions] = useState([]);
   const [divisionFilter, setDivisionFilter] = useState(divisionRequired ? '' : 'all');
   const [divisions, setDivisions] = useState([]);
   const [selectionFilters, setSelectionFilters] = useState({});
@@ -1140,6 +1142,9 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     api.reports.divisions()
       .then((res) => setDivisions(Array.isArray(res?.divisions) ? res.divisions : []))
       .catch(() => setDivisions([]));
+    api.shifts.list()
+      .then((list) => setShiftOptions(Array.isArray(list) ? list : []))
+      .catch(() => setShiftOptions([]));
   }, []);
 
   const load = useCallback(async (silent = false) => {
@@ -1181,6 +1186,11 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const selectionColumns = collectSelectionColumns(allPeople);
   const roleOptions = (data?.roles || []).map(r => ({ id: r.roleId, name: r.roleName }));
   const selectedDivision = divisions.find(d => d._id === divisionFilter);
+  // Union of configured shifts and shift names present in today's rows (covers deleted shifts)
+  const shiftNameOptions = [...new Set([
+    ...shiftOptions.map(s => s.name),
+    ...allPeople.map(p => p.shiftName),
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   const filtered = allPeople.filter(p => {
     const q = search.toLowerCase();
@@ -1195,12 +1205,15 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       (filterStatus === 'inactive' && !p.divisionInside && !p.hadActivityToday);
     const matchPayFreq = payFreqFilter === 'all' || p.payFrequency === payFreqFilter;
     const matchRole = roleFilter === 'all' || p.roleId === roleFilter;
+    const matchShift =
+      shiftFilter === 'all' ||
+      (shiftFilter === 'none' ? !p.shiftName : p.shiftName === shiftFilter);
     const matchSelections = selectionColumns.every(label => {
       const wanted = selectionFilters[label];
       if (!wanted || wanted === 'all') return true;
       return selectionValueFor(p, label) === wanted;
     });
-    return matchSearch && matchStatus && matchPayFreq && matchRole && matchSelections;
+    return matchSearch && matchStatus && matchPayFreq && matchRole && matchShift && matchSelections;
   }).sort((a, b) => {
     const res = compareSortValues(dailySortValue(a, sort.key), dailySortValue(b, sort.key));
     return sort.dir === 'asc' ? res : -res;
@@ -1262,6 +1275,13 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               <option key={role.id} value={role.id}>{role.name}</option>
             ))}
           </select>
+          <select className="rc-select" value={shiftFilter} onChange={e => setShiftFilter(e.target.value)} aria-label="Filter by shift">
+            <option value="all">All Shifts</option>
+            <option value="none">No Shift</option>
+            {shiftNameOptions.map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
           <select className="rc-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)} aria-label="Filter by status">
             <option value="all">All Status</option>
             <option value="inside">Inside</option>
@@ -1321,7 +1341,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || Object.values(selectionFilters).some(v => v && v !== 'all') ? 'No matching people' : 'No attendance today'}
+          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || shiftFilter !== 'all' || Object.values(selectionFilters).some(v => v && v !== 'all') ? 'No matching people' : 'No attendance today'}
           desc={search ? 'Try adjusting your search or filters.' : 'No gate activity recorded today yet.'}
         />
       ) : (
@@ -1844,6 +1864,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [data, setData] = useState(null);
   const [roles, setRoles] = useState([]);
   const [divisions, setDivisions] = useState([]);
+  const [shiftOptions, setShiftOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [recalculating, setRecalculating] = useState(false);
   const [error, setError] = useState('');
@@ -1862,6 +1883,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     roleId: '',
     divisionId: '',
     payFrequency: '',
+    shiftName: '',
   });
 
   useEffect(() => {
@@ -1869,6 +1891,9 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     api.reports.divisions()
       .then((res) => setDivisions(Array.isArray(res?.divisions) ? res.divisions : []))
       .catch(() => setDivisions([]));
+    api.shifts.list()
+      .then((list) => setShiftOptions(Array.isArray(list) ? list : []))
+      .catch(() => setShiftOptions([]));
   }, []);
 
   const resolveDateRange = useCallback(() => {
@@ -2011,9 +2036,22 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
 
   const allEmployees = data?.employees || [];
   const selectionColumns = collectSelectionColumns(allEmployees);
+  // Union of configured shifts and shift names seen in the loaded range (covers deleted shifts)
+  const shiftNameOptions = [...new Set([
+    ...shiftOptions.map((s) => s.name),
+    ...allEmployees.flatMap((emp) => (emp.days || []).map((d) => d.shiftName)),
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const searchQ = search.trim().toLowerCase();
   const employees = allEmployees.filter((emp) => {
     if (filters.payFrequency && emp.payFrequency !== filters.payFrequency) return false;
+    if (filters.shiftName) {
+      const dayShiftNames = (emp.days || []).map((d) => d.shiftName).filter(Boolean);
+      if (filters.shiftName === '__none__') {
+        if (dayShiftNames.length > 0) return false;
+      } else if (!dayShiftNames.includes(filters.shiftName)) {
+        return false;
+      }
+    }
     if (!searchQ) return true;
     return (
       (emp.displayName || '').toLowerCase().includes(searchQ) ||
@@ -2157,6 +2195,17 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
               </select>
             </div>
           )}
+
+          <div className="form-group rc-filter-inline__item">
+            <label>Shift</label>
+            <select value={filters.shiftName} onChange={e => setFilters(f => ({ ...f, shiftName: e.target.value }))} disabled={busy}>
+              <option value="">All Shifts</option>
+              <option value="__none__">No Shift</option>
+              {shiftNameOptions.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
 
           <div className="form-group rc-filter-inline__item">
             <label>Pay Frequency</label>

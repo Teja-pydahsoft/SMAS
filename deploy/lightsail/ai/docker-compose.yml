@@ -1,0 +1,31 @@
+# SMAS — AI instance (FastAPI + InsightFace + FAISS)
+#
+# Run from this directory:
+#   cp .env.example .env   (adjust model/threads if needed)
+#   docker compose up -d --build
+#
+# SECURITY: do NOT open port 8000 in the Lightsail firewall. The backend
+# reaches this instance over the AWS private network (private IP), which
+# bypasses the public firewall. Both instances must be in the same region.
+
+services:
+  ai-server:
+    build:
+      context: ../../../ai-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      INDEX_DIR: /data
+    ports:
+      - "8000:8000"
+    volumes:
+      # FAISS index snapshot — survives container rebuilds
+      - ai-index:/data
+      # InsightFace model cache — avoids re-downloading ~300MB on rebuild
+      - insightface-models:/root/.insightface
+
+volumes:
+  ai-index:
+  insightface-models:

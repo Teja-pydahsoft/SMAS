@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import AppLayoutShell from '@/components/AppLayoutShell';
 import AuthGuard from '@/components/AuthGuard';
+import PushSubscriptionManager from '@/components/PushSubscriptionManager';
 
 export default function LayoutShell({ children }) {
   const pathname = usePathname();
@@ -21,6 +22,7 @@ export default function LayoutShell({ children }) {
   if (isGateLanding) {
     return (
       <AuthGuard>
+        <PushSubscriptionManager />
         <div className="gate-landing-shell">{children}</div>
       </AuthGuard>
     );
@@ -28,6 +30,7 @@ export default function LayoutShell({ children }) {
 
   return (
     <AuthGuard>
+      <PushSubscriptionManager />
       <AppLayoutShell>{children}</AppLayoutShell>
     </AuthGuard>
   );

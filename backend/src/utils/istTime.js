@@ -1,4 +1,4 @@
-import { DAY_PASS_DURATION_MS } from '../constants/index.js';
+import { DAY_PASS_DURATION_MS, SHIFT_OVERSTAY_GRACE_MS } from '../constants/index.js';
 
 /** India Standard Time helpers for attendance / day-pass expiry. */
 export const IST_TIMEZONE = 'Asia/Kolkata';
@@ -80,21 +80,26 @@ export function shiftEndAtIst(validDate, startTime, endTime) {
 }
 
 /**
- * Day-pass access expiry: rolling 24 hours from gate check-in (IST-safe absolute duration).
- * Avoids calendar-midnight cutoffs that break overnight shifts (e.g. 21:30–07:00).
- * Shift end is for Expected Out display only — see shiftEndAtIst.
+ * Day-pass access expiry (working window).
+ * With an assigned shift: shift end + 4h grace (overnight shifts wrap to the
+ * next IST day via shiftEndAtIst). Without a shift: gate check-in + 24h.
  */
 export function resolveDayPassValidUntil({
   entryAt = null,
   fallbackDate = new Date(),
-  // retained for callers; access window is no longer tied to shift/calendar day
-  validDate: _validDate,
-  startTime: _startTime,
-  endTime: _endTime,
+  validDate = null,
+  startTime = null,
+  endTime = null,
 } = {}) {
   const base = entryAt ? new Date(entryAt) : new Date(fallbackDate);
-  if (Number.isNaN(base.getTime())) {
-    return new Date(Date.now() + DAY_PASS_DURATION_MS);
+  const baseTime = Number.isNaN(base.getTime()) ? Date.now() : base.getTime();
+
+  const shiftEnd = shiftEndAtIst(validDate, startTime, endTime);
+  if (shiftEnd) {
+    const windowEnd = shiftEnd.getTime() + SHIFT_OVERSTAY_GRACE_MS;
+    // Late entries (after the shift window already closed) still get the grace period
+    return new Date(Math.max(windowEnd, baseTime + SHIFT_OVERSTAY_GRACE_MS));
   }
-  return new Date(base.getTime() + DAY_PASS_DURATION_MS);
+
+  return new Date(baseTime + DAY_PASS_DURATION_MS);
 }

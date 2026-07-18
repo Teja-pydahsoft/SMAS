@@ -1,0 +1,22 @@
+# Caddy automatically obtains and renews a Let's Encrypt certificate for
+# {$DOMAIN}. HTTPS is required — browsers only allow camera access (gate
+# scanner) on secure origins.
+
+{$DOMAIN} {
+	encode gzip
+
+	# API and uploaded photos go straight to the Express backend,
+	# bypassing the Next.js rewrite proxy entirely.
+	handle /api/* {
+		reverse_proxy backend:3001
+	}
+
+	handle /uploads/* {
+		reverse_proxy backend:3001
+	}
+
+	# Everything else is the Next.js app.
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

@@ -23,11 +23,29 @@ function mimeFromFilename(filename = '') {
   return map[ext] || 'image/jpeg';
 }
 
-async function aiFetch(pathname, options = {}) {
-  const response = await fetch(`${AI_SERVER_URL}${pathname}`, {
-    ...options,
-    headers: aiHeaders(options.headers),
-  });
+/**
+ * Face-recognition calls (embed/compare/search) get a long timeout so cold
+ * starts on the AI host never abort a real scan; everything else gets a short
+ * timeout so a hung AI server can't pile up pending requests in this process.
+ */
+const AI_FACE_TIMEOUT_MS = parseInt(process.env.AI_FACE_TIMEOUT_MS || '60000', 10);
+const AI_ADMIN_TIMEOUT_MS = parseInt(process.env.AI_ADMIN_TIMEOUT_MS || '15000', 10);
+const AI_HEALTH_TIMEOUT_MS = parseInt(process.env.AI_HEALTH_TIMEOUT_MS || '5000', 10);
+
+async function aiFetch(pathname, options = {}, timeoutMs = AI_ADMIN_TIMEOUT_MS) {
+  let response;
+  try {
+    response = await fetch(`${AI_SERVER_URL}${pathname}`, {
+      ...options,
+      headers: aiHeaders(options.headers),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      throw new Error(`AI server timed out after ${Math.round(timeoutMs / 1000)}s (${pathname})`);
+    }
+    throw err;
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.detail || error.message || `AI server error: ${response.status}`);
@@ -40,37 +58,50 @@ export async function extractFaceEmbedding(imageBuffer, filename = 'photo.jpg', 
   const formData = new FormData();
   formData.append('file', new Blob([imageBuffer], { type }), filename);
 
-  return aiFetch('/embed', { method: 'POST', body: formData });
+  return aiFetch('/embed', { method: 'POST', body: formData }, AI_FACE_TIMEOUT_MS);
 }
 
 export async function compareFaceEmbeddings(embedding1, embedding2) {
-  return aiFetch('/compare', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ embedding1, embedding2 }),
-  });
+  return aiFetch(
+    '/compare',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embedding1, embedding2 }),
+    },
+    AI_FACE_TIMEOUT_MS
+  );
 }
 
 export async function searchFaceEmbeddings(embedding, options = {}) {
   const { topK, threshold, minMargin } = options;
-  return aiFetch('/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      embedding,
-      top_k: topK,
-      threshold,
-      min_margin: minMargin,
-    }),
-  });
+  return aiFetch(
+    '/search',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        embedding,
+        top_k: topK,
+        threshold,
+        min_margin: minMargin,
+      }),
+    },
+    AI_FACE_TIMEOUT_MS
+  );
 }
 
 export async function syncFaceIndex(entries) {
-  return aiFetch('/index/sync', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entries }),
-  });
+  // Full index sync can carry thousands of embeddings — allow the long timeout.
+  return aiFetch(
+    '/index/sync',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entries }),
+    },
+    AI_FACE_TIMEOUT_MS
+  );
 }
 
 export async function upsertFaceIndexEntry(id, embedding) {
@@ -97,6 +128,7 @@ export async function checkAiServerHealth() {
   try {
     const response = await fetch(`${AI_SERVER_URL}/health`, {
       headers: aiHeaders(),
+      signal: AbortSignal.timeout(AI_HEALTH_TIMEOUT_MS),
     });
     return response.ok;
   } catch {

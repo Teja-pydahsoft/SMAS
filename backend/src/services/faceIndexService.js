@@ -9,10 +9,14 @@ function isValidEmbedding(embedding) {
 }
 
 export async function rebuildFaceIndexFromDb() {
+  // .lean() matters here: hydrating thousands of 512-float arrays into
+  // mongoose documents roughly triples the memory needed for the sync.
   const verified = await Registration.find({
     status: REGISTRATION_STATUS.VERIFIED,
     faceEmbedding: { $exists: true, $ne: [] },
-  }).select('_id faceEmbedding');
+  })
+    .select('_id faceEmbedding')
+    .lean();
 
   const entries = verified
     .filter((r) => isValidEmbedding(r.faceEmbedding))

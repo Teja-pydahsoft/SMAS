@@ -12,10 +12,16 @@ services:
     rootDir: backend
     buildCommand: npm install
     startCommand: npm start
-    healthCheckPath: /api/health
+    # IMPORTANT: /api/ping is DB/AI-free. Never point this at /api/health —
+    # that endpoint contacts the AI server and a sleeping HF space would make
+    # Render mark the instance unhealthy and restart it.
+    healthCheckPath: /api/ping
     envVars:
       - key: NODE_ENV
         value: production
+      # Keep V8 heap under the 512MB free-tier container limit to avoid OOM kills
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=400
       - key: HOST
         value: 0.0.0.0
       - key: MONGODB_URI
@@ -44,3 +50,10 @@ services:
         value: "5"
       - key: FACE_EMBEDDING_SIZE
         value: "512"
+      # Web push (overstay alerts) — npx web-push generate-vapid-keys
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: mailto:admin@sams.local

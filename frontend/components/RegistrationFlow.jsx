@@ -49,6 +49,66 @@ function photoUrlFromPath(photoPath) {
   return `/uploads/registrations/${name}`;
 }
 
+function normalizeDuplicates(result) {
+  if (!result) return null;
+  const faceMatches = result.faceMatches?.length
+    ? result.faceMatches
+    : result.faceMatch
+      ? [result.faceMatch]
+      : [];
+  const formMatches = result.formMatches || [];
+  return { faceMatches, formMatches, hasDuplicate: faceMatches.length > 0 || formMatches.length > 0 };
+}
+
+function DuplicateMatchList({ faceMatches = [], formMatches = [] }) {
+  return (
+    <>
+      {faceMatches.map((m) => (
+        <div key={`face-${m.registrationId}`} className="reg-duplicate-match">
+          <span className="reg-duplicate-match__badge reg-duplicate-match__badge--face">Face Match</span>
+          {m.photoUrl && (
+            <img src={m.photoUrl} alt="" className="reg-duplicate-match__photo" />
+          )}
+          <div className="reg-duplicate-match__info">
+            <p className="reg-duplicate-match__name">{m.displayName || '—'}</p>
+            <p className="reg-duplicate-match__meta">
+              {m.role} · {m.registrationCode || 'No code'}
+            </p>
+            <p className="reg-duplicate-match__meta">
+              Status: {m.status?.replace(/_/g, ' ')}
+              {m.matchScore != null && <> · Score: {Math.round(m.matchScore * 100)}%</>}
+            </p>
+          </div>
+        </div>
+      ))}
+      {formMatches.length > 0 && (
+        <div style={{ marginTop: '0.5rem' }}>
+          <p className="reg-duplicate-warning__desc" style={{ marginBottom: '0.4rem' }}>
+            <strong>Name/phone matches:</strong>
+          </p>
+          {formMatches.map((m) => (
+            <div key={`form-${m.registrationId}`} className="reg-duplicate-match">
+              <span className="reg-duplicate-match__badge reg-duplicate-match__badge--form">Form Match</span>
+              {m.photoUrl && (
+                <img src={m.photoUrl} alt="" className="reg-duplicate-match__photo" />
+              )}
+              <div className="reg-duplicate-match__info">
+                <p className="reg-duplicate-match__name">{m.displayName || '—'}</p>
+                <p className="reg-duplicate-match__meta">
+                  {m.role} · {m.registrationCode || 'No code'}
+                </p>
+                <p className="reg-duplicate-match__meta">
+                  Status: {m.status?.replace(/_/g, ' ')}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function RegistrationFlow({
   roleId: initialRoleId,
   roles: availableRoles,
@@ -82,6 +142,8 @@ export default function RegistrationFlow({
   const [initialLoading, setInitialLoading] = useState(true);
   const [pass, setPass] = useState(null);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
+  const [reviewDuplicates, setReviewDuplicates] = useState(null);
+  const [checkingReviewDuplicates, setCheckingReviewDuplicates] = useState(false);
 
   const isEditMode = Boolean(registrationId || registration?._id);
 
@@ -136,6 +198,30 @@ export default function RegistrationFlow({
     setPhotoPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [photoBlob]);
+
+  // Re-check duplicates whenever the review (pending verification) stage is shown,
+  // so reviewers always see duplicate face/form entries before approving.
+  useEffect(() => {
+    const regId = registration?._id;
+    if (stage !== 'review' || !regId || registration?.status === 'verified') {
+      setReviewDuplicates(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setCheckingReviewDuplicates(true);
+    api.registrations
+      .getDuplicates(regId)
+      .then((result) => {
+        if (!cancelled) setReviewDuplicates(normalizeDuplicates(result));
+      })
+      .catch(() => {
+        if (!cancelled) setReviewDuplicates(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingReviewDuplicates(false);
+      });
+    return () => { cancelled = true; };
+  }, [stage, registration?._id, registration?.status, registration?.photoPath]);
 
   async function loadNew(id) {
     try {
@@ -298,7 +384,7 @@ export default function RegistrationFlow({
             excludeId: reg._id,
           });
           if (dupResult.hasDuplicate) {
-            setDuplicateWarning({ faceMatch: dupResult.faceMatch, formMatches: dupResult.formMatches });
+            setDuplicateWarning(normalizeDuplicates(dupResult));
             setLoading(false);
             return;
           }
@@ -316,6 +402,13 @@ export default function RegistrationFlow({
   }
 
   async function handleVerify(approved) {
+    if (approved && reviewDuplicates?.hasDuplicate) {
+      const count = reviewDuplicates.faceMatches.length + reviewDuplicates.formMatches.length;
+      const confirmed = confirm(
+        `Possible duplicate detected (${count} matching ${count === 1 ? 'entry' : 'entries'} found). Approve this registration anyway?`
+      );
+      if (!confirmed) return;
+    }
     setLoading(true);
     setError('');
     setSuccess('');
@@ -602,47 +695,10 @@ export default function RegistrationFlow({
                   <p className="reg-duplicate-warning__desc">
                     An existing registration may match this person. Please review before proceeding.
                   </p>
-                  {duplicateWarning.faceMatch && (
-                    <div className="reg-duplicate-match">
-                      <span className="reg-duplicate-match__badge reg-duplicate-match__badge--face">Face Match</span>
-                      {duplicateWarning.faceMatch.photoUrl && (
-                        <img src={duplicateWarning.faceMatch.photoUrl} alt="" className="reg-duplicate-match__photo" />
-                      )}
-                      <div className="reg-duplicate-match__info">
-                        <p className="reg-duplicate-match__name">{duplicateWarning.faceMatch.displayName || '—'}</p>
-                        <p className="reg-duplicate-match__meta">
-                          {duplicateWarning.faceMatch.role} · {duplicateWarning.faceMatch.registrationCode || 'No code'}
-                        </p>
-                        <p className="reg-duplicate-match__meta">
-                          Status: {duplicateWarning.faceMatch.status?.replace(/_/g, ' ')} · Score: {Math.round(duplicateWarning.faceMatch.matchScore * 100)}%
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  {duplicateWarning.formMatches?.length > 0 && (
-                    <div style={{ marginTop: '0.5rem' }}>
-                      <p className="reg-duplicate-warning__desc" style={{ marginBottom: '0.4rem' }}>
-                        <strong>Name/phone matches:</strong>
-                      </p>
-                      {duplicateWarning.formMatches.map((m) => (
-                        <div key={m.registrationId} className="reg-duplicate-match">
-                          <span className="reg-duplicate-match__badge reg-duplicate-match__badge--form">Form Match</span>
-                          {m.photoUrl && (
-                            <img src={m.photoUrl} alt="" className="reg-duplicate-match__photo" />
-                          )}
-                          <div className="reg-duplicate-match__info">
-                            <p className="reg-duplicate-match__name">{m.displayName || '—'}</p>
-                            <p className="reg-duplicate-match__meta">
-                              {m.role} · {m.registrationCode || 'No code'}
-                            </p>
-                            <p className="reg-duplicate-match__meta">
-                              Status: {m.status?.replace(/_/g, ' ')}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <DuplicateMatchList
+                    faceMatches={duplicateWarning.faceMatches}
+                    formMatches={duplicateWarning.formMatches}
+                  />
                   <div className="reg-duplicate-warning__actions">
                     <button type="button" className="btn-secondary" onClick={() => setDuplicateWarning(null)}>
                       Edit Details / Photo
@@ -720,6 +776,30 @@ export default function RegistrationFlow({
               Edit Details / Photo
             </button>
           </div>
+          {checkingReviewDuplicates && (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '1rem' }}>
+              Checking for duplicate entries…
+            </p>
+          )}
+          {reviewDuplicates?.hasDuplicate && (
+            <div className="reg-duplicate-warning" style={{ marginTop: '1rem' }}>
+              <div className="reg-duplicate-warning__header">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <strong>Possible duplicate detected</strong>
+              </div>
+              <p className="reg-duplicate-warning__desc">
+                An existing registration may match this person. Please review carefully before approving.
+              </p>
+              <DuplicateMatchList
+                faceMatches={reviewDuplicates.faceMatches}
+                formMatches={reviewDuplicates.formMatches}
+              />
+            </div>
+          )}
           {error && <p className="error-msg">{error}</p>}
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
             <button type="button" className="btn-success" onClick={() => handleVerify(true)} disabled={loading}>

@@ -1805,10 +1805,11 @@
   gap: 0.75rem 1rem;
 }
 
+
 .rc-filter-inline__item {
   margin-bottom: 0 !important;
   flex: 0 1 auto;
-  min-width: 140px;
+  min-width: 110px;
 }
 
 .rc-filter-inline__item--action {
@@ -1827,16 +1828,16 @@
 .rc-filter-inline__item select,
 .rc-filter-inline__item input[type="date"],
 .rc-filter-inline__item input[type="month"] {
-  min-width: 150px;
+  min-width: 118px;
 }
 
 .rc-filter-inline__item--week {
-  min-width: 280px;
+  min-width: 250px;
 }
 
 .rc-filter-inline__item--search {
-  min-width: 240px;
-  flex: 1 1 220px;
+  min-width: 170px;
+  flex: 1 1 170px;
 }
 
 .rc-filter-inline__item--search .rc-search-wrap,

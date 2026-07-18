@@ -33,7 +33,7 @@ import {
   GATE_DENIAL_REASONS,
   todayDateString,
 } from '../services/attendanceService.js';
-import { resolveDayPassValidUntil } from '../utils/istTime.js';
+import { resolveDayPassValidUntil, startOfDayIst, endOfDayIst } from '../utils/istTime.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
 import { createMulter } from '../utils/storage.js';
@@ -55,26 +55,35 @@ const upload = createMulter('gate', (req, file) => {
   return `gate-${Date.now()}${path.extname(file.originalname) || '.jpg'}`;
 });
 
-async function discardGateLog(log) {
-  if (!log?._id) return;
-  try {
-    const doc = await GateLog.findById(log._id);
-    if (!doc) return;
-    if (doc.photoPath && !doc.photoPath.includes('cloudinary.com') && fs.existsSync(doc.photoPath)) {
-      fs.unlinkSync(doc.photoPath);
-    }
-    await GateLog.findByIdAndDelete(doc._id);
-  } catch (err) {
-    console.error('Failed to discard gate log:', err.message);
-  }
-}
-
 async function finalizeGateLog(log) {
   if (!log) return log;
   log.accessGranted = true;
   log.matched = true;
   await log.save();
   return log;
+}
+
+/**
+ * Persist a rejected scan attempt for the audit trail instead of discarding it.
+ * The log keeps accessGranted=false plus the denial reason, so audit views can
+ * show every attempted entry/exit while attendance queries (granted-only) skip it.
+ */
+async function markGateLogDenied(log, reason, error) {
+  if (!log?._id) return null;
+  try {
+    log.accessGranted = false;
+    log.metadata = {
+      ...(log.metadata || {}),
+      denialReason: reason || 'denied',
+      denialError: error || '',
+    };
+    log.markModified('metadata');
+    await log.save();
+    return log;
+  } catch (err) {
+    console.error('Failed to persist denied gate log:', err.message);
+    return null;
+  }
 }
 
 router.get(
@@ -91,6 +100,16 @@ router.get(
     if (req.query.successOnly !== 'false') {
       filter.matched = true;
       filter.$or = [{ accessGranted: true }, { accessGranted: { $exists: false } }];
+    } else if (req.query.status === 'granted') {
+      filter.$or = [{ accessGranted: true }, { accessGranted: { $exists: false } }];
+    } else if (req.query.status === 'denied') {
+      filter.accessGranted = false;
+    }
+
+    if (req.query.dateFrom || req.query.dateTo) {
+      filter.createdAt = {};
+      if (req.query.dateFrom) filter.createdAt.$gte = startOfDayIst(req.query.dateFrom);
+      if (req.query.dateTo) filter.createdAt.$lte = endOfDayIst(req.query.dateTo);
     }
 
     // RBAC division scoping: non-super-admins only see logs from their own
@@ -102,7 +121,11 @@ router.get(
     }
 
     const logs = await GateLog.find(filter)
-      .populate('registrationId', 'registrationCode formData')
+      .populate({
+        path: 'registrationId',
+        select: 'registrationCode formData formId photoPath',
+        populate: { path: 'formId', select: 'fields' },
+      })
       .populate('roleId', 'name slug')
       .populate('divisionId', 'name slug')
       .populate('departmentId', 'name slug')
@@ -110,26 +133,42 @@ router.get(
       .sort({ createdAt: -1 })
       .limit(parseInt(req.query.limit || '100', 10));
 
-    res.json(logs);
+    const items = logs.map((log) => {
+      const obj = log.toObject();
+      const reg = obj.registrationId;
+      const display = reg
+        ? buildDisplayInfo(reg.formData, reg.formId?.fields || [])
+        : null;
+      return {
+        ...obj,
+        holderName: display?.displayName || null,
+        holderPhotoUrl: reg?.photoPath ? photoUrlFromPath(reg.photoPath) : null,
+        denialReason: obj.metadata?.denialReason || null,
+        denialError: obj.metadata?.denialError || null,
+      };
+    });
+
+    res.json(items);
   })
 );
 
 router.get(
   '/status/:registrationId',
   asyncHandler(async (req, res) => {
-    const lastEntry = await GateLog.findOne(
-      grantedGateLogFilter({
-        registrationId: req.params.registrationId,
-        eventType: GATE_EVENT_TYPES.ENTRY,
-      })
-    ).sort({ createdAt: -1 });
-
-    const lastExit = await GateLog.findOne(
-      grantedGateLogFilter({
-        registrationId: req.params.registrationId,
-        eventType: GATE_EVENT_TYPES.EXIT,
-      })
-    ).sort({ createdAt: -1 });
+    const [lastEntry, lastExit] = await Promise.all([
+      GateLog.findOne(
+        grantedGateLogFilter({
+          registrationId: req.params.registrationId,
+          eventType: GATE_EVENT_TYPES.ENTRY,
+        })
+      ).sort({ createdAt: -1 }),
+      GateLog.findOne(
+        grantedGateLogFilter({
+          registrationId: req.params.registrationId,
+          eventType: GATE_EVENT_TYPES.EXIT,
+        })
+      ).sort({ createdAt: -1 }),
+    ]);
 
     const isInside =
       lastEntry && (!lastExit || lastEntry.createdAt > lastExit.createdAt);
@@ -182,8 +221,8 @@ router.patch(
     log.markModified('metadata');
     await log.save();
 
-    // Also patch the day pass with shift details. Access window stays entry+24h;
-    // Expected Out display uses shift end separately.
+    // Also patch the day pass with shift details. The working window becomes
+    // shift end + 4h grace once the shift is known.
     const workDate = todayDateString(log.createdAt || new Date());
     const dayPass = log.registrationId
       ? await Pass.findOne({
@@ -203,6 +242,9 @@ router.patch(
       const validUntil = resolveDayPassValidUntil({
         entryAt,
         fallbackDate: log.createdAt || new Date(),
+        validDate: dayPass.validDate || workDate,
+        startTime: shiftStartTime,
+        endTime: shiftEndTime,
       });
 
       dayPass.validUntil = validUntil;
@@ -250,11 +292,14 @@ router.patch(
 );
 
 async function formatRegistrationForScan(registrationDoc) {
-  const registration = await Registration.findById(registrationDoc._id)
+  // lean + no faceEmbedding: the 512-float embedding is useless to the client
+  // and dominates the payload/hydration cost otherwise.
+  const obj = await Registration.findById(registrationDoc._id)
+    .select('-faceEmbedding')
     .populate('roleId', 'name slug isShiftBased')
-    .populate('formId', 'fields');
-  if (!registration) return null;
-  const obj = registration.toObject();
+    .populate('formId', 'fields')
+    .lean();
+  if (!obj) return null;
   const display = buildDisplayInfo(obj.formData, obj.formId?.fields || []);
   return {
     ...obj,
@@ -308,9 +353,9 @@ function buildScanDenialResponse({
 }
 
 async function respondScanDenial(res, options) {
-  const { log, ...rest } = options;
-  await discardGateLog(log);
-  return res.status(400).json(buildScanDenialResponse({ ...rest, log: null }));
+  const { log, reason, error, ...rest } = options;
+  const savedLog = await markGateLogDenied(log, reason, error);
+  return res.status(400).json(buildScanDenialResponse({ ...rest, reason, error, log: savedLog }));
 }
 
 async function identifyFromPhoto(file, registrationId) {
@@ -329,40 +374,44 @@ async function identifyFromPhoto(file, registrationId) {
     return { error: 'No face detected in the photo' };
   }
 
-  // Upload gate scan photo to Cloudinary (for audit log) if enabled
-  let savedPhotoPath = filePath;
-  if (isCloudinaryEnabled()) {
-    try {
-      const result = await uploadToCloudinary(imageBuffer, 'gate', `gate-${Date.now()}`);
-      savedPhotoPath = result.url;
-      // Clean up temp local file if multer wrote one
-      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch (err) {
-      console.error('Cloudinary gate upload failed, falling back to local:', err.message);
+  // Kick off the audit-photo upload in parallel with face matching instead of
+  // blocking the scan on it — it only produces the stored photo path.
+  const uploadPromise = isCloudinaryEnabled()
+    ? uploadToCloudinary(imageBuffer, 'gate', `gate-${Date.now()}`)
+        .then((result) => {
+          if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          return result.url;
+        })
+        .catch((err) => {
+          console.error('Cloudinary gate upload failed, falling back to local:', err.message);
+          return filePath;
+        })
+    : Promise.resolve(filePath);
+
+  const cleanupLocalPhoto = async () => {
+    const savedPath = await uploadPromise;
+    if (savedPath && !savedPath.startsWith('http') && fs.existsSync(savedPath)) {
+      fs.unlinkSync(savedPath);
     }
-  }
+  };
 
   let matchedRegistration = null;
   let matchScore = 0;
 
   if (registrationId) {
-    matchedRegistration = await Registration.findById(registrationId);
+    matchedRegistration = await Registration.findById(registrationId).select(
+      'status faceEmbedding roleId registrationCode'
+    );
     if (!matchedRegistration) {
-      if (savedPhotoPath && !savedPhotoPath.startsWith('http') && fs.existsSync(savedPhotoPath)) {
-        fs.unlinkSync(savedPhotoPath);
-      }
+      await cleanupLocalPhoto();
       return { error: 'Registration not found', status: 404 };
     }
     if (matchedRegistration.status !== REGISTRATION_STATUS.VERIFIED) {
-      if (savedPhotoPath && !savedPhotoPath.startsWith('http') && fs.existsSync(savedPhotoPath)) {
-        fs.unlinkSync(savedPhotoPath);
-      }
+      await cleanupLocalPhoto();
       return { error: 'Registration is not verified', status: 400 };
     }
     if (matchedRegistration.faceEmbedding?.length !== EMBEDDING_SIZE) {
-      if (savedPhotoPath && !savedPhotoPath.startsWith('http') && fs.existsSync(savedPhotoPath)) {
-        fs.unlinkSync(savedPhotoPath);
-      }
+      await cleanupLocalPhoto();
       return {
         error: 'Registration photo uses an outdated face model. Please re-upload the photo.',
         status: 400,
@@ -382,17 +431,21 @@ async function identifyFromPhoto(file, registrationId) {
         ambiguous: true,
         matchScore: searchResult.best?.similarity ?? 0,
         candidates: searchResult.matches?.slice(0, 3) ?? [],
-        savedPhotoPath,
+        savedPhotoPath: await uploadPromise,
       };
     }
 
     if (searchResult.best?.id) {
-      matchedRegistration = await Registration.findById(searchResult.best.id);
+      // Match already scored by the index — no need to load the embedding here.
+      matchedRegistration = await Registration.findById(searchResult.best.id).select(
+        '-faceEmbedding'
+      );
       matchScore = searchResult.best.similarity;
     }
   }
 
   const matched = matchScore >= MATCH_THRESHOLD && !!matchedRegistration;
+  const savedPhotoPath = await uploadPromise;
   return { matchedRegistration, matchScore, matched, autoIdentified: !registrationId, savedPhotoPath };
 }
 
@@ -517,8 +570,10 @@ router.post(
       metadata: { qrScan: true, passCode: pass.passCode, scanType: effectiveScanType },
     });
 
-    const populated = await formatRegistrationForScan(matchedRegistration);
-    const activePass = await getActiveDayPass(matchedRegistration._id, divisionId);
+    const [populated, activePass] = await Promise.all([
+      formatRegistrationForScan(matchedRegistration),
+      getActiveDayPass(matchedRegistration._id, divisionId),
+    ]);
     let dayPass = activePass ? await formatPassResponse(activePass) : null;
     let sessionState = getPassSessionState(activePass);
     let resolvedEventType = eventType;
@@ -561,7 +616,7 @@ router.post(
             });
         }
       } else if (isAutoEvent) {
-        await discardGateLog(log);
+        await markGateLogDenied(log, 'invalid_gate_config', 'Auto entry/exit is only available at combined entry & exit gates');
         return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
       }
 
@@ -840,11 +895,11 @@ router.post(
     });
 
     if (!matched) {
-      await discardGateLog(log);
       const reason = registrationId ? 'face_mismatch' : 'not_found';
       const message = registrationId
         ? 'Face does not match the selected registration'
         : 'Person not found in the database. Please complete registration.';
+      await markGateLogDenied(log, reason, message);
 
       return res.json({
         matched: false,
@@ -856,8 +911,10 @@ router.post(
       });
     }
 
-    const populated = await formatRegistrationForScan(matchedRegistration);
-    const activePass = await getActiveDayPass(matchedRegistration._id, divisionId);
+    const [populated, activePass] = await Promise.all([
+      formatRegistrationForScan(matchedRegistration),
+      getActiveDayPass(matchedRegistration._id, divisionId),
+    ]);
     let dayPass = activePass ? await formatPassResponse(activePass) : null;
     let sessionState = getPassSessionState(activePass);
 
@@ -903,7 +960,7 @@ router.post(
             });
         }
       } else if (isAutoEvent) {
-        await discardGateLog(log);
+        await markGateLogDenied(log, 'invalid_gate_config', 'Auto entry/exit is only available at combined entry & exit gates');
         return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
       }
 

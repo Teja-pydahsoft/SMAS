@@ -1,0 +1,63 @@
+# SMAS — App instance (frontend + backend + MongoDB + Caddy)
+#
+# Run from this directory:
+#   cp .env.example .env   (then fill in values)
+#   docker compose up -d --build
+#
+# The AI server runs on a separate Lightsail instance — set AI_SERVER_URL in
+# .env to that instance's PRIVATE IP (http://172.26.x.x:8000).
+
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    # No ports exposed — reachable only by the backend on the internal network.
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: smas
+
+  backend:
+    build:
+      context: ../../../backend
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3001
+      MONGODB_URI: mongodb://mongodb:27017/smas
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ../../../frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  mongo-data:
+  uploads:
+  caddy-data:
+  caddy-config:

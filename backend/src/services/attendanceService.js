@@ -2,7 +2,14 @@ import Pass from '../models/Pass.js';
 import GateLog from '../models/GateLog.js';
 import Division from '../models/Division.js';
 import Department from '../models/Department.js';
-import { PASS_TYPES, GATE_EVENT_TYPES, SCAN_TYPES, MIN_CHECKOUT_INTERVAL_MS, DAY_PASS_DURATION_MS } from '../constants/index.js';
+import {
+  PASS_TYPES,
+  GATE_EVENT_TYPES,
+  SCAN_TYPES,
+  MIN_CHECKOUT_INTERVAL_MS,
+  DAY_PASS_DURATION_MS,
+  SHIFT_OVERSTAY_GRACE_MS,
+} from '../constants/index.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { buildQrDataUrl, formatPassResponse } from './passService.js';
 import { photoUrlFromPath } from '../utils/displayInfo.js';
@@ -12,6 +19,7 @@ import {
   startOfDayIst,
   endOfDayIst,
   resolveDayPassValidUntil,
+  shiftEndAtIst,
 } from '../utils/istTime.js';
 
 export function todayDateString(date = new Date()) {
@@ -27,30 +35,36 @@ export function endOfDay(date = new Date()) {
 }
 
 /**
- * Expected session end for access: stored validUntil, else gateEntryAt + 24h.
+ * Working-window end for a session:
+ * assigned shift end + 4h grace when the pass has shift timings,
+ * otherwise stored validUntil, otherwise gateEntryAt + 24h.
  */
-function resolvePassSessionEnd(pass) {
+export function resolvePassSessionEnd(pass) {
   if (!pass) return null;
 
-  const entryRaw =
-    pass.qrPayload?.gateEntryAt || pass.validFrom || pass.createdAt || null;
+  const payload = pass.qrPayload || {};
+  const entryRaw = payload.gateEntryAt || pass.validFrom || pass.createdAt || null;
   const entryAt = entryRaw ? new Date(entryRaw) : null;
-  const fromEntry =
-    entryAt && !Number.isNaN(entryAt.getTime())
-      ? new Date(entryAt.getTime() + DAY_PASS_DURATION_MS)
-      : null;
+  const entryTime =
+    entryAt && !Number.isNaN(entryAt.getTime()) ? entryAt.getTime() : null;
+
+  const validDate = pass.validDate || payload.validDate || null;
+  const shiftEnd = shiftEndAtIst(validDate, payload.shiftStartTime, payload.shiftEndTime);
+  if (shiftEnd) {
+    let windowEnd = shiftEnd.getTime() + SHIFT_OVERSTAY_GRACE_MS;
+    // Late entries (after the shift window closed) still get the grace period
+    if (entryTime && windowEnd <= entryTime) {
+      windowEnd = entryTime + SHIFT_OVERSTAY_GRACE_MS;
+    }
+    return new Date(windowEnd);
+  }
 
   if (pass.validUntil) {
     const stored = new Date(pass.validUntil);
-    if (!Number.isNaN(stored.getTime())) {
-      // Prefer the later of stored vs entry+24h so older calendar-midnight
-      // / shift-end expiries still cover overnight sessions under the new rule.
-      if (fromEntry && fromEntry.getTime() > stored.getTime()) return fromEntry;
-      return stored;
-    }
+    if (!Number.isNaN(stored.getTime())) return stored;
   }
 
-  return fromEntry;
+  return entryTime ? new Date(entryTime + DAY_PASS_DURATION_MS) : null;
 }
 
 /**

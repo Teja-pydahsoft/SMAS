@@ -59,17 +59,34 @@ export function buildPassVerifyUrl(passCode) {
   return `${base}/pass/verify/${encodeURIComponent(passCode)}`;
 }
 
+// QR data URLs are deterministic per pass code, but formatPassResponse can be
+// called several times per scan request. Caching skips repeated QR rendering
+// (pure CPU) on the hot gate-scan path.
+const QR_CACHE_MAX = 500;
+const qrDataUrlCache = new Map();
+
 export async function buildQrDataUrl(passCode) {
-  return QRCode.toDataURL(buildPassVerifyUrl(passCode), {
+  const cached = qrDataUrlCache.get(passCode);
+  if (cached) return cached;
+
+  const dataUrl = await QRCode.toDataURL(buildPassVerifyUrl(passCode), {
     errorCorrectionLevel: 'M',
     margin: 2,
     width: 280,
     color: { dark: '#0f1419', light: '#ffffff' },
   });
+
+  if (qrDataUrlCache.size >= QR_CACHE_MAX) {
+    // Drop the oldest entry (Map preserves insertion order)
+    qrDataUrlCache.delete(qrDataUrlCache.keys().next().value);
+  }
+  qrDataUrlCache.set(passCode, dataUrl);
+  return dataUrl;
 }
 
 async function loadRegistrationContext(registrationId) {
   const registration = await Registration.findById(registrationId)
+    .select('-faceEmbedding')
     .populate('roleId', 'name slug')
     .populate('formId', 'fields');
 
@@ -312,7 +329,7 @@ export async function regenerateRegistrationPass(registrationId) {
 }
 
 export async function syncAllRegistrationPasses() {
-  const verified = await Registration.find({ status: 'verified' });
+  const verified = await Registration.find({ status: 'verified' }).select('_id').lean();
   const summary = { total: verified.length, created: 0, existing: 0, failed: 0 };
 
   for (const reg of verified) {

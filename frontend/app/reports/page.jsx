@@ -537,11 +537,21 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
             const earned = dayEarnedAmount(day, rate);
             const shiftWindow = formatShiftWindow(day.shiftStartTime, day.shiftEndTime);
             const breakSegments = Array.isArray(day.breaks) ? day.breaks : [];
+            const overnight = isOvernightDay(day);
 
             return (
               <Fragment key={day.date}>
                 <tr className="rc-period-sessions-table__meta">
-                  <td className="rc-period-sessions-table__date">{formatDate(day.date)}</td>
+                  <td className="rc-period-sessions-table__date">
+                    {overnight ? (
+                      <span className="rc-period-sessions-table__date-overnight">
+                        {formatDate(day.date)}
+                        <span className="rc-period-sessions-table__date-next"> – {formatDate(nextIstDateStr(day.date))}</span>
+                      </span>
+                    ) : (
+                      formatDate(day.date)
+                    )}
+                  </td>
                   <td>
                     <span className={`rc-period-sessions-table__status rc-period-sessions-table__status--${day.status?.toLowerCase()}`}>
                       {day.code}
@@ -1555,6 +1565,35 @@ function formatCellHours(hours) {
   if (h === 0) return `${m}m`;
   if (m === 0) return `${h}h`;
   return `${h}h ${m}m`;
+}
+
+/**
+ * Returns the next calendar date string (YYYY-MM-DD) for an overnight shift row.
+ * Used to display "7/19 – 7/20" in the Date column when a shift crosses midnight.
+ */
+function nextIstDateStr(dateStr) {
+  const base = new Date(`${dateStr}T12:00:00+05:30`);
+  base.setTime(base.getTime() + 24 * 60 * 60 * 1000);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(base);
+}
+
+/**
+ * True when the shift's endTime is on the next calendar day (e.g. 11 PM – 3 AM).
+ */
+function isOvernightDay(day) {
+  if (!day?.shiftStartTime || !day?.shiftEndTime) return false;
+  const toMins = (t) => {
+    const [h, m] = String(t).split(':').map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+  };
+  const s = toMins(day.shiftStartTime);
+  const e = toMins(day.shiftEndTime);
+  return s !== null && e !== null && e <= s;
 }
 
 function AttendanceCell({ day, onSelect }) {

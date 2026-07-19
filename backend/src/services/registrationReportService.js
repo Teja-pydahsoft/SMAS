@@ -30,6 +30,202 @@ function logDateKey(date) {
   return todayDateStringIst(date);
 }
 
+/**
+ * Return the IST calendar date one day before `dateStr` (YYYY-MM-DD).
+ */
+function prevDateIst(dateStr) {
+  // Use noon IST to avoid any edge case when stepping back
+  const base = new Date(`${dateStr}T12:00:00+05:30`);
+  base.setTime(base.getTime() - 24 * 60 * 60 * 1000);
+  return todayDateStringIst(base);
+}
+
+/**
+ * Return the IST calendar date one day after `dateStr` (YYYY-MM-DD).
+ */
+function nextDateIst(dateStr) {
+  const base = new Date(`${dateStr}T12:00:00+05:30`);
+  base.setTime(base.getTime() + 24 * 60 * 60 * 1000);
+  return todayDateStringIst(base);
+}
+
+/**
+ * True when a pass belongs to an overnight shift (shift end crosses midnight).
+ * Uses the shift snapshot stored in qrPayload so no extra DB lookup is needed.
+ */
+function isOvernightPass(pass) {
+  const start = pass?.qrPayload?.shiftStartTime;
+  const end = pass?.qrPayload?.shiftEndTime;
+  if (!start || !end) return false;
+  const toMins = (t) => {
+    const [h, m] = t.split(':').map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+  };
+  const s = toMins(start);
+  const e = toMins(end);
+  return s !== null && e !== null && e <= s;
+}
+
+/**
+ * Build a map of  logId → workDate  for logs that should be re-attributed to
+ * the previous calendar day's shift window (overnight shifts only).
+ *
+ * Single-registration variant used in getRegistrationReport.
+ * `passByDate`  — Map<validDate, pass>
+ * `logs`        — raw GateLog documents (createdAt available)
+ */
+function buildOvernightRebucketMap(logs, passByDate) {
+  // Absorbed dates are passes created by a post-midnight re-entry inside a prior
+  // night shift — they must NOT be treated as a fresh overnight start, otherwise
+  // the rebucket condition `!overnightDates.has(wallDate)` would block re-keying
+  // the very logs that belong to the previous shift.
+  const absorbedDates = buildAbsorbedDatesSet(passByDate);
+
+  // Collect overnight work-dates, excluding absorbed ones
+  const overnightDates = new Set();
+  for (const [validDate, pass] of passByDate) {
+    if (isOvernightPass(pass) && !absorbedDates.has(validDate)) {
+      overnightDates.add(validDate);
+    }
+  }
+  if (overnightDates.size === 0) return new Map();
+
+  const rebucket = new Map(); // logId (string) → workDate to use instead
+  for (const log of logs) {
+    const wallDate = logDateKey(log.createdAt);
+    const prevDate = prevDateIst(wallDate);
+    // Re-attribute only when:
+    //  - the log's wall-clock date is NOT itself a work-date with an overnight shift
+    //  - the previous calendar day IS a work-date with an overnight shift
+    //  - the log happened before the shift end on the next day (we rely on the
+    //    pass's shiftEndTime; anything before it belongs to that shift window)
+    if (!overnightDates.has(wallDate) && overnightDates.has(prevDate)) {
+      const pass = passByDate.get(prevDate);
+      // Confirm the log timestamp is within the overnight shift window
+      // (i.e. before shift end on wallDate)
+      const endTime = pass?.qrPayload?.shiftEndTime;
+      if (endTime) {
+        const [eh, em] = endTime.split(':').map(Number);
+        const shiftEndOnNextDay = new Date(`${wallDate}T${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}:00+05:30`);
+        const logAt = new Date(log.createdAt);
+        if (logAt <= shiftEndOnNextDay) {
+          rebucket.set(log._id.toString(), prevDate);
+        }
+      } else {
+        rebucket.set(log._id.toString(), prevDate);
+      }
+    }
+  }
+  return rebucket;
+}
+
+/**
+ * Multi-registration variant used in getAttendanceHistoryGrid.
+ * `passByRegDate` — Map<"regId|validDate", pass>
+ * `logs`          — raw GateLog documents (registrationId + createdAt available)
+ */
+function buildOvernightRebucketMapByReg(logs, passByRegDate) {
+  // Group passes by registration first
+  const passesByReg = new Map(); // regId → Map<validDate, pass>
+  for (const [key, pass] of passByRegDate) {
+    const [regId, validDate] = key.split('|');
+    if (!passesByReg.has(regId)) passesByReg.set(regId, new Map());
+    passesByReg.get(regId).set(validDate, pass);
+  }
+
+  // Build a per-registration map of overnight work-dates, excluding absorbed dates
+  // so they don't block rebucketing of logs that belong to the prior night shift.
+  const overnightByReg = new Map(); // regId → Map<validDate, pass>
+  for (const [regId, passMap] of passesByReg) {
+    const absorbedDates = buildAbsorbedDatesSet(passMap);
+    for (const [validDate, pass] of passMap) {
+      if (!isOvernightPass(pass) || absorbedDates.has(validDate)) continue;
+      if (!overnightByReg.has(regId)) overnightByReg.set(regId, new Map());
+      overnightByReg.get(regId).set(validDate, pass);
+    }
+  }
+  if (overnightByReg.size === 0) return new Map();
+
+  const rebucket = new Map(); // logId (string) → workDate to use instead
+  for (const log of logs) {
+    const regId = log.registrationId.toString();
+    const overnightDatesForReg = overnightByReg.get(regId);
+    if (!overnightDatesForReg) continue;
+
+    const wallDate = logDateKey(log.createdAt);
+    const prevDate = prevDateIst(wallDate);
+    if (!overnightDatesForReg.has(wallDate) && overnightDatesForReg.has(prevDate)) {
+      const pass = overnightDatesForReg.get(prevDate);
+      const endTime = pass?.qrPayload?.shiftEndTime;
+      if (endTime) {
+        const [eh, em] = endTime.split(':').map(Number);
+        const shiftEndOnNextDay = new Date(`${wallDate}T${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}:00+05:30`);
+        const logAt = new Date(log.createdAt);
+        if (logAt <= shiftEndOnNextDay) {
+          rebucket.set(log._id.toString(), prevDate);
+        }
+      } else {
+        rebucket.set(log._id.toString(), prevDate);
+      }
+    }
+  }
+  return rebucket;
+}
+
+/**
+ * Returns a Set of validDates that are "absorbed" into the previous calendar day's
+ * overnight shift — i.e. dates where the pass was created by a post-midnight
+ * gate re-entry that still falls within the previous night's shift window.
+ *
+ * These dates should be suppressed in the attendance grid (merged into the prior row).
+ *
+ * Single-registration variant: `passByDate` — Map<validDate, pass>
+ */
+function buildAbsorbedDatesSet(passByDate) {
+  const absorbed = new Set();
+  for (const [validDate, pass] of passByDate) {
+    if (!isOvernightPass(pass)) continue;
+    // This is a night-shift work-date. Check if the next calendar day also has a pass
+    // that was created inside this shift's window (i.e. a re-entry after midnight).
+    const nextDate = nextDateIst(validDate);
+    const nextPass = passByDate.get(nextDate);
+    if (!nextPass) continue;
+
+    // The next-day pass must have been created before the shift end on that next day
+    const endTime = pass.qrPayload?.shiftEndTime;
+    if (!endTime) continue;
+    const [eh, em] = endTime.split(':').map(Number);
+    const shiftEndOnNextDay = new Date(
+      `${nextDate}T${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}:00+05:30`
+    );
+    const nextPassCreated = new Date(nextPass.createdAt);
+    if (nextPassCreated <= shiftEndOnNextDay) {
+      absorbed.add(nextDate);
+    }
+  }
+  return absorbed;
+}
+
+/**
+ * Multi-registration variant: `passByRegDate` — Map<"regId|validDate", pass>
+ * Returns Map<regId, Set<absorbedDate>>
+ */
+function buildAbsorbedDatesByReg(passByRegDate) {
+  // Group passes by registration first
+  const passesByReg = new Map(); // regId → Map<validDate, pass>
+  for (const [key, pass] of passByRegDate) {
+    const [regId, validDate] = key.split('|');
+    if (!passesByReg.has(regId)) passesByReg.set(regId, new Map());
+    passesByReg.get(regId).set(validDate, pass);
+  }
+
+  const result = new Map(); // regId → Set<absorbedDate>
+  for (const [regId, passMap] of passesByReg) {
+    result.set(regId, buildAbsorbedDatesSet(passMap));
+  }
+  return result;
+}
+
 function eachDateInRange(dateFrom, dateTo) {
   const dates = [];
   const cur = new Date(`${dateFrom}T12:00:00.000Z`);
@@ -355,11 +551,12 @@ function scanLabel(entry) {
   return `${place}${division} — ${action}`;
 }
 
-function groupEntriesByDate(logs) {
+function groupEntriesByDate(logs, overnightRebucket = null) {
   const groups = new Map();
 
   for (const log of logs) {
-    const date = logDateKey(log.createdAt);
+    const date = (overnightRebucket && overnightRebucket.get(log._id.toString()))
+      || logDateKey(log.createdAt);
     if (!groups.has(date)) groups.set(date, []);
     groups.get(date).push(formatLogEntry(log));
   }
@@ -526,9 +723,11 @@ export async function getRegistrationReport(
   if (divisionScoped) logQuery.divisionId = { $in: divisionObjIds };
 
   if (hasDateRange) {
+    // Extend the upper bound by one extra IST day so that post-midnight logs
+    // belonging to an overnight shift on `dateTo` are included in the fetch.
     logQuery.createdAt = {
       $gte: startOfDayIst(dateFrom),
-      $lte: endOfDayIst(dateTo),
+      $lte: endOfDayIst(nextDateIst(dateTo)),
     };
   }
 
@@ -552,13 +751,9 @@ export async function getRegistrationReport(
   const todayActive = hasDateRange
     ? []
     : await buildTodayActiveForRegistration(registration._id, divisionScoped ? divisionObjIds : null);
-  const entriesByDate = groupEntriesByDate(logs).map((group) => ({
-    ...group,
-    entries: group.entries.map((entry) => ({
-      ...entry,
-      label: scanLabel(entry),
-    })),
-  }));
+
+  // Populated inside the hasDateRange block; reused for entriesByDate below.
+  let overnightRebucketForRange = null;
 
   let attendanceRange = null;
   if (hasDateRange) {
@@ -572,13 +767,7 @@ export async function getRegistrationReport(
       .select('registrationId validDate qrPayload createdAt')
       .lean();
 
-    const logsByDate = new Map();
-    for (const log of logs) {
-      const date = logDateKey(log.createdAt);
-      if (!logsByDate.has(date)) logsByDate.set(date, []);
-      logsByDate.get(date).push(log);
-    }
-
+    // Build passByDate first so the overnight rebucket map can reference it
     const passByDate = new Map();
     const initialShiftPassByDate = new Map();
     for (const pass of passes) {
@@ -595,9 +784,29 @@ export async function getRegistrationReport(
       }
     }
 
+    // For overnight shifts, logs that fall after midnight are re-keyed to the
+    // shift's work-date (the previous calendar day) so they appear in one row.
+    const overnightRebucket = buildOvernightRebucketMap(logs, passByDate);
+    overnightRebucketForRange = overnightRebucket;
+
+    const logsByDate = new Map();
+    for (const log of logs) {
+      const date = overnightRebucket.get(log._id.toString()) || logDateKey(log.createdAt);
+      if (!logsByDate.has(date)) logsByDate.set(date, []);
+      logsByDate.get(date).push(log);
+    }
+
     const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes));
 
+    // Dates whose pass was created by a post-midnight re-entry inside the previous
+    // night's shift window — these are merged into the prior overnight row.
+    const absorbedDates = buildAbsorbedDatesSet(passByDate);
+
     const days = dates.map((date) => {
+      // Suppress dates absorbed into the previous overnight shift row
+      if (absorbedDates.has(date)) {
+        return { date, status: 'blank', code: 'NR', label: 'Absorbed into overnight shift' };
+      }
       const dayLogs = logsByDate.get(date) || [];
       const pass = passByDate.get(date);
       const session = pass ? getPassSessionState(pass) : null;
@@ -631,6 +840,15 @@ export async function getRegistrationReport(
       }),
     };
   }
+
+  // Group all scan entries by their effective work-date (rebucketed for overnight shifts).
+  const entriesByDate = groupEntriesByDate(logs, overnightRebucketForRange).map((group) => ({
+    ...group,
+    entries: group.entries.map((entry) => ({
+      ...entry,
+      label: scanLabel(entry),
+    })),
+  }));
 
   const sessionState = activeSession?.sessionState || {
     divisionInside: false,
@@ -876,7 +1094,9 @@ export async function getAttendanceHistoryGrid({
 
   const registrationIds = registrations.map((reg) => reg._id);
   const rangeStart = startOfDayIst(from);
-  const rangeEnd = endOfDayIst(toDate);
+  // Extend upper bound by one extra IST day so post-midnight logs that belong
+  // to an overnight shift on `toDate` are included in the fetch.
+  const rangeEnd = endOfDayIst(nextDateIst(toDate));
 
   const [logs, passes] = await Promise.all([
     GateLog.find(
@@ -898,15 +1118,7 @@ export async function getAttendanceHistoryGrid({
       .lean(),
   ]);
 
-  const logsByRegDate = new Map();
-  for (const log of logs) {
-    const regId = log.registrationId.toString();
-    const date = logDateKey(log.createdAt);
-    const key = `${regId}|${date}`;
-    if (!logsByRegDate.has(key)) logsByRegDate.set(key, []);
-    logsByRegDate.get(key).push(log);
-  }
-
+  // Build passByRegDate first so the overnight rebucket map can reference it.
   const passByRegDate = new Map();
   const initialShiftPassByRegDate = new Map();
   for (const pass of passes) {
@@ -924,7 +1136,24 @@ export async function getAttendanceHistoryGrid({
     }
   }
 
+  // For overnight shifts, re-key post-midnight logs to the shift's work-date
+  // so they are grouped under the correct shift row instead of the next day.
+  const overnightRebucket = buildOvernightRebucketMapByReg(logs, passByRegDate);
+
+  const logsByRegDate = new Map();
+  for (const log of logs) {
+    const regId = log.registrationId.toString();
+    const wallDate = logDateKey(log.createdAt);
+    const date = overnightRebucket.get(log._id.toString()) || wallDate;
+    const key = `${regId}|${date}`;
+    if (!logsByRegDate.has(key)) logsByRegDate.set(key, []);
+    logsByRegDate.get(key).push(log);
+  }
+
   const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes));
+
+  // Dates absorbed into a previous overnight shift row — marked blank per registration.
+  const absorbedByReg = buildAbsorbedDatesByReg(passByRegDate);
 
   const normalizedSearch = search.trim().toLowerCase();
 
@@ -933,8 +1162,13 @@ export async function getAttendanceHistoryGrid({
       const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
       const regId = reg._id.toString();
       const registeredAt = reg.createdAt;
+      const absorbedDates = absorbedByReg.get(regId) || new Set();
 
       const days = dates.map((date) => {
+        // Suppress dates absorbed into the previous overnight shift row
+        if (absorbedDates.has(date)) {
+          return { date, status: 'blank', code: 'NR', label: 'Absorbed into overnight shift' };
+        }
         const key = `${regId}|${date}`;
         const dayLogs = logsByRegDate.get(key) || [];
         const pass = passByRegDate.get(key);

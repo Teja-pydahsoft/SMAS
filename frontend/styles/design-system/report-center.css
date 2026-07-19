@@ -2312,6 +2312,20 @@
   white-space: nowrap;
 }
 
+.rc-period-sessions-table__date-overnight {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.rc-period-sessions-table__date-next {
+  font-weight: 700;
+  color: inherit;
+  white-space: nowrap;
+}
+
 .rc-period-sessions-table__time {
   font-variant-numeric: tabular-nums;
   font-weight: 600;

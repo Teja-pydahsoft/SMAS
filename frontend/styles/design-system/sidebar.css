@@ -533,6 +533,7 @@
   display: flex;
   align-items: center;
   gap: 11px;
+  width: 100%;
   padding: 11px 13px;
   border-radius: 16px;
   background: #FFFFFF;
@@ -541,6 +542,22 @@
     0 1px 3px rgba(31, 42, 46, 0.05),
     0 4px 14px rgba(31, 42, 46, 0.04);
   overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.admin-sidebar__profile-card:hover {
+  border-color: #B8CBD2;
+  background: #FAFCFB;
+  box-shadow:
+    0 1px 3px rgba(31, 42, 46, 0.06),
+    0 6px 16px rgba(31, 42, 46, 0.06);
+}
+
+.admin-sidebar__profile-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 /* Avatar */

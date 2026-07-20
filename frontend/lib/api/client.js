@@ -167,6 +167,11 @@ export const api = {
       request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
     verifyPassword: (password) =>
       request('/auth/verify-password', { method: 'POST', body: JSON.stringify({ password }) }),
+    changePassword: (password, confirmPassword) =>
+      request('/auth/password', {
+        method: 'PUT',
+        body: JSON.stringify({ password, confirmPassword }),
+      }),
     me: () => request('/auth/me'),
     accessScope: () => request('/auth/access-scope'),
   },

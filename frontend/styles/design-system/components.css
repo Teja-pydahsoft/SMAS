@@ -971,6 +971,13 @@
 .shift-picker-modal__actions { margin-top: 1.25rem; display: flex; gap: 10px; }
 .shift-picker-modal__actions .btn-primary { flex: 1; }
 
+.change-password-modal .form-group { margin-bottom: 0.9rem; }
+.change-password-modal__username {
+  background: var(--surface-inset);
+  color: var(--text-secondary);
+  cursor: default;
+}
+
 /* ── Daily pass ── */
 .daily-pass-dot {
   display: inline-block;

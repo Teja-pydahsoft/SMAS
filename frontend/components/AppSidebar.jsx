@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import AdminIcon from '@/components/admin/AdminIcons';
+import ChangePasswordModal from '@/components/ChangePasswordModal';
 import { getGateSession } from '@/lib/gateSession';
 import { buildEntryExitUrl } from '@/lib/entryExit';
 import { getNavItemsForUser, getUserRoleLabel } from '@/lib/app/navItems';
@@ -101,6 +102,7 @@ function AppSidebarInner({ user, can, logout, gateSessionUrl }) {
   const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
@@ -222,7 +224,13 @@ function AppSidebarInner({ user, can, logout, gateSessionUrl }) {
 
         <div className="admin-sidebar__footer">
           {!collapsed && user && (
-            <div className="admin-sidebar__profile-card">
+            <button
+              type="button"
+              className="admin-sidebar__profile-card"
+              onClick={() => setPasswordModalOpen(true)}
+              title="Change password"
+              aria-label="Open change password"
+            >
               <div className="admin-sidebar__profile-avatar">
                 {(user.displayName || 'U').charAt(0).toUpperCase()}
                 <span className="admin-sidebar__online-dot" aria-hidden="true" />
@@ -235,7 +243,7 @@ function AppSidebarInner({ user, can, logout, gateSessionUrl }) {
                   Online
                 </span>
               </div>
-            </div>
+            </button>
           )}
           <button
             type="button"
@@ -251,6 +259,10 @@ function AppSidebarInner({ user, can, logout, gateSessionUrl }) {
         </div>
 
       </aside>
+
+      {passwordModalOpen && user && (
+        <ChangePasswordModal user={user} onClose={() => setPasswordModalOpen(false)} />
+      )}
     </>
   );
 }

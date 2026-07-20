@@ -661,6 +661,7 @@ export async function createOrRefreshDayPass({
   }
 
   // Deactivate any prior day pass for this division (including expired overnight sessions).
+  // Also clear divisionInside so stale passes don't appear as open sessions in reports.
   await Pass.updateMany(
     {
       registrationId: registration._id,
@@ -668,7 +669,10 @@ export async function createOrRefreshDayPass({
       passType: PASS_TYPES.DAY_PASS,
       isActive: true,
     },
-    { isActive: false }
+    {
+      isActive: false,
+      $set: { 'qrPayload.divisionInside': false },
+    }
   );
 
   const passCode = existing?.passCode || `DAY-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;

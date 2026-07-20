@@ -54,7 +54,10 @@ router.get(
   requirePermission('reports', 'read'),
   asyncHandler(async (req, res) => {
     const divisionIds = await resolveRequestDivisionIds(req);
-    const data = await getDailyPassByRole({ divisionIds });
+    const data = await getDailyPassByRole({
+      divisionIds,
+      date: req.query.date || null,
+    });
     res.json(data);
   })
 );

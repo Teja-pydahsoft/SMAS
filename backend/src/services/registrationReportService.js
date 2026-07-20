@@ -919,10 +919,12 @@ export async function getRegistrationReport(
  * getDailyPassByRole
  *
  * Returns all active roles, each with their verified registrations and
- * today's day-pass status for every person.
+ * day-pass status for every person on the given date (defaults to today IST).
  */
-export async function getDailyPassByRole({ divisionIds = null } = {}) {
+export async function getDailyPassByRole({ divisionIds = null, date = null } = {}) {
   const today = todayDateString();
+  const validDate =
+    typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
 
   // 1. All active roles
   const roles = await Role.find({ isActive: true }).sort({ name: 1 }).lean();
@@ -930,23 +932,23 @@ export async function getDailyPassByRole({ divisionIds = null } = {}) {
   const divisionScoped = Array.isArray(divisionIds);
   const divisionObjIds = divisionScoped ? toObjectIdArray(divisionIds) : [];
   if (divisionScoped && divisionObjIds.length === 0) {
-    return { date: today, roles: [] };
+    return { date: validDate, roles: [] };
   }
 
-  // 2. Today's day passes (one per registration+division), scoped when applicable
-  const passQuery = { passType: PASS_TYPES.DAY_PASS, validDate: today };
+  // 2. Day passes for the selected date (one per registration+division), scoped when applicable
+  const passQuery = { passType: PASS_TYPES.DAY_PASS, validDate };
   if (divisionScoped) passQuery.divisionId = { $in: divisionObjIds };
   const todayPasses = await Pass.find(passQuery).lean();
 
   // 3. Verified registrations grouped by roleId. When division-scoped, restrict
-  //    to people who checked into an accessible division today.
+  //    to people who checked into an accessible division on that date.
   const regQuery = { status: REGISTRATION_STATUS.VERIFIED };
   if (divisionScoped) {
     const scopedRegIds = [
       ...new Set(todayPasses.map((p) => p.registrationId?.toString()).filter(Boolean)),
     ];
     if (scopedRegIds.length === 0) {
-      return { date: today, roles: [] };
+      return { date: validDate, roles: [] };
     }
     regQuery._id = { $in: scopedRegIds.map((id) => new mongoose.Types.ObjectId(id)) };
   }
@@ -957,7 +959,7 @@ export async function getDailyPassByRole({ divisionIds = null } = {}) {
     .populate('formId', 'fields')
     .lean();
 
-  // Build a map: registrationId → array of today's passes
+  // Build a map: registrationId → array of passes for the selected date
   const passesByReg = new Map();
   for (const pass of todayPasses) {
     const key = pass.registrationId.toString();
@@ -1039,7 +1041,7 @@ export async function getDailyPassByRole({ divisionIds = null } = {}) {
       };
     });
 
-  return { date: today, roles: result };
+  return { date: validDate, roles: result };
 }
 
 /**

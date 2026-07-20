@@ -3,7 +3,7 @@
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
-import { formatDate, formatDateTime } from '@/lib/formatDate';
+import { formatDate, formatDateTime, todayDateStringIst } from '@/lib/formatDate';
 import { formatCurrency, PAY_FREQUENCY_LABELS, PAY_FREQUENCIES } from '@/lib/payFrequency';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 import { formatShiftWindow } from '@/lib/shiftTiming';
@@ -1123,7 +1123,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
 /* ═══════════════════════════════════════════════════════════════
    TAB 1 — TODAY'S ACTIVITY
 ════════════════════════════════════════════════════════════════ */
-function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false }) {
+function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false, selectedDate, onDateChange }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1139,6 +1139,10 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [printing, setPrinting] = useState(false);
   const intervalRef = useRef(null);
+
+  const activityDate = selectedDate || todayDateStringIst();
+  const isToday = activityDate === todayDateStringIst();
+  const dayLabel = isToday ? 'Today' : formatDate(activityDate);
 
   const handleSort = useCallback((key) => {
     setSort((prev) => (
@@ -1166,7 +1170,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     if (!silent) setLoading(true);
     setError('');
     try {
-      const params = {};
+      const params = { date: activityDate };
       if (divisionFilter !== 'all') params.divisionId = divisionFilter;
       const result = await api.reports.dailyPasses(params);
       setData(result);
@@ -1175,7 +1179,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     } finally {
       setLoading(false);
     }
-  }, [divisionFilter, divisionRequired]);
+  }, [divisionFilter, divisionRequired, activityDate]);
 
   useEffect(() => {
     if (divisionRequired && !divisionFilter) {
@@ -1183,10 +1187,14 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       setLoading(false);
       return undefined;
     }
+    setData(null);
     load();
-    intervalRef.current = setInterval(() => load(true), 30000);
+    // Live refresh only when viewing today
+    if (isToday) {
+      intervalRef.current = setInterval(() => load(true), 30000);
+    }
     return () => clearInterval(intervalRef.current);
-  }, [load, divisionFilter, divisionRequired]);
+  }, [load, divisionFilter, divisionRequired, isToday]);
 
   // Flatten all people from all roles
   const allPeople = (data?.roles || []).flatMap(r =>
@@ -1238,7 +1246,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     try {
       const { downloadDailyAttendancePdf } = await import('@/lib/pdfReportCenter');
       await downloadDailyAttendancePdf(filtered, {
-        date: new Date(),
+        date: parseDateForPdf(activityDate),
         divisionName: selectedDivision?.name,
       });
     } catch (e) {
@@ -1247,7 +1255,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     } finally {
       setPrinting(false);
     }
-  }, [filtered, divisionRequired, selectedDivision]);
+  }, [filtered, divisionRequired, selectedDivision, activityDate]);
 
   useEffect(() => {
     onPrintReady?.(handlePrintPdf);
@@ -1257,11 +1265,26 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const insideCount = allPeople.filter(p => p.divisionInside).length;
   const activeCount = allPeople.filter(p => p.hadActivityToday).length;
 
+  const openPerson = (registrationId) => {
+    const divisionId = divisionFilter !== 'all' ? divisionFilter : '';
+    if (isToday) {
+      onViewPerson(registrationId, divisionId);
+    } else {
+      onViewPerson(registrationId, divisionId, activityDate, activityDate);
+    }
+  };
+
   return (
     <div>
       {/* Filters bar */}
       <div className="rc-filters-bar">
         <div className="rc-filters-bar__left">
+          <ActivityDatePicker
+            value={activityDate}
+            onChange={onDateChange}
+            displayLabel={isToday ? `Today · ${formatDate(activityDate)}` : formatDate(activityDate)}
+            className="rc-activity-date--filter"
+          />
           <div className="rc-search-wrap">
             <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -1296,7 +1319,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
             <option value="all">All Status</option>
             <option value="inside">Inside</option>
             <option value="outside">Outside</option>
-            {!divisionRequired && <option value="inactive">Not In Today</option>}
+            {!divisionRequired && <option value="inactive">Not In {isToday ? 'Today' : 'This Day'}</option>}
           </select>
           <select className="rc-select" value={payFreqFilter} onChange={e => setPayFreqFilter(e.target.value)} aria-label="Filter by pay frequency">
             <option value="all">All Pay Frequencies</option>
@@ -1323,7 +1346,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
           <span className="rc-filter-pill">
             <span className="daily-pass-dot daily-pass-dot--inside" />{insideCount} Inside
           </span>
-          <span className="rc-filter-pill rc-filter-pill--muted">{activeCount} Active Today</span>
+          <span className="rc-filter-pill rc-filter-pill--muted">{activeCount} Active {isToday ? 'Today' : 'This Day'}</span>
           <button className="btn-secondary btn-sm" onClick={() => load()} disabled={loading || printing}>
             {loading ? <Spinner size={14} /> : (
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1342,7 +1365,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1M9 13h1m4 0h1M9 17h1m4 0h1" /></svg>}
           title="Select a division"
-          desc="Choose a division to view only its attendance for today."
+          desc={`Choose a division to view only its attendance for ${isToday ? 'today' : dayLabel}.`}
         />
       ) : loading && !data ? (
         <div className="rc-table-loading">
@@ -1351,8 +1374,8 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || shiftFilter !== 'all' || Object.values(selectionFilters).some(v => v && v !== 'all') ? 'No matching people' : 'No attendance today'}
-          desc={search ? 'Try adjusting your search or filters.' : 'No gate activity recorded today yet.'}
+          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || shiftFilter !== 'all' || Object.values(selectionFilters).some(v => v && v !== 'all') ? 'No matching people' : `No attendance ${isToday ? 'today' : `on ${dayLabel}`}`}
+          desc={search ? 'Try adjusting your search or filters.' : `No gate activity recorded ${isToday ? 'today' : 'for this date'} yet.`}
         />
       ) : (
         <div className="rc-table-wrap">
@@ -1377,10 +1400,10 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
             <tbody>
               {filtered.map(person => (
                 <tr key={person.registrationId} className="rc-table__row"
-                  onClick={() => onViewPerson(person.registrationId, divisionFilter !== 'all' ? divisionFilter : '')}
+                  onClick={() => openPerson(person.registrationId)}
                   tabIndex={0} role="button"
                   aria-label={`View report for ${person.displayName || 'Unnamed'}`}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPerson(person.registrationId, divisionFilter !== 'all' ? divisionFilter : ''); } }}>
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPerson(person.registrationId); } }}>
                   <td>
                     <div className="rc-table__person">
                       <div className="rc-table__status-dot-wrap">
@@ -1398,11 +1421,11 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
                   <td><code className="rc-table__code">{person.registrationCode}</code></td>
                   <td className="rc-table__time">{formatTime(person.gateEntryAt)}</td>
                   <td className="rc-table__time">{person.gateExitAt ? formatTime(person.gateExitAt) : person.divisionInside ? <span className="rc-badge-live">Active</span> : '—'}</td>
-                  <td className="rc-table__time">{calcDuration(person.gateEntryAt, person.gateExitAt || (person.divisionInside ? new Date() : null))}</td>
+                  <td className="rc-table__time">{calcDuration(person.gateEntryAt, person.gateExitAt || (person.divisionInside && isToday ? new Date() : null))}</td>
                   <td><StatusBadge inside={person.divisionInside} hadActivity={person.hadActivityToday} /></td>
                   <td>{person.shiftName ? <span className="badge badge-info">{person.shiftName}</span> : <span className="rc-table__muted">—</span>}</td>
                   <td>
-                    <button className="rc-table__view-btn" onClick={e => { e.stopPropagation(); onViewPerson(person.registrationId, divisionFilter !== 'all' ? divisionFilter : ''); }}>
+                    <button className="rc-table__view-btn" onClick={e => { e.stopPropagation(); openPerson(person.registrationId); }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                       View
                     </button>
@@ -1413,6 +1436,78 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function parseDateForPdf(dateStr) {
+  if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return new Date(`${dateStr}T12:00:00+05:30`);
+  }
+  return new Date();
+}
+
+/** Opens the native date calendar on click (showPicker) and updates activity date. */
+function ActivityDatePicker({ value, onChange, className = '', displayLabel }) {
+  const inputRef = useRef(null);
+  const today = todayDateStringIst();
+
+  const openCalendar = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = inputRef.current;
+    if (!el) return;
+    // Prefer the native calendar popup (Chrome/Edge/Safari)
+    if (typeof el.showPicker === 'function') {
+      try {
+        el.showPicker();
+        return;
+      } catch {
+        // Falls through if the browser blocks showPicker
+      }
+    }
+    // Fallback: focus + click the real date input
+    el.style.pointerEvents = 'auto';
+    el.style.opacity = '0.01';
+    el.focus();
+    el.click();
+    // Restore after the picker interaction window
+    window.setTimeout(() => {
+      if (!inputRef.current) return;
+      inputRef.current.style.pointerEvents = 'none';
+      inputRef.current.style.opacity = '0';
+    }, 1000);
+  }, []);
+
+  const handleChange = useCallback((e) => {
+    const next = e.target.value;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(next)) onChange?.(next);
+  }, [onChange]);
+
+  return (
+    <div className={`rc-activity-date ${className}`.trim()}>
+      <button
+        type="button"
+        className="rc-activity-date__btn"
+        onClick={openCalendar}
+        title="Change activity date — click to open calendar"
+        aria-label="Change activity date"
+      >
+        <svg className="rc-activity-date__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+        <span className="rc-activity-date__label">{displayLabel || value}</span>
+      </button>
+      <input
+        ref={inputRef}
+        type="date"
+        className="rc-activity-date__input"
+        value={value || today}
+        max={today}
+        onChange={handleChange}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
     </div>
   );
 }
@@ -2789,7 +2884,9 @@ function ReportsContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
   const tab = REPORT_TABS.find(t => t.id === tabParam) ? tabParam : 'today';
+  const dateSelectable = tab === 'today' || tab === 'division';
 
+  const [selectedDate, setSelectedDate] = useState(() => todayDateStringIst());
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [gateLogs, setGateLogs] = useState([]);
   const [registrations, setRegistrations] = useState([]);
@@ -2832,8 +2929,16 @@ function ReportsContent() {
     tabPrintRef.current = null;
   }, [tab]);
 
-  const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  const displayDate = dateSelectable ? selectedDate : todayDateStringIst(now);
+  const dateStr = parseDateForPdf(displayDate).toLocaleDateString('en-US', {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  const handleViewPerson = useCallback((registrationId, divisionId, dateFrom, dateTo) => {
+    setSelectedPerson({ registrationId, divisionId, dateFrom, dateTo });
+  }, []);
 
   const tabLabel = REPORT_TABS.find(t => t.id === tab)?.label ?? 'Reports';
 
@@ -2854,7 +2959,16 @@ function ReportsContent() {
         </div>
         <div className="rc-page-header__right no-print">
           <div className="rc-page-header__clock">
-            <span className="rc-page-header__date">{dateStr}</span>
+            {dateSelectable ? (
+              <ActivityDatePicker
+                value={selectedDate}
+                onChange={setSelectedDate}
+                displayLabel={dateStr}
+                className="rc-activity-date--header"
+              />
+            ) : (
+              <span className="rc-page-header__date">{dateStr}</span>
+            )}
             <span className="rc-page-header__time">{timeStr}</span>
           </div>
           <button className="btn-secondary btn-sm" onClick={loadData} title="Refresh all data" aria-label="Refresh">
@@ -2884,14 +2998,18 @@ function ReportsContent() {
         <div className="rc-tab-content admin-fade-in" key={tab}>
           {tab === 'today' && (
             <TodayActivityTab
-              onViewPerson={(id, divisionId) => setSelectedPerson({ registrationId: id, divisionId })}
+              selectedDate={selectedDate}
+              onDateChange={setSelectedDate}
+              onViewPerson={handleViewPerson}
               onPrintReady={registerTabPrint}
             />
           )}
           {tab === 'division' && (
             <TodayActivityTab
               divisionRequired
-              onViewPerson={(id, divisionId) => setSelectedPerson({ registrationId: id, divisionId })}
+              selectedDate={selectedDate}
+              onDateChange={setSelectedDate}
+              onViewPerson={handleViewPerson}
               onPrintReady={registerTabPrint}
             />
           )}

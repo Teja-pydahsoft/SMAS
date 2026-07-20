@@ -57,8 +57,9 @@
 
 .rc-page-header__clock {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.65rem;
   margin-right: 4px;
 }
 
@@ -74,6 +75,78 @@
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.03em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Activity date picker — button opens native calendar via showPicker() */
+.rc-activity-date {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.rc-activity-date__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px dashed var(--border-strong, #c5c9d0);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-raised, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-12);
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.rc-activity-date__btn:hover,
+.rc-activity-date__btn:focus-visible {
+  color: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  background: color-mix(in srgb, var(--accent, #2563eb) 8%, transparent);
+  outline: none;
+}
+
+.rc-activity-date__icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.rc-activity-date__label {
+  white-space: nowrap;
+}
+
+.rc-activity-date__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.rc-activity-date--header .rc-activity-date__btn {
+  height: 32px;
+  padding: 0 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.rc-activity-date--filter .rc-activity-date__btn {
+  height: 36px;
+  padding: 0 10px;
+  font-size: var(--text-13, 13px);
+  border-style: solid;
+  border-color: var(--border, #d0d5dd);
+  background: var(--surface, #fff);
 }
 
 /* ── Body ── */

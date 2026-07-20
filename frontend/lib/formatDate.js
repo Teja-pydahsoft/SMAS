@@ -27,6 +27,16 @@ function parseDateValue(value) {
   return new Date(value);
 }
 
+/** Calendar date in IST as YYYY-MM-DD (matches backend day-pass validDate). */
+export function todayDateStringIst(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
 /** Fixed-locale + IST formatting so SSR and client hydration match. */
 export function formatDate(value) {
   if (!value) return '—';

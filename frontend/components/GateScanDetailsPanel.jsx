@@ -3,6 +3,7 @@
 import PassCard from '@/components/PassCard';
 import GateMatchedPerson, { formatVisitTime } from '@/components/GateMatchedPerson';
 import GateSecurityReview from '@/components/GateSecurityReview';
+import ActiveActivityAlert from '@/components/ActiveActivityAlert';
 import { RequiredStepsList } from '@/components/AccessRulesPanel';
 
 function SessionStatus({ sessionState }) {
@@ -59,6 +60,14 @@ export default function GateScanDetailsPanel({
 }) {
   const hasScanResult = showSuccess || showDenied || showSecurityReview;
   const activeSession = sessionState || result?.sessionState;
+  const activeDepartment =
+    result?.activeDepartment ||
+    (activeSession?.currentDepartmentId
+      ? {
+          departmentId: activeSession.currentDepartmentId,
+          departmentName: activeSession.currentDepartmentName,
+        }
+      : null);
 
   return (
     <div className="gate-layout__details">
@@ -134,20 +143,21 @@ export default function GateScanDetailsPanel({
                   ? 'Gate Entry — Access Denied'
                   : 'Gate Exit — Access Denied'}
             </p>
-            {error && <p className="gate-details-panel__error">{error}</p>}
+
+            <ActiveActivityAlert
+              reason={result?.reason}
+              error={error || result?.error}
+              activeDepartment={activeDepartment}
+              activeDivision={result?.activeDivision}
+              sessionState={activeSession}
+              scanType={scanType}
+            />
+
             <GateMatchedPerson
               registration={result.registration}
               matchScore={result.matchScore}
               sessionState={activeSession}
-              activeDepartment={
-                result.activeDepartment ||
-                (activeSession?.currentDepartmentId
-                  ? {
-                      departmentId: activeSession.currentDepartmentId,
-                      departmentName: activeSession.currentDepartmentName,
-                    }
-                  : null)
-              }
+              activeDepartment={activeDepartment}
               activeDivision={result.activeDivision}
               hasGateEntry={result.hasGateEntry ?? activeSession?.divisionInside}
             />

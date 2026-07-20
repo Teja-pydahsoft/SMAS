@@ -566,7 +566,8 @@ export async function validateDepartmentScan(pass, department, eventType, regist
       error: 'No division gate entry today. Complete gate entry before department check-in or check-out.',
       hasGateEntry: false,
       activeDepartment,
-      ...denialExtras(DEPARTMENT_DENIAL_REASONS.NO_GATE_ENTRY),
+      sessionState: state,
+      ...denialExtras(DEPARTMENT_DENIAL_REASONS.NO_GATE_ENTRY, state),
     };
   }
 
@@ -579,6 +580,7 @@ export async function validateDepartmentScan(pass, department, eventType, regist
           error: 'Already checked into this department. Check out first before another check-in.',
           hasGateEntry: true,
           activeDepartment,
+          sessionState: state,
           ...denialExtras(DEPARTMENT_DENIAL_REASONS.ALREADY_IN_DEPARTMENT, state),
         };
       }
@@ -588,6 +590,7 @@ export async function validateDepartmentScan(pass, department, eventType, regist
         error: `Still checked into "${state.currentDepartmentName}". Check out before entering another department.`,
         hasGateEntry: true,
         activeDepartment,
+        sessionState: state,
         ...denialExtras(DEPARTMENT_DENIAL_REASONS.ACTIVE_IN_OTHER_DEPARTMENT, state),
       };
     }
@@ -611,6 +614,7 @@ export async function validateDepartmentScan(pass, department, eventType, regist
         error: `Currently checked into "${state.currentDepartmentName}", not this department.`,
         hasGateEntry: true,
         activeDepartment,
+        sessionState: state,
         ...denialExtras(DEPARTMENT_DENIAL_REASONS.ACTIVE_IN_OTHER_DEPARTMENT, state),
       };
     }

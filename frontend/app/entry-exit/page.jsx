@@ -56,7 +56,7 @@ function applyResult(res, setResult, setSessionState, setDayPass, setError) {
 
 function applyErrorData(e, setResult, setSessionState, setDayPass, setError) {
   const data = e.data || {};
-  if (data.matched || data.registration) {
+  if (data.matched || data.registration || data.denied) {
     setResult({
       ...data,
       matched: data.matched ?? Boolean(data.registration),
@@ -470,8 +470,18 @@ function EntryExitContent() {
 
             {error && !showDenied && !showSecurityReview && <p className="error-msg">{error}</p>}
 
+            {showDenied && (
+              <div className="gate-result gate-result--denied" style={{ marginTop: '0.75rem' }}>
+                <p className="gate-not-found__title">Person Identified — Access Denied</p>
+                <p className="gate-not-found__text">
+                  {error ||
+                    'Face matched, but this scan was blocked by active activity rules. See Scan details.'}
+                </p>
+              </div>
+            )}
+
             {/* Not-found result */}
-            {showNotFound && (
+            {showNotFound && !showDenied && (
               <div className="gate-result gate-result--not-found">
                 {result.qrScan ? (
                   <>

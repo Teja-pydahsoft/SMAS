@@ -247,6 +247,44 @@
   border-radius: var(--radius);
 }
 
+.active-activity-alert {
+  margin: 0.75rem 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  border: 1.5px solid #f0b4b4;
+  background: #fff5f5;
+}
+
+.active-activity-alert__title {
+  margin: 0 0 0.35rem;
+  font-size: var(--text-14);
+  font-weight: 800;
+  color: var(--color-danger);
+  letter-spacing: -0.01em;
+}
+
+.active-activity-alert__detail {
+  margin: 0 0 0.65rem;
+  font-size: var(--text-13);
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
+.active-activity-alert__status {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: var(--text-13);
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.active-activity-alert__hint {
+  margin-top: 0.2rem;
+  color: var(--text-primary);
+}
+
 /* ── Gate day pass section ── */
 .gate-day-pass-section {
   background: var(--surface-base);

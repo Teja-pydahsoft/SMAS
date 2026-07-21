@@ -1,13 +1,19 @@
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Header, UploadFile
 from pydantic import BaseModel, Field
 
 from app.config import EMBEDDING_SIZE, FACE_MATCH_THRESHOLD, MIN_MATCH_MARGIN, SEARCH_TOP_K
 from app.services.face_service import face_service
-from app.services.vector_index import vector_index
+from app.services.vector_index import get_index
 
 router = APIRouter()
+
+
+def _get_index(x_index_namespace: Optional[str] = None):
+    """Resolve the correct VectorIndex for the requesting project."""
+    ns = (x_index_namespace or "default").strip() or "default"
+    return get_index(ns)
 
 
 class CompareRequest(BaseModel):
@@ -41,35 +47,35 @@ class SearchRequest(BaseModel):
 
 
 @router.get("/index/stats")
-async def index_stats():
-    return vector_index.stats()
+async def index_stats(x_index_namespace: Optional[str] = Header(default=None)):
+    return _get_index(x_index_namespace).stats()
 
 
 @router.post("/index/sync")
-async def sync_index(body: IndexSyncRequest):
-    result = vector_index.sync([e.model_dump() for e in body.entries])
+async def sync_index(body: IndexSyncRequest, x_index_namespace: Optional[str] = Header(default=None)):
+    result = _get_index(x_index_namespace).sync([e.model_dump() for e in body.entries])
     return {"ok": True, **result}
 
 
 @router.post("/index/upsert")
-async def upsert_index(body: IndexUpsertRequest):
+async def upsert_index(body: IndexUpsertRequest, x_index_namespace: Optional[str] = Header(default=None)):
     try:
-        result = vector_index.upsert(body.id, body.embedding)
+        result = _get_index(x_index_namespace).upsert(body.id, body.embedding)
         return {"ok": True, **result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/index/remove")
-async def remove_from_index(body: IndexRemoveRequest):
-    result = vector_index.remove(body.id)
+async def remove_from_index(body: IndexRemoveRequest, x_index_namespace: Optional[str] = Header(default=None)):
+    result = _get_index(x_index_namespace).remove(body.id)
     return {"ok": True, **result}
 
 
 @router.post("/search")
-async def search_faces(body: SearchRequest):
+async def search_faces(body: SearchRequest, x_index_namespace: Optional[str] = Header(default=None)):
     try:
-        result = vector_index.search(
+        result = _get_index(x_index_namespace).search(
             body.embedding,
             top_k=body.top_k,
             threshold=body.threshold,

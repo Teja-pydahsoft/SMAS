@@ -3,10 +3,19 @@ import path from 'path';
 const AI_SERVER_URL = process.env.AI_SERVER_URL || 'http://localhost:8000';
 const HF_TOKEN = process.env.HF_TOKEN || '';
 
+// Namespace isolates this project's face index on the shared AI server.
+// Set FACE_INDEX_NAMESPACE in .env to a unique value per project
+// (e.g. "project-alpha", "project-beta"). Defaults to "default".
+const FACE_INDEX_NAMESPACE = (process.env.FACE_INDEX_NAMESPACE || 'default').trim();
+
 function aiHeaders(extra = {}) {
   const headers = { ...extra };
   if (HF_TOKEN) {
     headers.Authorization = `Bearer ${HF_TOKEN}`;
+  }
+  // Always send the namespace so the AI server routes to the correct index
+  if (FACE_INDEX_NAMESPACE && FACE_INDEX_NAMESPACE !== 'default') {
+    headers['x-index-namespace'] = FACE_INDEX_NAMESPACE;
   }
   return headers;
 }

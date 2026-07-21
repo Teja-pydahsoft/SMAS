@@ -8,7 +8,7 @@ import Department from '../models/Department.js';
 import Pass from '../models/Pass.js';
 import Shift from '../models/Shift.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { REGISTRATION_STATUS, GATE_EVENT_TYPES, GATE_TYPES, SCAN_TYPES } from '../constants/index.js';
+import { REGISTRATION_STATUS, GATE_EVENT_TYPES, GATE_TYPES, SCAN_TYPES, PASS_TYPES } from '../constants/index.js';
 import {
   extractFaceEmbedding,
   compareFaceEmbeddings,
@@ -953,7 +953,7 @@ router.post(
                   : GATE_DENIAL_REASONS.NOT_CHECKED_IN,
                 { hasActiveDepartment: Boolean(sessionState?.currentDepartmentId) }
               ),
-              securityReview: true,
+              securityReview: false,
               requestedEventType: eventType,
               suggestedEventType,
               personInside,
@@ -1000,8 +1000,22 @@ router.post(
           divisionName: gateRecord?.divisionId?.name || '',
         });
         sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
-      } else if (activePass) {
-        dayPass = await updateDayPassAfterGateExit(activePass);
+      } else {
+        // EXIT — fetch the pass fresh by registrationId + divisionId in case
+        // the face-index lookup returned a slightly stale matchedRegistration.
+        // Falling back to a direct DB query ensures the pass is always closed
+        // even when activePass was null from the earlier getActiveDayPass call.
+        const passToClose = activePass || await Pass.findOne({
+          registrationId: matchedRegistration._id,
+          divisionId,
+          passType: PASS_TYPES.DAY_PASS,
+          isActive: true,
+          'qrPayload.divisionInside': true,
+        }).sort({ createdAt: -1 });
+
+        if (passToClose) {
+          dayPass = await updateDayPassAfterGateExit(passToClose);
+        }
         sessionState = getPassSessionState(await getActiveDayPass(matchedRegistration._id, divisionId));
       }
 

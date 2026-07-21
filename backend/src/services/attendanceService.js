@@ -675,6 +675,34 @@ export async function createOrRefreshDayPass({
     }
   );
 
+  // Also close any stale passes from OTHER divisions whose session window has
+  // already expired. These accumulate when a person entered a different division
+  // days ago and never exited — the session window (shiftEnd+4h or entry+24h)
+  // has long passed so they are genuinely no longer active.
+  const now2 = new Date();
+  const staleOtherDivision = await Pass.find({
+    registrationId: registration._id,
+    divisionId: { $ne: divisionId },
+    passType: PASS_TYPES.DAY_PASS,
+    isActive: true,
+    'qrPayload.divisionInside': true,
+  });
+  for (const stalePass of staleOtherDivision) {
+    const sessionEnd = resolvePassSessionEnd(stalePass);
+    // Only close if the session window is genuinely expired — don't touch
+    // passes that are still live (e.g. long overnight or no-shift 24h window).
+    if (sessionEnd && sessionEnd.getTime() <= now2.getTime()) {
+      stalePass.isActive = false;
+      stalePass.qrPayload = {
+        ...(stalePass.qrPayload || {}),
+        divisionInside: false,
+        updatedAt: now2.toISOString(),
+      };
+      stalePass.markModified('qrPayload');
+      await stalePass.save();
+    }
+  }
+
   const passCode = existing?.passCode || `DAY-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
   const qrPayload = {

@@ -21,6 +21,8 @@
   .admin-section-grid--live  { grid-template-columns: 1fr; }
   .admin-quick-actions__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .system-user-modal-grid    { grid-template-columns: 1fr; }
+  .suedit-grid               { grid-template-columns: 1fr; }
+  .suedit-scope-grid         { grid-template-columns: 1fr; }
 }
 
 /* ── 900px ── */
@@ -176,6 +178,8 @@
 
   /* System user modal */
   .system-user-modal { max-width: 100%; }
+  .suedit-grid               { grid-template-columns: 1fr; }
+  .suedit-scope-grid         { grid-template-columns: repeat(2, 1fr); }
 
   /* Details modal */
   .details-modal-footer { padding-left: var(--space-4); padding-right: var(--space-4); }

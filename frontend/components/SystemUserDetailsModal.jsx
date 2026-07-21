@@ -16,46 +16,35 @@ function normalizePermissions(source) {
   return base;
 }
 
-function ScopeList({ title, items, emptyText, badgeClass = 'badge-info' }) {
+/* View-mode scope list — shows nothing when empty */
+function ScopeList({ title, items, badgeClass = 'badge-info' }) {
+  if (items.length === 0) return null;
   return (
     <div className="system-user-scope-block">
       <p className="system-user-scope-block__title">{title}</p>
-      {items.length === 0 ? (
-        <p className="system-user-scope-block__empty">{emptyText}</p>
-      ) : (
-        <div className="scope-badges">
-          {items.map((item) => (
-            <span key={item._id} className={`badge ${badgeClass}`}>
-              {item.name}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className="scope-badges">
+        {items.map((item) => (
+          <span key={item._id} className={`badge ${badgeClass}`}>{item.name}</span>
+        ))}
+      </div>
     </div>
   );
 }
 
 function PermissionSummary({ permissions }) {
-  if (!permissions) return <p className="system-user-scope-block__empty">No role permissions</p>;
-
   const entries = PERMISSION_MODULES.filter(({ key }) => {
-    const value = permissions[key];
-    return value?.read || value?.write;
+    const v = permissions?.[key];
+    return v?.read || v?.write;
   });
-
-  if (entries.length === 0) {
-    return <p className="system-user-scope-block__empty">No module access granted</p>;
-  }
-
+  if (entries.length === 0) return null;
   return (
     <ul className="system-user-permission-list">
       {entries.map(({ key, label }) => {
-        const value = permissions[key] || {};
-        const access = value.write ? 'Read & write' : 'Read only';
+        const v = permissions[key] || {};
         return (
           <li key={key}>
             <span className="system-user-permission-list__label">{label}</span>
-            <span className="system-user-permission-list__access">{access}</span>
+            <span className="system-user-permission-list__access">{v.write ? 'Read & write' : 'Read only'}</span>
           </li>
         );
       })}
@@ -63,34 +52,51 @@ function PermissionSummary({ permissions }) {
   );
 }
 
+/* Edit-mode checkbox list */
+function CheckboxList({ items, selected, onToggle, renderLabel }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="checkbox-group">
+      {items.map((item) => (
+        <label key={item._id} className="checkbox-option">
+          <input
+            type="checkbox"
+            checked={selected.includes(item._id)}
+            onChange={() => onToggle(item._id)}
+          />
+          <span>{renderLabel ? renderLabel(item) : item.name}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export default function SystemUserDetailsModal({ user, canWrite, canEditRole = false, onClose, onSaved }) {
-  const [editing, setEditing] = useState(false);
-  const [roles, setRoles] = useState([]);
-  const [divisions, setDivisions] = useState([]);
-  const [gates, setGates] = useState([]);
+  const [editing, setEditing]       = useState(false);
+  const [roles, setRoles]           = useState([]);
+  const [divisions, setDivisions]   = useState([]);
+  const [gates, setGates]           = useState([]);
   const [departments, setDepartments] = useState([]);
+
   const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail]           = useState('');
+  const [password, setPassword]     = useState('');
   const [systemRoleId, setSystemRoleId] = useState('');
-  const [isActive, setIsActive] = useState(true);
-  const [divisionIds, setDivisionIds] = useState([]);
-  const [gateIds, setGateIds] = useState([]);
+  const [isActive, setIsActive]     = useState(true);
+  const [divisionIds, setDivisionIds]   = useState([]);
+  const [gateIds, setGateIds]           = useState([]);
   const [departmentIds, setDepartmentIds] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
-  const [editingPerms, setEditingPerms] = useState(false);
-  const [rolePerms, setRolePerms] = useState(emptyPermissions());
-  const [savingPerms, setSavingPerms] = useState(false);
-  const [permsError, setPermsError] = useState('');
-  const [permsSuccess, setPermsSuccess] = useState('');
+  const [rolePerms, setRolePerms]   = useState(emptyPermissions());
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState('');
+  const [success, setSuccess]       = useState('');
 
-  const editable = canWrite && !user?.isSuperAdmin;
-  const roleId = user?.systemRoleId?._id || null;
+  const editable         = canWrite && !user?.isSuperAdmin;
+  const roleId           = user?.systemRoleId?._id || null;
   const canEditPrivileges = canEditRole && !user?.isSuperAdmin && Boolean(roleId);
 
+  /* Reset when user changes */
   useEffect(() => {
     if (!user) return;
     setEditing(false);
@@ -104,12 +110,10 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     setDivisionIds((user.divisionIds || []).map((d) => d._id));
     setGateIds((user.gateIds || []).map((g) => g._id));
     setDepartmentIds((user.departmentIds || []).map((d) => d._id));
-    setEditingPerms(false);
-    setPermsError('');
-    setPermsSuccess('');
     setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
   }, [user]);
 
+  /* Load dropdowns when editing starts */
   useEffect(() => {
     if (!editing) return;
     Promise.all([
@@ -118,27 +122,25 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
       api.gates.list({ isActive: 'true' }),
       api.departments.list({ isActive: 'true' }),
     ])
-      .then(([roleList, divisionList, gateList, departmentList]) => {
-        setRoles(roleList.filter((r) => r.isActive));
-        setDivisions(divisionList);
-        setGates(gateList);
-        setDepartments(departmentList);
+      .then(([r, d, g, dep]) => {
+        setRoles(r.filter((x) => x.isActive));
+        setDivisions(d);
+        setGates(g);
+        setDepartments(dep);
       })
       .catch((e) => setError(e.message));
   }, [editing]);
 
   const scopedGates = useMemo(() => {
     if (divisionIds.length === 0) return gates;
-    const selected = new Set(divisionIds);
-    return gates.filter((gate) => selected.has(gate.divisionId?._id || gate.divisionId));
+    const sel = new Set(divisionIds);
+    return gates.filter((g) => sel.has(g.divisionId?._id || g.divisionId));
   }, [gates, divisionIds]);
 
   const scopedDepartments = useMemo(() => {
     if (divisionIds.length === 0) return departments;
-    const selected = new Set(divisionIds);
-    return departments.filter((dept) =>
-      (dept.divisionIds || []).some((div) => selected.has(div._id))
-    );
+    const sel = new Set(divisionIds);
+    return departments.filter((d) => (d.divisionIds || []).some((div) => sel.has(div._id)));
   }, [departments, divisionIds]);
 
   if (!user) return null;
@@ -146,53 +148,42 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
   function toggleDivision(id) {
     setDivisionIds((prev) => {
       const next = prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id];
-      if (!next.includes(id)) {
-        const allowedGateIds = new Set(
-          gates
-            .filter((gate) => next.includes(gate.divisionId?._id || gate.divisionId))
-            .map((gate) => gate._id)
-        );
-        setGateIds((gatePrev) => gatePrev.filter((gateId) => allowedGateIds.has(gateId)));
-        const allowedDeptIds = new Set(
-          departments
-            .filter((dept) => (dept.divisionIds || []).some((div) => next.includes(div._id)))
-            .map((dept) => dept._id)
-        );
-        setDepartmentIds((deptPrev) => deptPrev.filter((deptId) => allowedDeptIds.has(deptId)));
-      }
+      const okGates = new Set(gates.filter((g) => next.includes(g.divisionId?._id || g.divisionId)).map((g) => g._id));
+      setGateIds((p) => p.filter((gid) => okGates.has(gid)));
+      const okDepts = new Set(departments.filter((d) => (d.divisionIds || []).some((div) => next.includes(div._id))).map((d) => d._id));
+      setDepartmentIds((p) => p.filter((did) => okDepts.has(did)));
       return next;
     });
   }
 
-  function toggleGate(id) {
-    setGateIds((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
-  }
-
-  function toggleDepartment(id) {
-    setDepartmentIds((prev) => (prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]));
+  function handleCancel() {
+    setEditing(false);
+    setError('');
+    setSuccess('');
+    setPassword('');
+    setDisplayName(user.displayName || '');
+    setEmail(user.email || '');
+    setSystemRoleId(user.systemRoleId?._id || '');
+    setIsActive(Boolean(user.isActive));
+    setDivisionIds((user.divisionIds || []).map((d) => d._id));
+    setGateIds((user.gateIds || []).map((g) => g._id));
+    setDepartmentIds((user.departmentIds || []).map((d) => d._id));
+    setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
   }
 
   async function handleSave(e) {
     e.preventDefault();
     if (!editable) return;
-
     setSaving(true);
     setError('');
     setSuccess('');
-
     try {
-      const payload = {
-        displayName: displayName.trim(),
-        email: email.trim(),
-        isActive,
-        systemRoleId,
-        divisionIds,
-        gateIds,
-        departmentIds,
-      };
+      const payload = { displayName: displayName.trim(), email: email.trim(), isActive, systemRoleId, divisionIds, gateIds, departmentIds };
       if (password.trim()) payload.password = password.trim();
-
-      const updated = await api.systemUsers.update(user._id, payload);
+      await api.systemUsers.update(user._id, payload);
+      if (canEditPrivileges && roleId) {
+        await api.systemRoles.updatePermissions(roleId, rolePerms);
+      }
       const full = await api.systemUsers.get(user._id);
       setSuccess('User updated successfully.');
       setEditing(false);
@@ -205,319 +196,201 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     }
   }
 
-  async function handleSavePermissions() {
-    if (!canEditPrivileges || !roleId) return;
-    setSavingPerms(true);
-    setPermsError('');
-    setPermsSuccess('');
-    try {
-      await api.systemRoles.updatePermissions(roleId, rolePerms);
-      setPermsSuccess('Role privileges updated.');
-      setEditingPerms(false);
-      const full = await api.systemUsers.get(user._id);
-      onSaved?.(full);
-    } catch (err) {
-      setPermsError(err.message);
-    } finally {
-      setSavingPerms(false);
-    }
-  }
-
-  function cancelPermsEdit() {
-    setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
-    setEditingPerms(false);
-    setPermsError('');
-  }
-
+  /* ── Render ─────────────────────────────── */
   return (
     <div className="pass-modal-overlay" onClick={onClose}>
       <div className="details-modal system-user-modal" onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
         <div className="details-modal-header">
           <div>
             <h3>{editing ? 'Edit System User' : 'System User Details'}</h3>
             <p className="details-modal-sub">
               {user.displayName} · {user.username}
-              {user.isSuperAdmin && (
-                <span className="badge badge-info" style={{ marginLeft: '0.5rem' }}>Super Admin</span>
-              )}
+              {user.isSuperAdmin && <span className="badge badge-info" style={{ marginLeft: '0.5rem' }}>Super Admin</span>}
             </p>
           </div>
-          <button type="button" className="icon-btn" onClick={onClose} title="Close" aria-label="Close">
-            ✕
-          </button>
+          <button type="button" className="icon-btn" onClick={onClose} title="Close" aria-label="Close">✕</button>
         </div>
 
         <form onSubmit={handleSave}>
           <div className="details-modal-body">
-            <div className="system-user-modal-grid">
-              <section className="system-user-modal-panel card">
-                <h4 className="system-user-modal-panel__title">User Details</h4>
 
-                {editing ? (
-                  <>
-                    <div className="form-group">
-                      <label>Display Name</label>
-                      <input
-                        value={displayName}
-                        onChange={(e) => setDisplayName(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Email</label>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="Optional email"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Username</label>
-                      <input value={user.username} disabled />
-                    </div>
-                    <div className="form-group">
-                      <label>New Password</label>
-                      <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Leave blank to keep current password"
-                        autoComplete="new-password"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>System Role</label>
-                      <select value={systemRoleId} onChange={(e) => setSystemRoleId(e.target.value)} required>
-                        <option value="">Select role...</option>
-                        {roles.map((role) => (
-                          <option key={role._id} value={role._id}>{role.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <label className="checkbox-option">
-                      <input
-                        type="checkbox"
-                        checked={isActive}
-                        onChange={(e) => setIsActive(e.target.checked)}
-                      />
-                      <span>Active user account</span>
-                    </label>
-                  </>
-                ) : (
+            {/* ══════════════════════════════
+                VIEW MODE
+            ══════════════════════════════ */}
+            {!editing && (
+              <div className="system-user-modal-grid">
+
+                {/* Panel 1 — User Details */}
+                <section className="system-user-modal-panel card">
+                  <h4 className="system-user-modal-panel__title">User Details</h4>
                   <dl className="profile-dl">
-                    <div>
-                      <dt>Display Name</dt>
-                      <dd>{user.displayName}</dd>
-                    </div>
-                    <div>
-                      <dt>Username</dt>
-                      <dd>{user.username}</dd>
-                    </div>
-                    <div>
-                      <dt>Email</dt>
-                      <dd>{user.email || '—'}</dd>
-                    </div>
-                    <div>
-                      <dt>System Role</dt>
-                      <dd>{user.isSuperAdmin ? 'Unrestricted (Super Admin)' : user.systemRoleId?.name || '—'}</dd>
-                    </div>
+                    <div><dt>Display Name</dt><dd>{user.displayName}</dd></div>
+                    <div><dt>Username</dt><dd>{user.username}</dd></div>
+                    <div><dt>Email</dt><dd>{user.email || '—'}</dd></div>
+                    <div><dt>System Role</dt><dd>{user.isSuperAdmin ? 'Unrestricted (Super Admin)' : user.systemRoleId?.name || '—'}</dd></div>
                     <div>
                       <dt>Status</dt>
-                      <dd>
-                        <span className={`badge ${user.isActive ? 'badge-success' : 'badge-danger'}`}>
-                          {user.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </dd>
+                      <dd><span className={`badge ${user.isActive ? 'badge-success' : 'badge-danger'}`}>{user.isActive ? 'Active' : 'Inactive'}</span></dd>
                     </div>
-                    <div>
-                      <dt>Last Login</dt>
-                      <dd>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : '—'}</dd>
-                    </div>
-                    <div>
-                      <dt>Created</dt>
-                      <dd>{user.createdAt ? formatDate(user.createdAt) : '—'}</dd>
-                    </div>
-                    <div>
-                      <dt>Updated</dt>
-                      <dd>{user.updatedAt ? formatDate(user.updatedAt) : '—'}</dd>
-                    </div>
+                    <div><dt>Last Login</dt><dd>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : '—'}</dd></div>
+                    <div><dt>Created</dt><dd>{user.createdAt ? formatDate(user.createdAt) : '—'}</dd></div>
+                    <div><dt>Updated</dt><dd>{user.updatedAt ? formatDate(user.updatedAt) : '—'}</dd></div>
                   </dl>
-                )}
-              </section>
+                </section>
 
-              <section className="system-user-modal-panel card">
-                <h4 className="system-user-modal-panel__title">Access Scope</h4>
-
-                {user.isSuperAdmin ? (
-                  <div className="system-user-scope-unrestricted">
-                    <span className="badge badge-success">All divisions, gates & departments</span>
-                    <p className="field-hint">Super admin accounts are not limited by division, gate, or department scope.</p>
-                  </div>
-                ) : editing ? (
-                  <>
-                    <div className="form-group">
-                      <label>Divisions</label>
-                      <div className="checkbox-group">
-                        {divisions.map((division) => (
-                          <label key={division._id} className="checkbox-option">
-                            <input
-                              type="checkbox"
-                              checked={divisionIds.includes(division._id)}
-                              onChange={() => toggleDivision(division._id)}
-                            />
-                            <span>{division.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="form-group">
-                      <label>Gates</label>
-                      <div className="checkbox-group">
-                        {scopedGates.length === 0 ? (
-                          <p className="field-hint">No gates available for the selected divisions.</p>
-                        ) : (
-                          scopedGates.map((gate) => (
-                            <label key={gate._id} className="checkbox-option">
-                              <input
-                                type="checkbox"
-                                checked={gateIds.includes(gate._id)}
-                                onChange={() => toggleGate(gate._id)}
-                              />
-                              <span>
-                                {gate.name}
-                                <span style={{ color: 'var(--text-muted)', marginLeft: '0.35rem' }}>
-                                  ({gate.gateType})
-                                </span>
-                              </span>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                    <div className="form-group">
-                      <label>Departments</label>
-                      <div className="checkbox-group">
-                        {scopedDepartments.length === 0 ? (
-                          <p className="field-hint">No departments available for the selected divisions.</p>
-                        ) : (
-                          scopedDepartments.map((dept) => (
-                            <label key={dept._id} className="checkbox-option">
-                              <input
-                                type="checkbox"
-                                checked={departmentIds.includes(dept._id)}
-                                onChange={() => toggleDepartment(dept._id)}
-                              />
-                              <span>{dept.name}</span>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <ScopeList
-                      title="Divisions"
-                      items={user.divisionIds || []}
-                      emptyText="No divisions assigned"
-                      badgeClass="badge-info"
-                    />
-                    <div className="system-user-scope-block">
-                      <p className="system-user-scope-block__title">Gates</p>
-                      {(user.gateIds || []).length === 0 ? (
-                        <p className="system-user-scope-block__empty">No gates assigned (department-only access may still apply)</p>
-                      ) : (
-                        <ul className="system-user-gate-meta">
-                          {(user.gateIds || []).map((gate) => (
-                            <li key={gate._id}>
-                              <span className="badge badge-success">{gate.name}</span>
-                              <span className="system-user-gate-meta__type">{gate.gateType}</span>
-                            </li>
-                          ))}
-                        </ul>
+                {/* Panel 2 — Access Scope */}
+                <section className="system-user-modal-panel card">
+                  <h4 className="system-user-modal-panel__title">Access Scope</h4>
+                  {user.isSuperAdmin ? (
+                    <span className="badge badge-success">All divisions, gates &amp; departments</span>
+                  ) : (
+                    <>
+                      <ScopeList title="Divisions"   items={user.divisionIds   || []} badgeClass="badge-info"    />
+                      <ScopeList title="Gates"       items={user.gateIds       || []} badgeClass="badge-success" />
+                      <ScopeList title="Departments" items={user.departmentIds || []} badgeClass="badge-warning" />
+                      {!(user.divisionIds?.length || user.gateIds?.length || user.departmentIds?.length) && (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>—</span>
                       )}
-                    </div>
-                    <ScopeList
-                      title="Departments"
-                      items={user.departmentIds || []}
-                      emptyText="No departments assigned"
-                      badgeClass="badge-warning"
-                    />
-                  </>
-                )}
-              </section>
-
-              <section className="system-user-modal-panel card">
-                <div className="system-user-panel-head">
-                  <h4 className="system-user-modal-panel__title">Role Privileges</h4>
-                  {canEditPrivileges && !editingPerms && (
-                    <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingPerms(true)}>
-                      Edit
-                    </button>
+                    </>
                   )}
-                </div>
+                </section>
 
-                {user.isSuperAdmin ? (
-                  <div className="system-user-scope-unrestricted">
+                {/* Panel 3 — Role Privileges */}
+                <section className="system-user-modal-panel card">
+                  <h4 className="system-user-modal-panel__title">Role Privileges</h4>
+                  {user.isSuperAdmin ? (
                     <span className="badge badge-success">Full access</span>
-                    <p className="field-hint">Super admin accounts have all privileges.</p>
+                  ) : !roleId ? (
+                    <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>—</span>
+                  ) : (
+                    <PermissionSummary permissions={user.systemRoleId?.permissions} />
+                  )}
+                </section>
+
+              </div>
+            )}
+
+            {/* ══════════════════════════════
+                EDIT MODE  — 2-column layout
+                Left : User Details
+                Right: Access Scope (3 cols) + Role Privileges
+            ══════════════════════════════ */}
+            {editing && (
+              <div className="suedit-grid">
+
+                {/* LEFT — User Details */}
+                <section className="system-user-modal-panel card suedit-left">
+                  <h4 className="system-user-modal-panel__title">User Details</h4>
+
+                  <div className="form-group">
+                    <label>Display Name *</label>
+                    <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required autoFocus />
                   </div>
-                ) : !roleId ? (
-                  <p className="system-user-scope-block__empty">No role assigned to this user.</p>
-                ) : (
-                  <>
-                    <p className="field-hint" style={{ marginBottom: '0.75rem' }}>
-                      Privileges for role <strong>{user.systemRoleId?.name}</strong>.
-                      {editingPerms && ' Changes apply to everyone with this role.'}
-                    </p>
-                    {editingPerms ? (
-                      <PermissionMatrix permissions={rolePerms} onChange={setRolePerms} />
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Optional" />
+                  </div>
+                  <div className="form-group">
+                    <label>Username</label>
+                    <input value={user.username} disabled />
+                  </div>
+                  <div className="form-group">
+                    <label>New Password</label>
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep current" autoComplete="new-password" />
+                  </div>
+                  <div className="form-group">
+                    <label>System Role *</label>
+                    <select value={systemRoleId} onChange={(e) => setSystemRoleId(e.target.value)} required>
+                      <option value="">Select role...</option>
+                      {roles.map((r) => <option key={r._id} value={r._id}>{r.name}</option>)}
+                    </select>
+                  </div>
+                  <label className="checkbox-option">
+                    <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+                    <span>Active user account</span>
+                  </label>
+                </section>
+
+                {/* RIGHT — Access Scope + Role Privileges */}
+                <div className="suedit-right">
+
+                  {/* Access Scope */}
+                  <section className="system-user-modal-panel card">
+                    <h4 className="system-user-modal-panel__title">Access Scope</h4>
+                    {user.isSuperAdmin ? (
+                      <span className="badge badge-success">All divisions, gates &amp; departments</span>
                     ) : (
-                      <PermissionSummary permissions={user.systemRoleId?.permissions} />
-                    )}
+                      <div className="suedit-scope-grid">
 
-                    {permsError && <p className="error-msg">{permsError}</p>}
-                    {permsSuccess && <p className="success-msg">{permsSuccess}</p>}
+                        <div className="suedit-scope-col">
+                          <p className="system-user-scope-block__title">Divisions</p>
+                          <CheckboxList
+                            items={divisions}
+                            selected={divisionIds}
+                            onToggle={toggleDivision}
+                          />
+                        </div>
 
-                    {editingPerms && (
-                      <div className="system-user-perms-actions">
-                        <button type="button" className="btn-secondary" onClick={cancelPermsEdit} disabled={savingPerms}>
-                          Cancel
-                        </button>
-                        <button type="button" className="btn-primary" onClick={handleSavePermissions} disabled={savingPerms}>
-                          {savingPerms ? 'Saving...' : 'Save Privileges'}
-                        </button>
+                        <div className="suedit-scope-col">
+                          <p className="system-user-scope-block__title">Gates</p>
+                          <CheckboxList
+                            items={scopedGates}
+                            selected={gateIds}
+                            onToggle={(id) => setGateIds((p) => p.includes(id) ? p.filter((g) => g !== id) : [...p, id])}
+                            renderLabel={(g) => (
+                              <span>{g.name} <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>({g.gateType})</span></span>
+                            )}
+                          />
+                        </div>
+
+                        <div className="suedit-scope-col">
+                          <p className="system-user-scope-block__title">Departments</p>
+                          <CheckboxList
+                            items={scopedDepartments}
+                            selected={departmentIds}
+                            onToggle={(id) => setDepartmentIds((p) => p.includes(id) ? p.filter((d) => d !== id) : [...p, id])}
+                          />
+                        </div>
+
                       </div>
                     )}
-                  </>
-                )}
-              </section>
-            </div>
+                  </section>
 
-            {error && <p className="error-msg">{error}</p>}
-            {success && <p className="success-msg">{success}</p>}
+                  {/* Role Privileges */}
+                  {canEditPrivileges && (
+                    <section className="system-user-modal-panel card" style={{ marginTop: 'var(--space-4)' }}>
+                      <h4 className="system-user-modal-panel__title">
+                        Role Privileges
+                        <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 'var(--text-13)', marginLeft: '0.5rem' }}>
+                          — {user.systemRoleId?.name}
+                        </span>
+                      </h4>
+                      <PermissionMatrix permissions={rolePerms} onChange={setRolePerms} />
+                    </section>
+                  )}
+
+                </div>
+              </div>
+            )}
+
+            {error   && <p className="error-msg"   style={{ marginTop: '1rem' }}>{error}</p>}
+            {success && <p className="success-msg" style={{ marginTop: '1rem' }}>{success}</p>}
           </div>
 
+          {/* Footer */}
           <div className="details-modal-footer">
             {editing ? (
               <>
-                <button type="button" className="btn-secondary" onClick={() => setEditing(false)} disabled={saving}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" disabled={saving}>
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </button>
+                <button type="button" className="btn-secondary" onClick={handleCancel} disabled={saving}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</button>
               </>
             ) : (
               <>
-                <button type="button" className="btn-secondary" onClick={onClose}>
-                  Close
-                </button>
+                <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
                 {editable && (
-                  <button type="button" className="btn-primary" onClick={() => setEditing(true)}>
-                    Edit User
-                  </button>
+                  <button type="button" className="btn-primary" onClick={() => setEditing(true)}>Edit</button>
                 )}
               </>
             )}

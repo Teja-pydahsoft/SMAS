@@ -16,15 +16,6 @@ function PlusIcon() {
   );
 }
 
-function DetailsIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4M12 8h.01" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function NewUserModal({ onClose, onComplete }) {
   const [roles, setRoles] = useState([]);
   const [divisions, setDivisions] = useState([]);
@@ -440,7 +431,9 @@ export default function ManageSystemUsersPage() {
                   <th>User</th>
                   <th>Username</th>
                   <th>Role</th>
-                  <th>Access Scope</th>
+                  <th>Divisions</th>
+                  <th>Gates</th>
+                  <th>Departments</th>
                   <th>Status</th>
                   <th>Last Login</th>
                   <th>Actions</th>
@@ -457,16 +450,49 @@ export default function ManageSystemUsersPage() {
                     </td>
                     <td>{user.username}</td>
                     <td>{user.isSuperAdmin ? 'Unrestricted' : user.systemRoleId?.name || '—'}</td>
+
+                    {/* Divisions */}
                     <td>
                       {user.isSuperAdmin ? (
-                        <span className="badge badge-success">All divisions, gates & departments</span>
-                      ) : (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                          {(user.divisionIds || []).map((div) => <span key={div._id} className="badge badge-info">{div.name}</span>)}
-                          {(user.gateIds || []).map((gate) => <span key={gate._id} className="badge badge-success">{gate.name}</span>)}
-                          {(user.departmentIds || []).map((dept) => <span key={dept._id} className="badge badge-warning">{dept.name}</span>)}
-                          {!user.divisionIds?.length && !user.gateIds?.length && !user.departmentIds?.length && '—'}
+                        <span className="badge badge-success">All</span>
+                      ) : (user.divisionIds || []).length > 0 ? (
+                        <div className="scope-badges-col">
+                          {user.divisionIds.map((div) => (
+                            <span key={div._id} className="badge badge-info">{div.name}</span>
+                          ))}
                         </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>null</span>
+                      )}
+                    </td>
+
+                    {/* Gates */}
+                    <td>
+                      {user.isSuperAdmin ? (
+                        <span className="badge badge-success">All</span>
+                      ) : (user.gateIds || []).length > 0 ? (
+                        <div className="scope-badges-col">
+                          {user.gateIds.map((gate) => (
+                            <span key={gate._id} className="badge badge-success">{gate.name}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>null</span>
+                      )}
+                    </td>
+
+                    {/* Departments */}
+                    <td>
+                      {user.isSuperAdmin ? (
+                        <span className="badge badge-success">All</span>
+                      ) : (user.departmentIds || []).length > 0 ? (
+                        <div className="scope-badges-col">
+                          {user.departmentIds.map((dept) => (
+                            <span key={dept._id} className="badge badge-warning">{dept.name}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>null</span>
                       )}
                     </td>
                     <td>
@@ -476,22 +502,23 @@ export default function ManageSystemUsersPage() {
                     </td>
                     <td>{user.lastLoginAt ? formatDate(user.lastLoginAt) : '—'}</td>
                     <td className="actions-cell">
-                      <button
-                        type="button"
-                        className="icon-btn details"
-                        onClick={() => handleOpenUser(user)}
-                        title="View or edit user details"
-                        aria-label="View or edit user details"
-                        disabled={loadingUser}
-                      >
-                        <DetailsIcon />
-                      </button>
+                      {!user.isSuperAdmin && (
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm"
+                          onClick={() => handleOpenUser(user)}
+                          title="Edit user details"
+                          disabled={loadingUser}
+                        >
+                          Edit
+                        </button>
+                      )}
                       {canWrite && !user.isSuperAdmin && (
                         <>
-                          <button type="button" className="btn-secondary" onClick={() => handleToggleActive(user)}>
+                          <button type="button" className="btn-secondary btn-sm" onClick={() => handleToggleActive(user)}>
                             {user.isActive ? 'Deactivate' : 'Activate'}
                           </button>
-                          <button type="button" className="btn-danger" onClick={() => handleDelete(user._id, user.displayName)}>
+                          <button type="button" className="btn-danger btn-sm" onClick={() => handleDelete(user._id, user.displayName)}>
                             Delete
                           </button>
                         </>

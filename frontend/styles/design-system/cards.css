@@ -184,13 +184,71 @@
 }
 
 /* ── System user modal ── */
-.system-user-modal { max-width: 1100px; }
+.system-user-modal { max-width: 1400px; }
 
+/* View-mode: 3 equal panels */
 .system-user-modal-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-4);
   align-items: start;
+}
+
+/* Edit-mode: 2-column — left narrow (user details), right wide (scope + perms) */
+.suedit-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.suedit-left  { height: 100%; }
+.suedit-right { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* Access scope edit: 3 equal sub-columns inside the right panel */
+.suedit-scope-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.suedit-scope-col { min-width: 0; }
+
+/* Departments column can have many items — make it scrollable */
+.suedit-scope-col .checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.suedit-scope-col .checkbox-group::-webkit-scrollbar { width: 4px; }
+.suedit-scope-col .checkbox-group::-webkit-scrollbar-track { background: transparent; }
+.suedit-scope-col .checkbox-group::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+
+.suedit-scope-col .checkbox-option {
+  padding: 5px 6px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--text-13);
+  gap: 8px;
+}
+
+.suedit-scope-col .checkbox-option:hover {
+  background: var(--color-primary-subtle);
+  border: none;
+  box-shadow: none;
+}
+
+.suedit-scope-col .checkbox-option:has(input:checked) {
+  background: var(--color-primary-subtle);
+  border: none;
+  box-shadow: none;
 }
 
 .system-user-panel-head {

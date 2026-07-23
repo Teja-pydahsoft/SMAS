@@ -194,23 +194,54 @@
   align-items: start;
 }
 
-/* Edit-mode: 2-column — left narrow (user details), right wide (scope + perms) */
+/* Edit-mode: 3-column equal — User Details | Access Scope | Role Privileges */
 .suedit-grid {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
   align-items: start;
 }
 
-.suedit-left  { height: 100%; }
-.suedit-right { display: flex; flex-direction: column; gap: var(--space-4); }
+.suedit-left  { min-width: 0; }
+.suedit-right { display: contents; }
 
-/* Access scope edit: 3 equal sub-columns inside the right panel */
+/* Force each panel inside suedit-grid to not exceed its column */
+.suedit-grid > * {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* PermissionMatrix table inside edit grid — must not overflow its column */
+.suedit-grid .table-scroll {
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.suedit-grid .permission-matrix {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.suedit-grid .permission-matrix th:first-child,
+.suedit-grid .permission-matrix td:first-child {
+  width: auto;
+  min-width: 0;
+}
+
+.suedit-grid .permission-matrix th:not(:first-child),
+.suedit-grid .permission-matrix td:not(:first-child) {
+  width: 60px;
+  text-align: center;
+}
+
+/* Access scope edit: vertical stack inside the scope panel */
 .suedit-scope-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-4);
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .suedit-scope-col { min-width: 0; }

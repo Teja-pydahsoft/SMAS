@@ -22,7 +22,6 @@
   .admin-quick-actions__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .system-user-modal-grid    { grid-template-columns: 1fr; }
   .suedit-grid               { grid-template-columns: 1fr; }
-  .suedit-scope-grid         { grid-template-columns: 1fr; }
 }
 
 /* ── 900px ── */

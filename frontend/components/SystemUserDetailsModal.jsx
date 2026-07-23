@@ -360,7 +360,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
 
                   {/* Role Privileges */}
                   {canEditPrivileges && (
-                    <section className="system-user-modal-panel card" style={{ marginTop: 'var(--space-4)' }}>
+                    <section className="system-user-modal-panel card">
                       <h4 className="system-user-modal-panel__title">
                         Role Privileges
                         <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 'var(--text-13)', marginLeft: '0.5rem' }}>

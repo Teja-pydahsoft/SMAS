@@ -4,6 +4,7 @@ export const APP_NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: 'dashboard', module: null, section: 'GENERAL' },
   { path: '/access-scope', label: 'Gate Access', icon: 'gateAccess', module: 'gate', gateOnly: true, section: 'GENERAL' },
   { path: '/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate', section: 'GENERAL' },
+  { path: '/activity', label: 'Activity', icon: 'cameras', module: 'gate', section: 'GENERAL' },
   { path: '/roles', label: 'Roles', icon: 'roles', module: 'registration_roles', section: 'MANAGEMENT' },
   { path: '/registrations', label: 'Registrations', icon: 'registrations', module: 'registrations', section: 'MANAGEMENT' },
   {

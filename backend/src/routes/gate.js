@@ -7,10 +7,12 @@ import Gate from '../models/Gate.js';
 import Department from '../models/Department.js';
 import Pass from '../models/Pass.js';
 import Shift from '../models/Shift.js';
+import ActivitySighting from '../models/ActivitySighting.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { REGISTRATION_STATUS, GATE_EVENT_TYPES, GATE_TYPES, SCAN_TYPES, PASS_TYPES } from '../constants/index.js';
 import {
   extractFaceEmbedding,
+  extractFaceEmbeddingsMulti,
   compareFaceEmbeddings,
   searchFaceEmbeddings,
 } from '../services/aiClient.js';
@@ -27,6 +29,7 @@ import {
   syncDepartmentVisitsFromLogs,
   madeGateEntryToday,
   isPersonInsideTargetDivision,
+  getActiveDivisionSession,
   resolveAutoGateEventType,
   resolveAutoDepartmentEventType,
   isOppositeGateEvent,
@@ -37,6 +40,7 @@ import { resolveDayPassValidUntil, startOfDayIst, endOfDayIst } from '../utils/i
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
 import { createMulter } from '../utils/storage.js';
+import { cropAndSaveActivityFace, persistActivityFaceBuffer } from '../utils/activityFaceCrop.js';
 import {
   isCloudinaryEnabled,
   uploadToCloudinary,
@@ -1114,6 +1118,268 @@ router.post(
       photoUrl,
       resolvedEventType,
       autoResolved: isAutoEvent,
+    });
+  })
+);
+
+// ─── Activity monitor: multi-face recognition ────────────────────────────────
+// Resolve shift from an open gate session (day pass), falling back to the most
+// recent gate-entry log that still carries shift metadata (overnight coverage).
+async function resolveActivityShift(registrationId, sessionState = null) {
+  if (sessionState?.shiftId) {
+    return {
+      shiftId: String(sessionState.shiftId),
+      shiftName: sessionState.shiftName || '',
+      shiftStartTime: sessionState.shiftStartTime || '',
+      shiftEndTime: sessionState.shiftEndTime || '',
+      assignedAt: sessionState.gateEntryAt || null,
+    };
+  }
+
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const log = await GateLog.findOne({
+    registrationId,
+    'metadata.shiftId': { $exists: true, $ne: null },
+    createdAt: { $gte: since },
+  })
+    .sort({ createdAt: -1 })
+    .select('metadata createdAt')
+    .lean();
+
+  if (!log?.metadata?.shiftId) return null;
+  return {
+    shiftId: String(log.metadata.shiftId),
+    shiftName: log.metadata.shiftName || '',
+    shiftStartTime: log.metadata.shiftStartTime || '',
+    shiftEndTime: log.metadata.shiftEndTime || '',
+    assignedAt: log.createdAt,
+  };
+}
+
+async function resolveActivityFaceImage(imageBuffer, faceBox, thumbnailB64) {
+  // Prefer AI-provided thumbnail bytes; otherwise crop from the full frame.
+  if (thumbnailB64) {
+    try {
+      const buf = Buffer.from(thumbnailB64, 'base64');
+      if (buf.length) {
+        const saved = await persistActivityFaceBuffer(
+          buf,
+          `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        );
+        if (saved) {
+          return {
+            photoPath: saved.photoPath,
+            faceCropDataUrl: saved.dataUrl || `data:image/jpeg;base64,${thumbnailB64}`,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to persist AI activity thumbnail:', err.message);
+    }
+  }
+
+  const cropped = await cropAndSaveActivityFace(imageBuffer, faceBox);
+  if (!cropped) return { photoPath: null, faceCropDataUrl: null };
+  return {
+    photoPath: cropped.photoPath,
+    faceCropDataUrl: cropped.dataUrl,
+  };
+}
+
+router.post(
+  '/activity-scan',
+  upload.single('photo'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'Photo is required' });
+
+    const filePath = req.file.path || null;
+    const imageBuffer = req.file.buffer || fs.readFileSync(filePath);
+    const filename = req.file.filename || req.file.originalname || 'activity.jpg';
+
+    let facesResult;
+    try {
+      facesResult = await extractFaceEmbeddingsMulti(imageBuffer, filename, 'image/jpeg');
+    } finally {
+      // Full frame is not kept — only per-face crops are persisted for the record.
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+
+    const faces = Array.isArray(facesResult?.faces) ? facesResult.faces : [];
+    if (!faces.length) {
+      return res.json({
+        facesDetected: 0,
+        matchedCount: 0,
+        unmatchedCount: 0,
+        inActivityCount: 0,
+        people: [],
+        unmatchedFaces: [],
+      });
+    }
+
+    const bestByRegistration = new Map();
+    const unmatchedFaces = [];
+    const sightingDate = todayDateString();
+
+    for (const face of faces) {
+      const thumbnailB64 = face?.thumbnail_jpeg_b64 || null;
+
+      if (!face?.embedding?.length) {
+        unmatchedFaces.push({
+          faceBox: face?.face_box || null,
+          thumbnailB64,
+        });
+        continue;
+      }
+
+      const searchResult = await searchFaceEmbeddings(face.embedding, {
+        topK: SEARCH_TOP_K,
+        threshold: MATCH_THRESHOLD,
+        minMargin: MIN_MATCH_MARGIN,
+      });
+      const best = searchResult?.best;
+      if (!best?.id || best.similarity < MATCH_THRESHOLD || searchResult.ambiguous) {
+        unmatchedFaces.push({
+          faceBox: face.face_box || null,
+          thumbnailB64,
+        });
+        continue;
+      }
+
+      const existing = bestByRegistration.get(best.id);
+      if (!existing || best.similarity > existing.similarity) {
+        bestByRegistration.set(best.id, {
+          similarity: best.similarity,
+          faceBox: face.face_box || null,
+          thumbnailB64,
+        });
+      }
+    }
+
+    const people = [];
+    for (const [regId, info] of bestByRegistration.entries()) {
+      const reg = await Registration.findById(regId)
+        .select('-faceEmbedding')
+        .populate('roleId', 'name slug isShiftBased')
+        .populate('formId', 'fields')
+        .lean();
+      if (!reg || reg.status !== REGISTRATION_STATUS.VERIFIED) {
+        unmatchedFaces.push({
+          faceBox: info.faceBox,
+          thumbnailB64: info.thumbnailB64,
+        });
+        continue;
+      }
+
+      const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
+      const activeSession = await getActiveDivisionSession(regId);
+      const inActivity = Boolean(activeSession?.sessionState?.divisionInside);
+      const sessionState = activeSession?.sessionState || null;
+      const shift = inActivity ? await resolveActivityShift(regId, sessionState) : null;
+      const faceImage = await resolveActivityFaceImage(imageBuffer, info.faceBox, info.thumbnailB64);
+
+      // Persist so Today's Activity + person timeline include this sighting
+      // even when the person has no gate entry.
+      await ActivitySighting.create({
+        registrationId: reg._id,
+        roleId: reg.roleId?._id || reg.roleId || null,
+        matched: true,
+        matchScore: info.similarity,
+        inActivity,
+        photoPath: faceImage.photoPath || '',
+        faceBox: info.faceBox,
+        sightingDate,
+        metadata: {
+          divisionId: activeSession?.divisionId || null,
+          divisionName: activeSession?.divisionName || null,
+        },
+      });
+
+      people.push({
+        registered: true,
+        inActivity,
+        registrationId: String(regId),
+        registrationCode: reg.registrationCode || null,
+        displayName: display.displayName || null,
+        displayPhone: display.displayPhone || null,
+        photoUrl: reg.photoPath ? photoUrlFromPath(reg.photoPath) : null,
+        faceCropDataUrl: faceImage.faceCropDataUrl,
+        roleName: reg.roleId?.name || null,
+        isShiftBased: Boolean(reg.roleId?.isShiftBased),
+        matchScore: info.similarity,
+        faceBox: info.faceBox,
+        divisionId: activeSession?.divisionId || null,
+        divisionName: activeSession?.divisionName || null,
+        gateEntryAt: sessionState?.gateEntryAt || null,
+        shift,
+      });
+    }
+
+    // Persist unmatched faces for the left-panel gallery (no registration link).
+    const unmatchedForClient = [];
+    for (let index = 0; index < unmatchedFaces.length; index += 1) {
+      const face = unmatchedFaces[index];
+      const faceImage = await resolveActivityFaceImage(imageBuffer, face.faceBox, face.thumbnailB64);
+      await ActivitySighting.create({
+        registrationId: null,
+        roleId: null,
+        matched: false,
+        matchScore: null,
+        inActivity: false,
+        photoPath: faceImage.photoPath || '',
+        faceBox: face.faceBox || null,
+        sightingDate,
+        metadata: {},
+      });
+
+      unmatchedForClient.push({
+        key: `unmatched-${index}`,
+        faceBox: face.faceBox || null,
+        faceCropDataUrl: faceImage.faceCropDataUrl,
+        photoUrl: faceImage.photoPath ? photoUrlFromPath(faceImage.photoPath) : null,
+      });
+
+      people.push({
+        registered: false,
+        inActivity: false,
+        registrationId: null,
+        registrationCode: null,
+        displayName: 'Non registered person',
+        displayPhone: null,
+        photoUrl: faceImage.photoPath ? photoUrlFromPath(faceImage.photoPath) : null,
+        faceCropDataUrl: faceImage.faceCropDataUrl,
+        roleName: null,
+        isShiftBased: false,
+        matchScore: null,
+        faceBox: face.faceBox || null,
+        divisionId: null,
+        divisionName: null,
+        gateEntryAt: null,
+        shift: null,
+        unmatchedKey: `unmatched-${index}`,
+      });
+    }
+
+    people.sort((a, b) => {
+      const rank = (p) => {
+        if (!p.registered) return 2;
+        return p.inActivity ? 0 : 1;
+      };
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return (b.matchScore || 0) - (a.matchScore || 0);
+    });
+
+    const matchedCount = people.filter((p) => p.registered).length;
+    const unmatchedCount = people.filter((p) => !p.registered).length;
+
+    res.json({
+      facesDetected: faces.length,
+      matchedCount,
+      unmatchedCount,
+      inActivityCount: people.filter((p) => p.registered && p.inActivity).length,
+      people,
+      unmatchedFaces: unmatchedForClient,
     });
   })
 );

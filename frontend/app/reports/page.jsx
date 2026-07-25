@@ -182,8 +182,14 @@ function Avatar({ url, name, size = 36 }) {
   );
 }
 
-function StatusBadge({ inside, hadActivity }) {
+function StatusBadge({ inside, hadActivity, activitySeen, hadGateActivity }) {
   if (inside) return <span className="badge badge-success rc-status-badge">Inside</span>;
+  if (hadGateActivity ?? (hadActivity && !activitySeen)) {
+    return <span className="badge badge-info rc-status-badge">Checked Out</span>;
+  }
+  if (activitySeen || (hadActivity && !hadGateActivity)) {
+    return <span className="badge badge-warning rc-status-badge">Seen</span>;
+  }
   if (hadActivity) return <span className="badge badge-info rc-status-badge">Checked Out</span>;
   return <span className="badge rc-status-badge rc-status-badge--absent">Not In</span>;
 }
@@ -326,18 +332,26 @@ function ScanPhoto({ url, label, className = '' }) {
 }
 
 function TimelineEvent({ entry, isLast, showPhoto = true }) {
-  const isGate = entry.scanType !== 'department';
-  const isEntry = (entry.eventType || '').toLowerCase().includes('entry') ||
-    (entry.label || '').toLowerCase().includes('entry') ||
-    entry.isEntry;
+  const isActivity = entry.scanType === 'activity';
+  const isGate = !isActivity && entry.scanType !== 'department';
+  const isEntry = isActivity
+    ? true
+    : (entry.eventType || '').toLowerCase().includes('entry') ||
+      (entry.label || '').toLowerCase().includes('entry') ||
+      entry.isEntry;
   const isActive = entry.status === 'Active';
   const time = entry.at || entry.entryAt;
 
   return (
     <div className={`rc-timeline__item ${isLast ? 'rc-timeline__item--last' : ''}`}>
       <div className="rc-timeline__connector">
-        <div className={`rc-timeline__dot rc-timeline__dot--${isEntry ? 'entry' : 'exit'} ${isActive ? 'rc-timeline__dot--active' : ''}`}>
-          {isGate ? (
+        <div className={`rc-timeline__dot rc-timeline__dot--${isActivity ? 'entry' : isEntry ? 'entry' : 'exit'} ${isActive ? 'rc-timeline__dot--active' : ''}`}>
+          {isActivity ? (
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+              <circle cx="12" cy="13" r="3" />
+            </svg>
+          ) : isGate ? (
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" />
             </svg>
@@ -354,11 +368,11 @@ function TimelineEvent({ entry, isLast, showPhoto = true }) {
           <div className="rc-timeline__card-main">
             <div className="rc-timeline__card-top">
               <div className="rc-timeline__badges">
-                <span className={`badge ${isEntry ? 'badge-success' : 'badge-info'}`}>
-                  {entry.eventType || (isEntry ? 'ENTRY' : 'EXIT')}
+                <span className={`badge ${isActivity ? 'badge-warning' : isEntry ? 'badge-success' : 'badge-info'}`}>
+                  {isActivity ? 'SEEN' : (entry.eventType || (isEntry ? 'ENTRY' : 'EXIT'))}
                 </span>
-                <span className={`badge ${isGate ? 'badge-secondary' : 'badge-warning'}`}>
-                  {isGate ? 'Gate' : 'Dept'}
+                <span className={`badge ${isActivity ? 'badge-secondary' : isGate ? 'badge-secondary' : 'badge-warning'}`}>
+                  {isActivity ? 'Activity' : isGate ? 'Gate' : 'Dept'}
                 </span>
                 {isActive && (
                   <span className="badge badge-warning">
@@ -802,7 +816,12 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                     <code className="rc-person-profile__code">{details.registrationCode}</code>
                     {!hasDateRange && (
                       <div style={{ marginTop: 8 }}>
-                        <StatusBadge inside={session?.divisionInside} hadActivity={todayEntries.length > 0} />
+                        <StatusBadge
+                          inside={session?.divisionInside}
+                          hadActivity={todayEntries.length > 0}
+                          hadGateActivity={todayEntries.some((e) => e.scanType !== 'activity')}
+                          activitySeen={todayEntries.some((e) => e.scanType === 'activity')}
+                        />
                       </div>
                     )}
                   </div>
@@ -936,7 +955,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                 <div>
                   {todayEntries.length === 0 ? (
                     <EmptyState icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>}
-                      title="No activity today" desc="No gate or department scans recorded today." />
+                      title="No activity today" desc="No gate, department, or activity-monitor sightings recorded today." />
                   ) : (
                     <div className="rc-timeline">
                       {todayEntries.map((e, i) => (
@@ -1419,10 +1438,16 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
                   ))}
                   <td className="rc-table__muted">{person.payFrequencyLabel || '—'}</td>
                   <td><code className="rc-table__code">{person.registrationCode}</code></td>
-                  <td className="rc-table__time">{formatTime(person.gateEntryAt)}</td>
+                  <td className="rc-table__time">
+                    {person.gateEntryAt
+                      ? formatTime(person.gateEntryAt)
+                      : person.activitySeenToday
+                        ? <span className="rc-table__muted" title="Activity monitor sighting">{formatTime(person.lastActivitySeenAt)}</span>
+                        : '—'}
+                  </td>
                   <td className="rc-table__time">{person.gateExitAt ? formatTime(person.gateExitAt) : person.divisionInside ? <span className="rc-badge-live">Active</span> : '—'}</td>
                   <td className="rc-table__time">{calcDuration(person.gateEntryAt, person.gateExitAt || (person.divisionInside && isToday ? new Date() : null))}</td>
-                  <td><StatusBadge inside={person.divisionInside} hadActivity={person.hadActivityToday} /></td>
+                  <td><StatusBadge inside={person.divisionInside} hadActivity={person.hadActivityToday} hadGateActivity={person.hadGateActivity} activitySeen={person.activitySeenToday} /></td>
                   <td>{person.shiftName ? <span className="badge badge-info">{person.shiftName}</span> : <span className="rc-table__muted">—</span>}</td>
                   <td>
                     <button className="rc-table__view-btn" onClick={e => { e.stopPropagation(); openPerson(person.registrationId); }}>

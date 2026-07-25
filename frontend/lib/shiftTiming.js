@@ -103,6 +103,36 @@ export function filterShiftsNearCurrentTime(
 }
 
 /**
+ * Whether `nowMinutes` falls inside the shift window [start, end) on a 24h clock.
+ * Overnight windows (end <= start) wrap past midnight. Equal start/end is treated
+ * as a 24h shift (always inside).
+ * @returns {boolean|null} null when either time is unparseable.
+ */
+export function isWithinShiftWindow(startTime, endTime, nowMinutes = currentIstMinutes()) {
+  const start = timeToMinutes(startTime);
+  const end = timeToMinutes(endTime);
+  if (start === null || end === null || nowMinutes === null || nowMinutes === undefined) {
+    return null;
+  }
+  if (start === end) return true; // full-day / 24h window
+  if (end > start) return nowMinutes >= start && nowMinutes < end;
+  // overnight window, e.g. 22:00 → 06:00
+  return nowMinutes >= start || nowMinutes < end;
+}
+
+/**
+ * Classify an assigned shift for the Activity monitor.
+ * @param {{shiftId?: string, shiftStartTime?: string, shiftEndTime?: string}|null} shift
+ * @returns {{status: 'on'|'off'|'unknown'|'none', label: string}}
+ */
+export function getShiftStatus(shift, now = new Date()) {
+  if (!shift || !shift.shiftId) return { status: 'none', label: 'No shift' };
+  const within = isWithinShiftWindow(shift.shiftStartTime, shift.shiftEndTime, currentIstMinutes(now));
+  if (within === null) return { status: 'unknown', label: 'Shift assigned' };
+  return within ? { status: 'on', label: 'On shift' } : { status: 'off', label: 'Off shift' };
+}
+
+/**
  * Format assigned shift window, e.g. "9:00 AM – 6:00 PM".
  */
 export function formatShiftWindow(startTime, endTime) {

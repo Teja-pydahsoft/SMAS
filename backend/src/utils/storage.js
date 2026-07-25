@@ -9,7 +9,7 @@ export const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../u
 export function ensureUploadDirs() {
   // Only create local dirs if Cloudinary is NOT configured (local fallback)
   if (process.env.CLOUDINARY_CLOUD_NAME) return;
-  const dirs = ['registrations', 'registrations-media', 'gate'].map((sub) => path.join(uploadDir, sub));
+  const dirs = ['registrations', 'registrations-media', 'gate', 'activity'].map((sub) => path.join(uploadDir, sub));
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });

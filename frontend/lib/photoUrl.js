@@ -23,6 +23,8 @@ export function resolvePhotoUrl(photoPath) {
   let relativePath;
   if (normalized.includes('/gate/') || normalized.startsWith('/uploads/gate/')) {
     relativePath = `/uploads/gate/${filename}`;
+  } else if (normalized.includes('/activity/') || normalized.startsWith('/uploads/activity/')) {
+    relativePath = `/uploads/activity/${filename}`;
   } else if (normalized.includes('/registrations-media/')) {
     relativePath = `/uploads/registrations-media/${filename}`;
   } else if (normalized.startsWith('/uploads/')) {

@@ -4,6 +4,7 @@ import Pass from '../models/Pass.js';
 import Role from '../models/Role.js';
 import RegistrationForm from '../models/RegistrationForm.js';
 import Shift from '../models/Shift.js';
+import ActivitySighting from '../models/ActivitySighting.js';
 import mongoose from 'mongoose';
 import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS, MIN_ATTENDANCE_HOURS } from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
@@ -575,6 +576,11 @@ function formatLogEntry(log) {
 }
 
 function scanLabel(entry) {
+  if (entry.scanType === 'activity') {
+    return entry.inActivity
+      ? 'Activity monitor — Seen (gate in)'
+      : 'Activity monitor — Seen (no gate in)';
+  }
   const place =
     entry.scanType === 'department'
       ? entry.departmentName || 'Department'
@@ -589,6 +595,25 @@ function scanLabel(entry) {
         : 'Exit';
   const division = entry.divisionName ? ` (${entry.divisionName})` : '';
   return `${place}${division} — ${action}`;
+}
+
+function formatActivitySightingEntry(sighting) {
+  return {
+    id: sighting._id.toString(),
+    scanType: 'activity',
+    eventType: 'seen',
+    at: sighting.createdAt?.toISOString?.() || sighting.createdAt,
+    divisionId: sighting.metadata?.divisionId || null,
+    divisionName: sighting.metadata?.divisionName || null,
+    gateName: null,
+    departmentId: null,
+    departmentName: null,
+    matchScore: sighting.matchScore,
+    photoUrl: photoUrlFromPath(sighting.photoPath),
+    remark: '',
+    inActivity: Boolean(sighting.inActivity),
+    label: null,
+  };
 }
 
 function groupEntriesByDate(logs, overnightRebucket = null) {
@@ -788,6 +813,25 @@ export async function getRegistrationReport(
         }))
         .sort((a, b) => new Date(b.at) - new Date(a.at));
 
+  // Activity-monitor sightings for today (even without gate entry).
+  if (!hasDateRange) {
+    const todaySightings = await ActivitySighting.find({
+      registrationId: registration._id,
+      matched: true,
+      sightingDate: today,
+    })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+
+    for (const sighting of todaySightings) {
+      const formatted = formatActivitySightingEntry(sighting);
+      formatted.label = scanLabel(formatted);
+      todayEntries.push(formatted);
+    }
+    todayEntries.sort((a, b) => new Date(b.at) - new Date(a.at));
+  }
+
   const todayActive = hasDateRange
     ? []
     : await buildTodayActiveForRegistration(registration._id, divisionScoped ? divisionObjIds : null);
@@ -890,6 +934,44 @@ export async function getRegistrationReport(
     })),
   }));
 
+  // Merge activity-monitor sightings into the per-date timeline.
+  {
+    const sightingQuery = {
+      registrationId: registration._id,
+      matched: true,
+    };
+    if (hasDateRange) {
+      sightingQuery.sightingDate = { $gte: dateFrom, $lte: dateTo };
+    } else {
+      sightingQuery.sightingDate = today;
+    }
+    const sightings = await ActivitySighting.find(sightingQuery)
+      .sort({ createdAt: -1 })
+      .limit(hasDateRange ? 2000 : 100)
+      .lean();
+
+    const byDate = new Map(entriesByDate.map((g) => [g.date, g]));
+    for (const sighting of sightings) {
+      const date = sighting.sightingDate || logDateKey(sighting.createdAt);
+      const formatted = formatActivitySightingEntry(sighting);
+      formatted.label = scanLabel(formatted);
+      if (!byDate.has(date)) {
+        const group = { date, entries: [] };
+        byDate.set(date, group);
+        entriesByDate.push(group);
+      }
+      // Avoid duplicating the same sighting if already added to todayEntries path
+      const group = byDate.get(date);
+      if (!group.entries.some((e) => e.id === formatted.id)) {
+        group.entries.push(formatted);
+      }
+    }
+    for (const group of entriesByDate) {
+      group.entries.sort((a, b) => new Date(b.at) - new Date(a.at));
+    }
+    entriesByDate.sort((a, b) => b.date.localeCompare(a.date));
+  }
+
   const sessionState = activeSession?.sessionState || {
     divisionInside: false,
     currentDepartmentId: null,
@@ -980,12 +1062,33 @@ export async function getDailyPassByRole({ divisionIds = null, date = null } = {
   if (divisionScoped) passQuery.divisionId = { $in: divisionObjIds };
   const todayPasses = await Pass.find(passQuery).lean();
 
-  // 3. Verified registrations grouped by roleId. When division-scoped, restrict
-  //    to people who checked into an accessible division on that date.
+  // 2b. Activity-monitor sightings for the date (matched people only)
+  const daySightings = await ActivitySighting.find({
+    sightingDate: validDate,
+    matched: true,
+    registrationId: { $ne: null },
+  })
+    .select('registrationId createdAt inActivity matchScore photoPath')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const sightingsByReg = new Map();
+  for (const sighting of daySightings) {
+    const key = sighting.registrationId?.toString();
+    if (!key) continue;
+    if (!sightingsByReg.has(key)) sightingsByReg.set(key, []);
+    sightingsByReg.get(key).push(sighting);
+  }
+
+  // 3. Verified registrations grouped by roleId. When division-scoped, include
+  //    people who checked into an accessible division OR were seen on Activity.
   const regQuery = { status: REGISTRATION_STATUS.VERIFIED };
   if (divisionScoped) {
     const scopedRegIds = [
-      ...new Set(todayPasses.map((p) => p.registrationId?.toString()).filter(Boolean)),
+      ...new Set([
+        ...todayPasses.map((p) => p.registrationId?.toString()).filter(Boolean),
+        ...daySightings.map((s) => s.registrationId?.toString()).filter(Boolean),
+      ]),
     ];
     if (scopedRegIds.length === 0) {
       return { date: validDate, roles: [] };
@@ -1026,6 +1129,7 @@ export async function getDailyPassByRole({ divisionIds = null, date = null } = {
       const people = regs.map((reg) => {
         const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
         const passes = passesByReg.get(reg._id.toString()) || [];
+        const sightings = sightingsByReg.get(reg._id.toString()) || [];
 
         // Pick the most relevant pass: active inside > active > latest
         const activeInsidePass = passes.find((p) => p.isActive && p.qrPayload?.divisionInside);
@@ -1038,7 +1142,12 @@ export async function getDailyPassByRole({ divisionIds = null, date = null } = {
         const divisionName = activePass?.qrPayload?.divisionName || null;
         const shiftName = activePass?.qrPayload?.shiftName || null;
         const currentDepartmentName = session?.currentDepartmentName || null;
-        const hadActivityToday = passes.length > 0;
+        const hadGateActivity = passes.length > 0;
+        const activitySeenToday = sightings.length > 0;
+        const lastActivitySeenAt = sightings[0]?.createdAt || null;
+        const activitySeenCount = sightings.length;
+        // Activity for the day = gate pass OR activity-monitor sighting
+        const hadActivityToday = hadGateActivity || activitySeenToday;
 
         return {
           registrationId: reg._id.toString(),
@@ -1046,6 +1155,10 @@ export async function getDailyPassByRole({ divisionIds = null, date = null } = {
           registrationCode: reg.registrationCode,
           photoUrl: photoUrlFromPath(reg.photoPath),
           hadActivityToday,
+          hadGateActivity,
+          activitySeenToday,
+          activitySeenCount,
+          lastActivitySeenAt,
           divisionInside,
           divisionName,
           gateEntryAt,

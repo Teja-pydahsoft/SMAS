@@ -70,6 +70,18 @@ export async function extractFaceEmbedding(imageBuffer, filename = 'photo.jpg', 
   return aiFetch('/embed', { method: 'POST', body: formData }, AI_FACE_TIMEOUT_MS);
 }
 
+/**
+ * Detect ALL faces in an image and return an embedding + box for each.
+ * Backs the Activity monitor, which lists every recognised person in a frame.
+ */
+export async function extractFaceEmbeddingsMulti(imageBuffer, filename = 'photo.jpg', mimeType) {
+  const type = mimeType || mimeFromFilename(filename);
+  const formData = new FormData();
+  formData.append('file', new Blob([imageBuffer], { type }), filename);
+
+  return aiFetch('/embed-multi', { method: 'POST', body: formData }, AI_FACE_TIMEOUT_MS);
+}
+
 export async function compareFaceEmbeddings(embedding1, embedding2) {
   return aiFetch(
     '/compare',

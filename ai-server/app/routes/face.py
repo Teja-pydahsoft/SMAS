@@ -109,6 +109,22 @@ async def extract_embedding(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/embed-multi")
+async def extract_embeddings_multi(file: UploadFile = File(...)):
+    content_type = (file.content_type or "").lower()
+    if content_type and not content_type.startswith("image/") and content_type != "application/octet-stream":
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    image_bytes = await file.read()
+    if len(image_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    try:
+        return face_service.extract_embeddings_multi(image_bytes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/compare")
 async def compare_embeddings(body: CompareRequest):
     if len(body.embedding1) != len(body.embedding2):

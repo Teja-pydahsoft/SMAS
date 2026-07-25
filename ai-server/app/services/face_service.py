@@ -71,6 +71,80 @@ class FaceService:
             },
         }
 
+    def extract_embeddings_multi(self, image_bytes: bytes, max_faces: int = 20) -> dict:
+        """Detect ALL faces in the image and return an embedding + box for each.
+
+        Used by the Activity monitor, which lists every recognised person in a
+        single frame (unlike the gate scan, which only embeds the largest face).
+        Faces are ordered largest-first and capped at ``max_faces``.
+        """
+        img = self._load_image(image_bytes)
+        faces = self._get_app().get(img)
+
+        if not faces:
+            return {"count": 0, "faces": [], "embedding_size": EMBEDDING_SIZE, "model": INSIGHTFACE_MODEL}
+
+        faces_sorted = sorted(
+            faces,
+            key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]),
+            reverse=True,
+        )[:max_faces]
+
+        results = []
+        for face in faces_sorted:
+            embedding = face.normed_embedding
+            if embedding is None or len(embedding) != EMBEDDING_SIZE:
+                continue
+            x1, y1, x2, y2 = face.bbox.astype(int)
+            face_box = {
+                "x": int(x1),
+                "y": int(y1),
+                "width": int(x2 - x1),
+                "height": int(y2 - y1),
+            }
+            results.append(
+                {
+                    "embedding": embedding.tolist(),
+                    "face_box": face_box,
+                    "det_score": float(getattr(face, "det_score", 0.0) or 0.0),
+                    "thumbnail_jpeg_b64": self._face_thumbnail_b64(img, x1, y1, x2, y2),
+                }
+            )
+
+        return {
+            "count": len(results),
+            "faces": results,
+            "embedding_size": EMBEDDING_SIZE,
+            "model": INSIGHTFACE_MODEL,
+        }
+
+    def _face_thumbnail_b64(self, img: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> Optional[str]:
+        """Crop a padded face region and return a JPEG as base64 (no data-URI prefix)."""
+        import base64
+
+        h, w = img.shape[:2]
+        bw = max(1, x2 - x1)
+        bh = max(1, y2 - y1)
+        pad_x = int(bw * 0.25)
+        pad_y = int(bh * 0.25)
+        cx1 = max(0, x1 - pad_x)
+        cy1 = max(0, y1 - pad_y)
+        cx2 = min(w, x2 + pad_x)
+        cy2 = min(h, y2 + pad_y)
+        crop = img[cy1:cy2, cx1:cx2]
+        if crop.size == 0:
+            return None
+        # Downscale large crops for lighter payloads
+        max_side = 160
+        ch, cw = crop.shape[:2]
+        scale = min(1.0, max_side / max(ch, cw))
+        if scale < 1.0:
+            crop = cv2.resize(crop, (max(1, int(cw * scale)), max(1, int(ch * scale))))
+        ok, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+        if not ok:
+            return None
+        return base64.b64encode(buf.tobytes()).decode("ascii")
+
     @staticmethod
     def cosine_similarity(a: List[float], b: List[float]) -> float:
         va = np.array(a, dtype=np.float32)

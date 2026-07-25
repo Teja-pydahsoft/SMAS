@@ -120,8 +120,12 @@ export function photoUrlFromPath(photoPath) {
   // Local fallback: derive URL from filename
   const name = photoPath.replace(/\\/g, '/').split('/').pop();
   // Detect subfolder from the path so gate photos resolve correctly
-  if (photoPath.replace(/\\/g, '/').includes('/gate/')) {
+  const normalized = photoPath.replace(/\\/g, '/');
+  if (normalized.includes('/gate/')) {
     return `/uploads/gate/${name}`;
+  }
+  if (normalized.includes('/activity/')) {
+    return `/uploads/activity/${name}`;
   }
   return `/uploads/registrations/${name}`;
 }

@@ -311,6 +311,11 @@ export const api = {
         }),
       });
     },
+    activityScan: (photoBlob) => {
+      const form = new FormData();
+      form.append('photo', photoBlob, 'activity-photo.jpg');
+      return request('/gate/activity-scan', { method: 'POST', body: form });
+    },
     logs: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
       return request(`/gate/logs${qs ? `?${qs}` : ''}`);

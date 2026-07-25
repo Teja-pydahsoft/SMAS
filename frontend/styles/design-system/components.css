@@ -52,6 +52,34 @@
 
 .camera-viewport__mirror-btn:hover { background: rgba(0, 0, 0, 0.6); }
 
+.camera-viewport__flip-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: var(--text-12);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  backdrop-filter: blur(4px);
+}
+.camera-viewport__flip-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.7); }
+.camera-viewport__flip-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.camera-viewport__flip-label { line-height: 1; }
+
+.camera-capture__flip-hint {
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
 .camera-placeholder {
   display: flex;
   flex-direction: column;

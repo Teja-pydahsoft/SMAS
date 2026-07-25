@@ -3,6 +3,28 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 
 const MIRROR_STORAGE_KEY = 'smas.cameraCapture.mirrored';
+const FACING_STORAGE_KEY = 'smas.cameraCapture.facingMode';
+
+function FlipIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M1 4v6h6" />
+      <path d="M23 20v-6h-6" />
+      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10" />
+      <path d="M3.51 15a9 9 0 0 0 14.85 3.36L23 14" />
+    </svg>
+  );
+}
 
 export default function CameraCapture({
   onCapture,
@@ -12,6 +34,9 @@ export default function CameraCapture({
   processingLabel = 'Processing...',
   hideRetake = false,
   defaultMirrored = true,
+  /** Show front/rear camera flip control (needed on phones). */
+  enableFlip = true,
+  defaultFacingMode = 'user',
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -20,19 +45,38 @@ export default function CameraCapture({
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState('');
   const [mirrored, setMirrored] = useState(defaultMirrored);
+  const [facingMode, setFacingMode] = useState(defaultFacingMode);
+  const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
+  const [flipping, setFlipping] = useState(false);
 
-  // Restore the operator's saved mirror preference for this device/browser.
-  // Some cameras (e.g. many external/USB webcams) already output a correctly
-  // oriented feed, while laptop front cameras look flipped — so the choice is
-  // per-camera and we let the operator toggle it.
+  // Restore mirror + facing preferences for this device/browser.
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(MIRROR_STORAGE_KEY);
-      if (saved !== null) setMirrored(saved === '1');
+      const savedMirror = localStorage.getItem(MIRROR_STORAGE_KEY);
+      if (savedMirror !== null) setMirrored(savedMirror === '1');
+      const savedFacing = localStorage.getItem(FACING_STORAGE_KEY);
+      if (savedFacing === 'user' || savedFacing === 'environment') {
+        setFacingMode(savedFacing);
+      }
     } catch {
-      // localStorage unavailable — keep default
+      // localStorage unavailable — keep defaults
     }
   }, []);
+
+  const refreshCameraCount = useCallback(async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+      setHasMultipleCameras(videoInputs.length > 1);
+    } catch {
+      // ignore — still allow flip attempts on phones
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCameraCount();
+  }, [refreshCameraCount]);
 
   const toggleMirror = useCallback(() => {
     setMirrored((prev) => {
@@ -46,38 +90,90 @@ export default function CameraCapture({
     });
   }, []);
 
-  const stopCamera = useCallback(() => {
+  const stopStream = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    stopStream();
     setActive(false);
-  }, []);
+  }, [stopStream]);
 
-  useEffect(() => () => stopCamera(), [stopCamera]);
+  useEffect(() => () => stopStream(), [stopStream]);
 
-  const startCamera = useCallback(async () => {
-    setError('');
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+  const startCamera = useCallback(
+    async (facing = facingMode) => {
+      setError('');
+      try {
+        stopStream();
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+        setFacingMode(facing);
+        setActive(true);
+        setPreview(null);
+        // After permission, device labels are available — re-check camera count.
+        refreshCameraCount();
+      } catch {
+        // Fallback without ideal facingMode constraint (older browsers / single cam).
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
+          });
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+          setFacingMode(facing);
+          setActive(true);
+          setPreview(null);
+          refreshCameraCount();
+        } catch {
+          setError('Camera access denied or unavailable');
+          setActive(false);
+        }
       }
-      setActive(true);
-      setPreview(null);
-    } catch {
-      setError('Camera access denied or unavailable');
-    }
-  }, []);
+    },
+    [facingMode, stopStream, refreshCameraCount]
+  );
 
   useEffect(() => {
     if (autoStart) {
       startCamera();
     }
-  }, [autoStart, startCamera]);
+    // only on mount / when autoStart turns on
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
+  const flipCamera = useCallback(async () => {
+    if (flipping || processing || !active) return;
+    setFlipping(true);
+    const nextFacing = facingMode === 'user' ? 'environment' : 'user';
+    try {
+      localStorage.setItem(FACING_STORAGE_KEY, nextFacing);
+    } catch {
+      // ignore
+    }
+    // Rear cameras usually should not be mirrored; front often should.
+    if (nextFacing === 'environment') {
+      setMirrored(false);
+    } else if (defaultMirrored) {
+      setMirrored(true);
+    }
+    await startCamera(nextFacing);
+    setFlipping(false);
+  }, [flipping, processing, active, facingMode, startCamera, defaultMirrored]);
 
   async function capture() {
     const video = videoRef.current;
@@ -112,11 +208,13 @@ export default function CameraCapture({
   function retake() {
     setPreview(null);
     onCapture?.(null);
-    startCamera();
+    startCamera(facingMode);
   }
 
   const showCaptureButton = active && !preview && !processing;
   const showRetakeButton = preview && !hideRetake && !processing;
+  // Always offer flip when enabled — phones often report 1 camera until after permission.
+  const showFlip = enableFlip && active && !preview;
 
   return (
     <div className="camera-capture">
@@ -152,10 +250,29 @@ export default function CameraCapture({
               <span>{mirrored ? 'Mirror on' : 'Mirror off'}</span>
             </button>
           )}
+          {showFlip && (
+            <button
+              type="button"
+              className="camera-viewport__flip-btn"
+              onClick={flipCamera}
+              disabled={flipping || processing}
+              aria-label={facingMode === 'user' ? 'Switch to rear camera' : 'Switch to front camera'}
+              title={
+                facingMode === 'user'
+                  ? 'Switch to rear camera'
+                  : 'Switch to front camera'
+              }
+            >
+              <FlipIcon />
+              <span className="camera-viewport__flip-label">
+                {flipping ? 'Switching…' : facingMode === 'user' ? 'Rear' : 'Front'}
+              </span>
+            </button>
+          )}
           {!active && (
             <div className="camera-placeholder">
               <p>Camera not started</p>
-              <button type="button" className="btn-primary" onClick={startCamera}>
+              <button type="button" className="btn-primary" onClick={() => startCamera()}>
                 Start Camera
               </button>
             </div>
@@ -186,6 +303,12 @@ export default function CameraCapture({
           </button>
         )}
       </div>
+
+      {showFlip && hasMultipleCameras && (
+        <p className="field-hint camera-capture__flip-hint">
+          Tap <strong>Rear</strong> / <strong>Front</strong> to flip the camera
+        </p>
+      )}
     </div>
   );
 }

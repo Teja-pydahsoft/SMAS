@@ -131,7 +131,47 @@ function formatTime(value) {
   if (!value) return '—';
   const d = new Date(value);
   if (isNaN(d)) return '—';
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** IST calendar date (YYYY-MM-DD) of a timestamp, '' when invalid. */
+function istDateOf(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d)) return '';
+  return todayDateStringIst(d);
+}
+
+/** Compact date like "Jul 26" (IST) — shown under overnight exit times. */
+function formatShortDate(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric' });
+}
+
+/**
+ * Time stack used on overnight rows: always show the clock time; when the
+ * event's IST calendar day differs from the work-date, show that date under it.
+ */
+function TimeWithOptionalDate({ at, workDate, className = '' }) {
+  if (!at) return '—';
+  const eventDate = istDateOf(at);
+  const showDate = Boolean(workDate && eventDate && eventDate !== workDate);
+  return (
+    <span className={`rc-table__time-stack ${className}`.trim()}>
+      <span>{formatTime(at)}</span>
+      {showDate && (
+        <span className="rc-table__time-date" title="Event on a different calendar day (overnight shift)">
+          {formatShortDate(at)}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function dayEarnedAmount(day, rate) {
@@ -309,25 +349,104 @@ function EntryLocationMeta({ entry, compact = false }) {
   );
 }
 
-function ScanPhoto({ url, label, className = '' }) {
+function ScanPhoto({ url, label, className = '', onClick = null, size = 'md' }) {
   const [err, setErr] = useState(false);
   const src = resolvePhotoUrl(url);
+  const clickable = Boolean(onClick);
+  const sizeClass = size === 'sm' ? 'rc-scan-photo--sm' : size === 'lg' ? 'rc-scan-photo--lg' : '';
+
   if (!src || err) {
-    return (
-      <div className={`rc-scan-photo rc-scan-photo--empty ${className}`.trim()} aria-hidden>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    const empty = (
+      <div
+        className={`rc-scan-photo rc-scan-photo--empty ${sizeClass} ${className}`.trim()}
+        aria-hidden={!clickable}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
         </svg>
       </div>
     );
+    if (!clickable) return empty;
+    return (
+      <button type="button" className="rc-scan-photo-btn" onClick={onClick} aria-label={label || 'View scan details'}>
+        {empty}
+      </button>
+    );
   }
-  return (
+
+  const img = (
     <img
       src={src}
       alt={label || 'Scan photo'}
-      className={`rc-scan-photo ${className}`.trim()}
+      className={`rc-scan-photo ${sizeClass} ${className}`.trim()}
       onError={() => setErr(true)}
     />
+  );
+
+  if (!clickable) return img;
+  return (
+    <button type="button" className="rc-scan-photo-btn" onClick={onClick} aria-label={label || 'View scan details'}>
+      {img}
+    </button>
+  );
+}
+
+function ScanDetailLightbox({ entry, workDate = '', onClose }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  if (!entry) return null;
+  const isEntry = !isExitScan(entry);
+  const kind = isDeptScan(entry) ? 'Department' : entry.scanType === 'activity' ? 'Activity' : 'Gate';
+  const action = scanActivityLabel(entry);
+  const at = entry.at || entry.entryAt;
+
+  return (
+    <div className="rc-scan-lightbox" onClick={onClose} role="presentation">
+      <div
+        className="rc-scan-lightbox__panel"
+        role="dialog"
+        aria-modal
+        aria-label="Scan details"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button type="button" className="rc-scan-lightbox__close" onClick={onClose} aria-label="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+        <div className="rc-scan-lightbox__photo-wrap">
+          <ScanPhoto url={entry.photoUrl} label={action} className="rc-scan-lightbox__photo" size="lg" />
+        </div>
+        <div className="rc-scan-lightbox__body">
+          <div className="rc-scan-lightbox__badges">
+            <span className={`badge ${isEntry ? 'badge-success' : 'badge-info'}`}>{action}</span>
+            <span className="badge badge-secondary">{kind}</span>
+          </div>
+          <p className="rc-scan-lightbox__time">
+            {formatTime(at)}
+            {workDate && istDateOf(at) && istDateOf(at) !== workDate && (
+              <span className="rc-scan-lightbox__date"> · {formatShortDate(at)}</span>
+            )}
+          </p>
+          {entry.label && <p className="rc-scan-lightbox__label">{entry.label}</p>}
+          <EntryLocationMeta entry={entry} />
+          {entry.matchScore != null && (
+            <p className="rc-scan-lightbox__meta">
+              Match: {Math.round(Number(entry.matchScore) * 100)}%
+            </p>
+          )}
+          {entry.remark?.trim() && (
+            <p className="rc-scan-lightbox__meta">Remark: {entry.remark.trim()}</p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -416,19 +535,47 @@ function isGateEntryScan(entry) {
 /** Clear label for last activity / track steps */
 function scanActivityLabel(entry) {
   if (!entry) return '—';
+  if (entry.scanType === 'activity') return entry.inActivity ? 'Seen (in)' : 'Seen';
   if (isDeptScan(entry)) return isExitScan(entry) ? 'Dept Out' : 'Dept In';
   return isExitScan(entry) ? 'Gate Out' : 'Gate In';
 }
 
-function PeriodTrackStep({ entry }) {
+function trackNodeRole(entry, index, total, checkedOut) {
+  if (index === 0 && isGateEntryScan(entry)) return 'Gate In';
+  if (index === total - 1) {
+    if (checkedOut && isGateExitScan(entry)) return 'Gate Out';
+    return 'Latest';
+  }
+  return scanActivityLabel(entry);
+}
+
+function PeriodTrackNode({ entry, workDate, role, isEndpoint, onOpen }) {
   const isEntry = !isExitScan(entry);
-  const kind = isDeptScan(entry) ? 'dept' : 'gate';
+  const kind = isDeptScan(entry) ? 'dept' : entry.scanType === 'activity' ? 'activity' : 'gate';
+  const endpointKind =
+    role === 'Gate In' ? 'start' : role === 'Gate Out' ? 'end' : role === 'Latest' ? 'latest' : '';
+
   return (
-    <div className="rc-day-track__step" title={entryLocationTitle(entry)}>
-      <span className={`rc-day-track__step-dot rc-day-track__step-dot--${isEntry ? 'entry' : 'exit'}`} />
-      <span className="rc-day-track__step-time">{formatTime(entry.at)}</span>
-      <span className={`rc-day-track__step-label rc-day-track__step-label--${kind}`}>
-        {scanActivityLabel(entry)}
+    <div
+      className={`rc-day-track__node ${isEndpoint ? 'rc-day-track__node--endpoint' : 'rc-day-track__node--step'} ${
+        endpointKind ? `rc-day-track__node--${endpointKind}` : ''
+      }`}
+      title={entryLocationTitle(entry)}
+    >
+      <ScanPhoto
+        url={entry.photoUrl}
+        label={`${role} photo — click for details`}
+        className={`rc-day-track__photo-img ${isEndpoint ? 'rc-day-track__photo' : 'rc-day-track__step-photo'} ${
+          isEntry ? 'rc-day-track__photo-img--entry' : 'rc-day-track__photo-img--exit'
+        }`}
+        size={isEndpoint ? 'md' : 'sm'}
+        onClick={() => onOpen?.(entry)}
+      />
+      <span className={`rc-day-track__node-label rc-day-track__node-label--${kind} ${endpointKind ? `rc-day-track__node-label--${endpointKind}` : ''}`}>
+        {role}
+      </span>
+      <span className="rc-day-track__node-time">
+        <TimeWithOptionalDate at={entry.at} workDate={workDate} />
       </span>
       <EntryLocationMeta entry={entry} compact />
     </div>
@@ -436,84 +583,61 @@ function PeriodTrackStep({ entry }) {
 }
 
 /**
- * Day track: Gate In on the left, Gate Out on the right when checked out.
- * If still inside, right side shows "Latest" (not "End") so a department
- * check-in is never mistaken for day checkout.
+ * Compact horizontal day track: every scan gets a photo; click opens details.
+ * Short timelines stay packed instead of stretching across the full width.
  */
-function PeriodDayTrack({ entries }) {
+function PeriodDayTrack({ entries, workDate = '' }) {
+  const [detailEntry, setDetailEntry] = useState(null);
   const sorted = [...entries].sort((a, b) => new Date(a.at) - new Date(b.at));
   if (sorted.length === 0) return null;
 
-  const left = sorted.find((e) => isGateEntryScan(e)) || sorted[0];
   const lastGate = [...sorted].reverse().find((e) => !isDeptScan(e)) || null;
   const checkedOut = Boolean(lastGate && isGateExitScan(lastGate));
-  const lastEvent = sorted[sorted.length - 1];
-  const right = checkedOut ? lastGate : lastEvent;
-
-  const leftT = new Date(left.at).getTime();
-  const rightT = new Date(right.at).getTime();
-  const isSingle = sorted.length === 1 || left === right || leftT === rightT;
-
-  const middle = isSingle
-    ? []
-    : sorted.filter((e) => {
-        const t = new Date(e.at).getTime();
-        return t > leftT && t < rightT;
-      });
-
-  const rightLabel = checkedOut ? 'Gate Out' : 'Latest';
-  const rightKind = checkedOut ? 'end' : 'latest';
 
   return (
-    <div className={`rc-day-track ${isSingle ? 'rc-day-track--single' : ''}`}>
-      <div className="rc-day-track__endpoint rc-day-track__endpoint--start">
-        <ScanPhoto url={left.photoUrl} label="Gate in scan photo" className="rc-day-track__photo" />
-        <div className="rc-day-track__endpoint-info">
-          <span className="rc-day-track__endpoint-label">Gate In</span>
-          <span className="rc-day-track__endpoint-time">{formatTime(left.at)}</span>
-          <EntryLocationMeta entry={left} compact />
+    <>
+      <div
+        className={`rc-day-track ${sorted.length === 1 ? 'rc-day-track--single' : ''}`}
+      >
+        <div className="rc-day-track__flow">
+          {sorted.map((entry, i) => {
+            const isEndpoint = i === 0 || i === sorted.length - 1;
+            const role = trackNodeRole(entry, i, sorted.length, checkedOut);
+            return (
+              <Fragment key={entry.id || `${entry.at}-${i}`}>
+                {i > 0 && (
+                  <div
+                    className={`rc-day-track__seg ${
+                      isExitScan(sorted[i - 1]) || isExitScan(entry)
+                        ? 'rc-day-track__seg--exit'
+                        : 'rc-day-track__seg--entry'
+                    }`}
+                    aria-hidden
+                  />
+                )}
+                <PeriodTrackNode
+                  entry={entry}
+                  workDate={workDate}
+                  role={role}
+                  isEndpoint={isEndpoint}
+                  onOpen={setDetailEntry}
+                />
+              </Fragment>
+            );
+          })}
         </div>
+        {sorted.length > 1 && !checkedOut && (
+          <p className="rc-day-track__status-hint">Still inside · no gate out yet</p>
+        )}
       </div>
-
-      {!isSingle && (
-        <>
-          <div className="rc-day-track__rail">
-            <div className="rc-day-track__line" />
-            {middle.length > 0 && (
-              <div className="rc-day-track__steps-scroll">
-                <div className="rc-day-track__steps">
-                  {middle.map((entry, i) => (
-                    <PeriodTrackStep key={entry.id || `${entry.at}-${i}`} entry={entry} />
-                  ))}
-                </div>
-              </div>
-            )}
-            {middle.length === 0 && checkedOut && (
-              <p className="rc-day-track__rail-hint">No department scans between gate in and gate out</p>
-            )}
-            {middle.length === 0 && !checkedOut && (
-              <p className="rc-day-track__rail-hint">Still inside · no gate out yet</p>
-            )}
-          </div>
-
-          <div className={`rc-day-track__endpoint rc-day-track__endpoint--${rightKind}`}>
-            <ScanPhoto
-              url={right.photoUrl}
-              label={checkedOut ? 'Gate out scan photo' : 'Latest scan photo'}
-              className="rc-day-track__photo"
-            />
-            <div className="rc-day-track__endpoint-info">
-              <span className="rc-day-track__endpoint-label">{rightLabel}</span>
-              {!checkedOut && (
-                <span className="rc-day-track__endpoint-kind">{scanActivityLabel(right)}</span>
-              )}
-              <span className="rc-day-track__endpoint-time">{formatTime(right.at)}</span>
-              <EntryLocationMeta entry={right} compact />
-            </div>
-          </div>
-        </>
+      {detailEntry && (
+        <ScanDetailLightbox
+          entry={detailEntry}
+          workDate={workDate}
+          onClose={() => setDetailEntry(null)}
+        />
       )}
-    </div>
+    </>
   );
 }
 
@@ -571,10 +695,12 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
                       {day.code}
                     </span>
                   </td>
-                  <td className="rc-period-sessions-table__time">{formatTime(day.checkIn)}</td>
+                  <td className="rc-period-sessions-table__time">
+                    <TimeWithOptionalDate at={day.checkIn} workDate={day.date} />
+                  </td>
                   <td className="rc-period-sessions-table__time">
                     <span className="rc-period-sessions-table__activity">
-                      <span>{formatTime(day.lastActivityAt)}</span>
+                      <TimeWithOptionalDate at={day.lastActivityAt} workDate={day.date} />
                       <span className="rc-period-sessions-table__activity-type">{lastLabel}</span>
                     </span>
                   </td>
@@ -600,7 +726,15 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
                         {breakSegments.length > 0 && (
                           <span className="rc-period-sessions-table__break-detail">
                             {breakSegments
-                              .map((b) => `${formatTime(b.from)}–${formatTime(b.to)}`)
+                              .map((b) => {
+                                const fromLabel = istDateOf(b.from) !== day.date
+                                  ? `${formatTime(b.from)} (${formatShortDate(b.from)})`
+                                  : formatTime(b.from);
+                                const toLabel = istDateOf(b.to) !== day.date
+                                  ? `${formatTime(b.to)} (${formatShortDate(b.to)})`
+                                  : formatTime(b.to);
+                                return `${fromLabel}–${toLabel}`;
+                              })
                               .join(', ')}
                           </span>
                         )}
@@ -619,7 +753,7 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
                     {entries.length === 0 ? (
                       <p className="rc-period-day-timeline__empty">No scan events recorded for this day.</p>
                     ) : (
-                      <PeriodDayTrack entries={entries} />
+                      <PeriodDayTrack entries={entries} workDate={day.date} />
                     )}
                   </td>
                 </tr>
@@ -650,6 +784,19 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const hasDateRange = Boolean(dateFrom && dateTo);
+  const singleDayDate =
+    hasDateRange && dateFrom === dateTo
+      ? dateFrom
+      : !hasDateRange
+        ? todayDateStringIst()
+        : null;
+  const isDayPassToday = Boolean(singleDayDate && singleDayDate === todayDateStringIst());
+  const canShowDayPass = Boolean(singleDayDate) && !divisionId;
+  const dayPassLabel = isDayPassToday
+    ? 'Today Day Pass'
+    : singleDayDate
+      ? `Day Pass · ${formatDate(singleDayDate)}`
+      : 'Day Pass';
   const [activeInnerTab, setActiveInnerTab] = useState(hasDateRange ? 'history' : 'today');
   const [exporting, setExporting] = useState('');
   const [dayPass, setDayPass] = useState(null);
@@ -674,13 +821,13 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
       .catch(e => { setError(e.message); setLoading(false); });
   }, [registrationId, dateFrom, dateTo, divisionId, hasDateRange]);
 
-  // Prefetch today's day pass when opened from Daily attendance (no date range)
+  // Prefetch day pass for today OR a single selected past date
   useEffect(() => {
-    if (!registrationId || hasDateRange || divisionId) return undefined;
+    if (!registrationId || !canShowDayPass || !singleDayDate) return undefined;
     let cancelled = false;
     setDayPassLoading(true);
     setDayPassError('');
-    api.passes.getTodayDayPass(registrationId)
+    api.passes.getDayPass(registrationId, isDayPassToday ? null : singleDayDate)
       .then((pass) => {
         if (!cancelled) setDayPass(pass);
       })
@@ -695,7 +842,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
         if (!cancelled) setDayPassLoading(false);
       });
     return () => { cancelled = true; };
-  }, [registrationId, hasDateRange, divisionId]);
+  }, [registrationId, canShowDayPass, singleDayDate, isDayPassToday]);
 
   if (!registrationId) return null;
 
@@ -750,15 +897,21 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
       setShowDayPass(true);
       return;
     }
+    if (!singleDayDate) {
+      setDayPassError('Select a single date to view the day pass.');
+      return;
+    }
     setDayPassLoading(true);
     setDayPassError('');
     try {
-      const pass = await api.passes.getTodayDayPass(registrationId);
+      const pass = await api.passes.getDayPass(registrationId, isDayPassToday ? null : singleDayDate);
       setDayPass(pass);
       setShowDayPass(true);
     } catch (e) {
       setDayPassError(e?.status === 404
-        ? 'No day pass for today yet. It appears after a successful gate entry.'
+        ? (isDayPassToday
+          ? 'No day pass for today yet. It appears after a successful gate entry.'
+          : `No day pass found for ${formatDate(singleDayDate)}.`)
         : (e.message || 'Failed to load day pass'));
     } finally {
       setDayPassLoading(false);
@@ -906,7 +1059,14 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                       </div>
                       <div className="rc-person-profile__stat">
                         <span className="rc-person-profile__stat-label">Out Time</span>
-                        <span className="rc-person-profile__stat-value rc-color-danger">{formatTime(session?.gateExitAt)}</span>
+                        <span className="rc-person-profile__stat-value rc-color-danger">
+                          {formatTime(session?.gateExitAt)}
+                          {session?.gateExitAt && session?.gateEntryAt && istDateOf(session.gateExitAt) !== istDateOf(session.gateEntryAt) && (
+                            <span className="rc-table__time-date" title="Exited on a different day (overnight shift)">
+                              {formatShortDate(session.gateExitAt)}
+                            </span>
+                          )}
+                        </span>
                       </div>
                       <div className="rc-person-profile__stat">
                         <span className="rc-person-profile__stat-label">Duration</span>
@@ -1062,19 +1222,23 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
         <div className="rc-dialog__footer">
           {!loading && !error && data && (
             <>
-              {!hasDateRange && !divisionId && (
+              {canShowDayPass && (
                 <button
                   type="button"
                   className="btn-primary rc-download-btn"
                   onClick={handleOpenDayPass}
                   disabled={dayPassLoading}
-                  title={dayPass ? "View today's day pass" : 'Day pass appears after a successful gate entry'}
+                  title={
+                    dayPass
+                      ? `View day pass for ${isDayPassToday ? 'today' : formatDate(singleDayDate)}`
+                      : 'Day pass appears after a successful gate entry on this date'
+                  }
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                     <rect x="3" y="4" width="18" height="16" rx="2" />
                     <path d="M7 8h10M7 12h6" />
                   </svg>
-                  <span>{dayPassLoading ? 'Loading…' : 'Today Day Pass'}</span>
+                  <span>{dayPassLoading ? 'Loading…' : dayPassLabel}</span>
                 </button>
               )}
               <button
@@ -1107,15 +1271,16 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
           onClick={() => setShowDayPass(false)}
           role="dialog"
           aria-modal
-          aria-label="Today Day Pass"
+          aria-label={dayPassLabel}
         >
           <div className="rc-day-pass-modal" onClick={(e) => e.stopPropagation()}>
             <div className="rc-day-pass-modal__header">
               <div>
-                <h3 className="rc-day-pass-modal__title">Today Day Pass</h3>
+                <h3 className="rc-day-pass-modal__title">{dayPassLabel}</h3>
                 <p className="rc-day-pass-modal__sub">
                   {details.holderName || '—'}
                   {details.registrationCode ? ` · ${details.registrationCode}` : ''}
+                  {singleDayDate ? ` · ${formatDate(singleDayDate)}` : ''}
                 </p>
               </div>
               <button
@@ -1445,7 +1610,18 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
                         ? <span className="rc-table__muted" title="Activity monitor sighting">{formatTime(person.lastActivitySeenAt)}</span>
                         : '—'}
                   </td>
-                  <td className="rc-table__time">{person.gateExitAt ? formatTime(person.gateExitAt) : person.divisionInside ? <span className="rc-badge-live">Active</span> : '—'}</td>
+                  <td className="rc-table__time">
+                    {person.gateExitAt ? (
+                      <span className="rc-table__time-stack">
+                        <span>{formatTime(person.gateExitAt)}</span>
+                        {istDateOf(person.gateExitAt) !== activityDate && (
+                          <span className="rc-table__time-date" title="Exited on a different day (overnight shift)">
+                            {formatShortDate(person.gateExitAt)}
+                          </span>
+                        )}
+                      </span>
+                    ) : person.divisionInside ? <span className="rc-badge-live">Active</span> : '—'}
+                  </td>
                   <td className="rc-table__time">{calcDuration(person.gateEntryAt, person.gateExitAt || (person.divisionInside && isToday ? new Date() : null))}</td>
                   <td><StatusBadge inside={person.divisionInside} hadActivity={person.hadActivityToday} hadGateActivity={person.hadGateActivity} activitySeen={person.activitySeenToday} /></td>
                   <td>{person.shiftName ? <span className="badge badge-info">{person.shiftName}</span> : <span className="rc-table__muted">—</span>}</td>

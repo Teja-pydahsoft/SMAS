@@ -1,6 +1,7 @@
 import { formatPayFrequency } from '@/lib/payFrequency';
 
 const BRAND = [30, 64, 175];
+const IST_TIMEZONE = 'Asia/Kolkata';
 
 function formatPdfCurrency(amount) {
   if (amount == null || Number.isNaN(Number(amount))) return '—';
@@ -11,18 +12,36 @@ function formatPdfCurrency(amount) {
   return `Rs ${num}`;
 }
 
+/** Parse YYYY-MM-DD as noon IST so calendar dates don't shift by timezone. */
+function parsePdfDateValue(value) {
+  if (value instanceof Date) return value;
+  if (typeof value === 'string') {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (match) {
+      return new Date(`${match[1]}-${match[2]}-${match[3]}T12:00:00+05:30`);
+    }
+  }
+  return new Date(value);
+}
+
 function formatPdfDate(value) {
   if (!value) return '—';
-  const d = value instanceof Date ? value : new Date(value);
+  const d = value instanceof Date ? value : parsePdfDateValue(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', {
+    timeZone: IST_TIMEZONE,
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 function formatPdfDateLong(value) {
   if (!value) return '—';
-  const d = value instanceof Date ? value : new Date(value);
+  const d = value instanceof Date ? value : parsePdfDateValue(value);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', {
+    timeZone: IST_TIMEZONE,
     weekday: 'short',
     year: 'numeric',
     month: 'short',
@@ -34,7 +53,11 @@ function formatPdfTime(value) {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString('en-US', {
+    timeZone: IST_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function formatPdfDateTime(value) {
@@ -42,12 +65,34 @@ function formatPdfDateTime(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString('en-US', {
+    timeZone: IST_TIMEZONE,
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function istDateOfPdf(value) {
+  if (!value) return '';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+/** Time only on the report day; include date when exit spills to the next day. */
+function formatPdfTimeOnDate(value, referenceDate = '') {
+  if (!value) return '—';
+  const eventDate = istDateOfPdf(value);
+  if (!eventDate) return '—';
+  if (referenceDate && eventDate !== referenceDate) return formatPdfDateTime(value);
+  return formatPdfTime(value);
 }
 
 function calcPdfDuration(entryAt, exitAt) {
@@ -67,8 +112,8 @@ function dayStatusLabel(person) {
   return 'Not In';
 }
 
-function exitTimeLabel(person) {
-  if (person.gateExitAt) return formatPdfTime(person.gateExitAt);
+function exitTimeLabel(person, reportDateStr = '') {
+  if (person.gateExitAt) return formatPdfTimeOnDate(person.gateExitAt, reportDateStr);
   if (person.divisionInside) return 'Active';
   return '—';
 }
@@ -116,7 +161,8 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
     import('jspdf-autotable'),
   ]);
   const autoTable = autoTableModule.default;
-  const reportDate = options.date ? new Date(options.date) : new Date();
+  const reportDate = options.date ? parsePdfDateValue(options.date) : new Date();
+  const reportDateStr = istDateOfPdf(reportDate);
 
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -138,8 +184,8 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
     p.displayName || 'Unnamed',
     p.roleName || '—',
     p.registrationCode || '—',
-    formatPdfTime(p.gateEntryAt),
-    exitTimeLabel(p),
+    formatPdfTimeOnDate(p.gateEntryAt, reportDateStr),
+    exitTimeLabel(p, reportDateStr),
     calcPdfDuration(p.gateEntryAt, p.gateExitAt || (p.divisionInside ? new Date() : null)),
     dayStatusLabel(p),
     p.shiftName || '—',
@@ -173,8 +219,8 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
       0: { cellWidth: 110 },
       1: { cellWidth: 80 },
       2: { cellWidth: 90 },
-      3: { cellWidth: 70 },
-      4: { cellWidth: 70 },
+      3: { cellWidth: 90 },
+      4: { cellWidth: 90 },
       5: { cellWidth: 60 },
       6: { cellWidth: 75 },
       7: { cellWidth: 80 },
@@ -202,7 +248,7 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
   });
 
   const reportName = divisionName ? `SAMS_${safeFilePart(divisionName)}_Attendance` : 'SAMS_Day_Report';
-  doc.save(`${reportName}_${safeFilePart(reportDate.toISOString().slice(0, 10))}.pdf`);
+  doc.save(`${reportName}_${safeFilePart(reportDateStr || reportDate.toISOString().slice(0, 10))}.pdf`);
 }
 
 /**

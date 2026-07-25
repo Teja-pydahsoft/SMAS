@@ -274,7 +274,14 @@ export const api = {
     syncAllRegistrationPasses: () =>
       request('/passes/registration/sync-all', { method: 'POST' }),
     getDayPassByGateLog: (gateLogId) => request(`/passes/day/gate-log/${gateLogId}`),
-    getTodayDayPass: (registrationId) => request(`/passes/day/registration/${registrationId}`),
+    getTodayDayPass: (registrationId, date = null) => {
+      const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+      return request(`/passes/day/registration/${registrationId}${qs}`);
+    },
+    getDayPass: (registrationId, date = null) => {
+      const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+      return request(`/passes/day/registration/${registrationId}${qs}`);
+    },
     verify: (passCode) => request(`/passes/verify/${passCode}`),
     listByRegistration: (registrationId) => request(`/passes/registration/${registrationId}/list`),
   },

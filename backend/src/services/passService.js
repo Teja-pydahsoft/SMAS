@@ -359,9 +359,10 @@ export async function getDayPassByGateLog(gateLogId) {
   return formatPassResponse(pass);
 }
 
-/** Today's day pass for a registration (prefer active / most recent). */
-export async function getTodayDayPass(registrationId) {
-  const validDate = todayDateString();
+/** Day pass for a registration on a given IST calendar date (defaults to today). */
+export async function getDayPassForDate(registrationId, date = null) {
+  const validDate =
+    typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : todayDateString();
   const pass = await Pass.findOne({
     registrationId,
     passType: PASS_TYPES.DAY_PASS,
@@ -370,6 +371,11 @@ export async function getTodayDayPass(registrationId) {
 
   if (!pass) return null;
   return formatPassResponse(pass);
+}
+
+/** Today's day pass for a registration (prefer active / most recent). */
+export async function getTodayDayPass(registrationId) {
+  return getDayPassForDate(registrationId, todayDateString());
 }
 
 export async function getPassByCode(passCode) {

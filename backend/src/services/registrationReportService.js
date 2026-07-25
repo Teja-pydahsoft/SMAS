@@ -6,7 +6,7 @@ import RegistrationForm from '../models/RegistrationForm.js';
 import Shift from '../models/Shift.js';
 import ActivitySighting from '../models/ActivitySighting.js';
 import mongoose from 'mongoose';
-import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS, MIN_ATTENDANCE_HOURS } from '../constants/index.js';
+import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS, MIN_ATTENDANCE_HOURS, SHIFT_OVERSTAY_GRACE_MS } from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import {
   getActiveDivisionSession,
@@ -69,6 +69,73 @@ function isOvernightPass(pass) {
 }
 
 /**
+ * Instant of shift end on `wallDate` (the calendar day after an overnight
+ * work-date), plus the same overstay grace used by live gate sessions.
+ * Logs up to this cutoff still belong to the previous night's work-date.
+ */
+function overnightRebucketCutoff(wallDate, endTime) {
+  if (!endTime || !wallDate) return null;
+  const [eh, em] = String(endTime).split(':').map(Number);
+  if (!Number.isFinite(eh) || !Number.isFinite(em)) return null;
+  const shiftEndOnNextDay = new Date(
+    `${wallDate}T${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}:00+05:30`
+  );
+  if (Number.isNaN(shiftEndOnNextDay.getTime())) return null;
+  return new Date(shiftEndOnNextDay.getTime() + SHIFT_OVERSTAY_GRACE_MS);
+}
+
+/**
+ * Assigned working window for one work-date: shift start through shift end
+ * plus the configured four-hour overstay grace.
+ */
+function assignedShiftWindow(workDate, pass) {
+  const startTime = pass?.qrPayload?.shiftStartTime;
+  const endTime = pass?.qrPayload?.shiftEndTime;
+  if (!workDate || !startTime || !endTime) return null;
+
+  const start = new Date(`${workDate}T${startTime}:00+05:30`);
+  const endDate = isOvernightPass(pass) ? nextDateIst(workDate) : workDate;
+  const end = new Date(`${endDate}T${endTime}:00+05:30`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+  return {
+    start,
+    end: new Date(end.getTime() + SHIFT_OVERSTAY_GRACE_MS),
+  };
+}
+
+function isWithinAssignedShiftWindow(value, workDate, pass) {
+  const window = assignedShiftWindow(workDate, pass);
+  if (!window) return true;
+  const at = new Date(value);
+  return !Number.isNaN(at.getTime()) && at >= window.start && at <= window.end;
+}
+
+/**
+ * Resolve a timestamp to an assigned work-date. The previous date is checked
+ * first so post-midnight events stay attached to the prior night shift.
+ */
+function assignedWorkDateForTimestamp(value, fallbackDate, shiftPassByDate) {
+  if (!(shiftPassByDate instanceof Map) || shiftPassByDate.size === 0) {
+    return fallbackDate;
+  }
+  const wallDate = logDateKey(value);
+  const previousDate = prevDateIst(wallDate);
+  const previousPass = shiftPassByDate.get(previousDate);
+  if (
+    previousPass &&
+    isWithinAssignedShiftWindow(value, previousDate, previousPass)
+  ) {
+    return previousDate;
+  }
+  const wallPass = shiftPassByDate.get(wallDate);
+  if (wallPass && isWithinAssignedShiftWindow(value, wallDate, wallPass)) {
+    return wallDate;
+  }
+  return fallbackDate || wallDate;
+}
+
+/**
  * Build a map of  logId → workDate  for logs that should be re-attributed to
  * the previous calendar day's shift window (overnight shifts only).
  *
@@ -99,18 +166,14 @@ function buildOvernightRebucketMap(logs, passByDate) {
     // Re-attribute only when:
     //  - the log's wall-clock date is NOT itself a work-date with an overnight shift
     //  - the previous calendar day IS a work-date with an overnight shift
-    //  - the log happened before the shift end on the next day (we rely on the
-    //    pass's shiftEndTime; anything before it belongs to that shift window)
+    //  - the log happened before shift end + overstay grace on wallDate
     if (!overnightDates.has(wallDate) && overnightDates.has(prevDate)) {
       const pass = passByDate.get(prevDate);
-      // Confirm the log timestamp is within the overnight shift window
-      // (i.e. before shift end on wallDate)
       const endTime = pass?.qrPayload?.shiftEndTime;
       if (endTime) {
-        const [eh, em] = endTime.split(':').map(Number);
-        const shiftEndOnNextDay = new Date(`${wallDate}T${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}:00+05:30`);
+        const cutoff = overnightRebucketCutoff(wallDate, endTime);
         const logAt = new Date(log.createdAt);
-        if (logAt <= shiftEndOnNextDay) {
+        if (cutoff && logAt <= cutoff) {
           rebucket.set(log._id.toString(), prevDate);
         }
       } else {
@@ -160,10 +223,9 @@ function buildOvernightRebucketMapByReg(logs, passByRegDate) {
       const pass = overnightDatesForReg.get(prevDate);
       const endTime = pass?.qrPayload?.shiftEndTime;
       if (endTime) {
-        const [eh, em] = endTime.split(':').map(Number);
-        const shiftEndOnNextDay = new Date(`${wallDate}T${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}:00+05:30`);
+        const cutoff = overnightRebucketCutoff(wallDate, endTime);
         const logAt = new Date(log.createdAt);
-        if (logAt <= shiftEndOnNextDay) {
+        if (cutoff && logAt <= cutoff) {
           rebucket.set(log._id.toString(), prevDate);
         }
       } else {
@@ -193,15 +255,12 @@ function buildAbsorbedDatesSet(passByDate) {
     const nextPass = passByDate.get(nextDate);
     if (!nextPass) continue;
 
-    // The next-day pass must have been created before the shift end on that next day
+    // The next-day pass must have been created before shift end + grace on that next day
     const endTime = pass.qrPayload?.shiftEndTime;
     if (!endTime) continue;
-    const [eh, em] = endTime.split(':').map(Number);
-    const shiftEndOnNextDay = new Date(
-      `${nextDate}T${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}:00+05:30`
-    );
+    const cutoff = overnightRebucketCutoff(nextDate, endTime);
     const nextPassCreated = new Date(nextPass.createdAt);
-    if (nextPassCreated <= shiftEndOnNextDay) {
+    if (cutoff && nextPassCreated <= cutoff) {
       absorbed.add(nextDate);
     }
   }
@@ -838,6 +897,8 @@ export async function getRegistrationReport(
 
   // Populated inside the hasDateRange block; reused for entriesByDate below.
   let overnightRebucketForRange = null;
+  let shiftPassByDateForRange = null;
+  let timelineLogs = logs;
 
   let attendanceRange = null;
   if (hasDateRange) {
@@ -868,6 +929,19 @@ export async function getRegistrationReport(
       }
     }
 
+    // Prefer the first pass carrying the assigned shift snapshot. Fall back to
+    // the latest pass only when it also has shift timings.
+    shiftPassByDateForRange = new Map();
+    for (const date of dates) {
+      const shiftPass = initialShiftPassByDate.get(date) || passByDate.get(date);
+      if (
+        shiftPass?.qrPayload?.shiftStartTime &&
+        shiftPass?.qrPayload?.shiftEndTime
+      ) {
+        shiftPassByDateForRange.set(date, shiftPass);
+      }
+    }
+
     // For overnight shifts, logs that fall after midnight are re-keyed to the
     // shift's work-date (the previous calendar day) so they appear in one row.
     const overnightRebucket = buildOvernightRebucketMap(logs, passByDate);
@@ -876,9 +950,26 @@ export async function getRegistrationReport(
     const logsByDate = new Map();
     for (const log of logs) {
       const date = overnightRebucket.get(log._id.toString()) || logDateKey(log.createdAt);
+      const shiftPass = shiftPassByDateForRange.get(date);
+      if (
+        shiftPass &&
+        !isWithinAssignedShiftWindow(log.createdAt, date, shiftPass)
+      ) {
+        continue;
+      }
       if (!logsByDate.has(date)) logsByDate.set(date, []);
       logsByDate.get(date).push(log);
     }
+
+    // The period timeline and Excel Activity sheet must use the exact same
+    // shift-scoped logs as attendance calculations. This removes same-calendar
+    // morning scans that occurred before a night shift began.
+    timelineLogs = logs.filter((log) => {
+      const date = overnightRebucket.get(log._id.toString()) || logDateKey(log.createdAt);
+      if (date < dateFrom || date > dateTo) return false;
+      const shiftPass = shiftPassByDateForRange.get(date);
+      return !shiftPass || isWithinAssignedShiftWindow(log.createdAt, date, shiftPass);
+    });
 
     const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes));
 
@@ -926,7 +1017,7 @@ export async function getRegistrationReport(
   }
 
   // Group all scan entries by their effective work-date (rebucketed for overnight shifts).
-  const entriesByDate = groupEntriesByDate(logs, overnightRebucketForRange).map((group) => ({
+  const entriesByDate = groupEntriesByDate(timelineLogs, overnightRebucketForRange).map((group) => ({
     ...group,
     entries: group.entries.map((entry) => ({
       ...entry,
@@ -952,7 +1043,21 @@ export async function getRegistrationReport(
 
     const byDate = new Map(entriesByDate.map((g) => [g.date, g]));
     for (const sighting of sightings) {
-      const date = sighting.sightingDate || logDateKey(sighting.createdAt);
+      const date = hasDateRange
+        ? assignedWorkDateForTimestamp(
+            sighting.createdAt,
+            sighting.sightingDate || logDateKey(sighting.createdAt),
+            shiftPassByDateForRange
+          )
+        : sighting.sightingDate || logDateKey(sighting.createdAt);
+      if (hasDateRange && (date < dateFrom || date > dateTo)) continue;
+      const shiftPass = shiftPassByDateForRange?.get(date);
+      if (
+        shiftPass &&
+        !isWithinAssignedShiftWindow(sighting.createdAt, date, shiftPass)
+      ) {
+        continue;
+      }
       const formatted = formatActivitySightingEntry(sighting);
       formatted.label = scanLabel(formatted);
       if (!byDate.has(date)) {
@@ -979,7 +1084,10 @@ export async function getRegistrationReport(
     departmentVisits: [],
   };
 
-  const divisionNames = [...new Set(logs.map((log) => log.divisionId?.name).filter(Boolean))];
+  const reportLogs = hasDateRange ? timelineLogs : logs;
+  const divisionNames = [
+    ...new Set(reportLogs.map((log) => log.divisionId?.name).filter(Boolean)),
+  ];
 
   const rangeShiftDay = (attendanceRange?.days || [])
     .slice()
@@ -1013,9 +1121,9 @@ export async function getRegistrationReport(
       details: display.details,
       issuedAt: registration.createdAt,
       registeredAt: registration.createdAt,
-      totalScans: logs.length,
+      totalScans: reportLogs.length,
       divisionsVisited: divisionNames,
-      lastScanAt: logs[0]?.createdAt || null,
+      lastScanAt: reportLogs[0]?.createdAt || null,
       shiftName: assignedShiftName,
       shiftStartTime: assignedShiftStartTime,
       shiftEndTime: assignedShiftEndTime,
@@ -1381,6 +1489,15 @@ export async function getAttendanceHistoryGrid({
     const wallDate = logDateKey(log.createdAt);
     const date = overnightRebucket.get(log._id.toString()) || wallDate;
     const key = `${regId}|${date}`;
+    const shiftPass =
+      initialShiftPassByRegDate.get(key) || passByRegDate.get(key);
+    if (
+      shiftPass?.qrPayload?.shiftStartTime &&
+      shiftPass?.qrPayload?.shiftEndTime &&
+      !isWithinAssignedShiftWindow(log.createdAt, date, shiftPass)
+    ) {
+      continue;
+    }
     if (!logsByRegDate.has(key)) logsByRegDate.set(key, []);
     logsByRegDate.get(key).push(log);
   }

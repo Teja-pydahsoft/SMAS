@@ -7,7 +7,7 @@ import {
   getOrCreateRegistrationPass,
   syncAllRegistrationPasses,
   getDayPassByGateLog,
-  getTodayDayPass,
+  getDayPassForDate,
   getPassByCode,
   formatPassResponse,
 } from '../services/passService.js';
@@ -54,8 +54,18 @@ router.post(
 router.get(
   '/day/registration/:registrationId',
   asyncHandler(async (req, res) => {
-    const pass = await getTodayDayPass(req.params.registrationId);
-    if (!pass) return res.status(404).json({ error: 'No day pass found for today' });
+    const date =
+      typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+        ? req.query.date
+        : null;
+    const pass = await getDayPassForDate(req.params.registrationId, date);
+    if (!pass) {
+      return res.status(404).json({
+        error: date
+          ? `No day pass found for ${date}`
+          : 'No day pass found for today',
+      });
+    }
     res.json(pass);
   })
 );

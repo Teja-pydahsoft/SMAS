@@ -1,5 +1,6 @@
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 import { formatCurrency, formatPayFrequency } from '@/lib/payFrequency';
+import { todayDateStringIst } from '@/lib/formatDate';
 
 /** Portrait photo size matching PassCard (86×106 CSS px). */
 const PASS_PHOTO_WIDTH = 86;
@@ -11,6 +12,8 @@ const PASS_PHOTO_PDF_HEIGHT = 80;
 const SCAN_PHOTO_WIDTH = 72;
 const SCAN_PHOTO_HEIGHT = 72;
 const SCAN_PHOTO_ROW_HEIGHT = 58;
+
+const IST_TIMEZONE = 'Asia/Kolkata';
 
 function safeFilePart(value) {
   return String(value || 'report')
@@ -37,31 +40,100 @@ function locationLabel(entry) {
   return entry.gateName || entry.label || '—';
 }
 
+/** Parse YYYY-MM-DD as noon IST so calendar dates don't shift by timezone. */
+function parseExportDateValue(value) {
+  if (value instanceof Date) return value;
+  if (typeof value === 'string') {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (match) {
+      return new Date(`${match[1]}-${match[2]}-${match[3]}T12:00:00+05:30`);
+    }
+  }
+  return new Date(value);
+}
+
+function istDateOf(value) {
+  if (!value) return '';
+  const d = parseExportDateValue(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return todayDateStringIst(d);
+}
+
 function formatExportDate(value) {
   if (!value) return '—';
-  const d = new Date(value);
+  const d = parseExportDateValue(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', {
+    timeZone: IST_TIMEZONE,
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+/** Unambiguous IST calendar day for Excel Activity rows (avoids locale parsing quirks). */
+function formatExportDateIso(value) {
+  if (!value) return '—';
+  const iso = istDateOf(value);
+  return iso || '—';
+}
+
+/** Period History Date cell: "Jul 24, 2026 – Jul 25, 2026" for overnight shifts. */
+function formatExportPeriodDayDate(day) {
+  if (!day?.date) return '—';
+  const start = formatExportDate(day.date);
+  if (!isOvernightShiftTimes(day.shiftStartTime, day.shiftEndTime)) return start;
+  const next = addUtcDays(day.date, 1);
+  return `${start} – ${formatExportDate(next)}`;
+}
+
+function isOvernightShiftTimes(startTime, endTime) {
+  if (!startTime || !endTime) return false;
+  const toMins = (t) => {
+    const [h, m] = String(t).split(':').map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+  };
+  const s = toMins(startTime);
+  const e = toMins(endTime);
+  return s !== null && e !== null && e <= s;
 }
 
 function formatExportTime(value) {
   if (!value) return '—';
-  const d = new Date(value);
+  const d = parseExportDateValue(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString('en-US', {
+    timeZone: IST_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function formatExportDateTime(value) {
   if (!value) return '—';
-  const d = new Date(value);
+  const d = parseExportDateValue(value);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString('en-US', {
+    timeZone: IST_TIMEZONE,
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+/**
+ * Time only when the event falls on `referenceDate` (YYYY-MM-DD IST).
+ * Otherwise include the date — critical for overnight night-shift exits.
+ */
+function formatExportTimeOnDate(value, referenceDate = '') {
+  if (!value) return '—';
+  const eventDate = istDateOf(value);
+  if (!eventDate) return '—';
+  if (referenceDate && eventDate === referenceDate) return formatExportTime(value);
+  if (!referenceDate) return formatExportTime(value);
+  return formatExportDateTime(value);
 }
 
 function calcExportDuration(entryAt, exitAt) {
@@ -406,26 +478,34 @@ function collectReportEntries(reportData, { dateFrom = '', dateTo = '' } = {}) {
   const rows = [];
 
   if (hasDateRange) {
-    const periodDays = (reportData?.attendanceRange?.days || []).filter(
-      (day) =>
-        day.status === 'P' ||
-        day.status === 'HD' ||
-        day.status === 'FH' ||
-        day.status === 'SH' ||
-        day.status === 'PT'
-    );
-    const entriesByDateMap = Object.fromEntries(
-      (reportData?.entriesByDate || []).map((group) => [group.date, group.entries])
+    // Index attendance-day metadata by work-date so each scan can still be
+    // annotated with its day's status/check-in.
+    const dayByWorkDate = Object.fromEntries(
+      (reportData?.attendanceRange?.days || []).map((day) => [day.date, day])
     );
 
-    for (const day of periodDays) {
-      const entries = entriesByDateMap[day.date] || [];
-      for (const entry of entries) {
+    // Iterate scan groups keyed by their work-date (the backend rebuckets a
+    // post-midnight overnight exit back onto its shift's work-date). Selecting
+    // by work-date — rather than the attendance "period days" — guarantees the
+    // overnight exit is never dropped, while each row's Date column still uses
+    // the scan's real timestamp so entry and exit keep distinct calendar dates.
+    const seen = new Set();
+    for (const group of reportData?.entriesByDate || []) {
+      // Skip scans whose work-date falls outside the requested range (e.g. a
+      // separate next-day shift pulled in by the overnight look-ahead fetch).
+      if (group.date < dateFrom || group.date > dateTo) continue;
+      const day = dayByWorkDate[group.date];
+      for (const entry of group.entries || []) {
+        const key = entry.id || `${group.date}-${entry.at || entry.entryAt}-${entry.label}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const eventDate = istDateOf(entry.at || entry.entryAt) || group.date;
         rows.push({
           ...entry,
-          date: day.date,
-          dayStatus: day.code || day.status,
-          dayCheckIn: day.checkIn,
+          date: eventDate,
+          workDate: group.date,
+          dayStatus: day?.code || day?.status,
+          dayCheckIn: day?.checkIn,
         });
       }
     }
@@ -438,13 +518,17 @@ function collectReportEntries(reportData, { dateFrom = '', dateTo = '' } = {}) {
       rows.push({ ...entry, date: date || entry.date });
     };
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayDateStringIst();
     for (const entry of reportData?.todayEntries || []) {
-      pushUnique(entry, today);
+      const eventDate = istDateOf(entry.at || entry.entryAt) || today;
+      pushUnique(entry, eventDate);
     }
     for (const group of reportData?.entriesByDate || []) {
       for (const entry of group.entries || []) {
-        pushUnique(entry, group.date);
+        // Prefer the real event timestamp date so overnight exits keep their
+        // next-day calendar date instead of the shift work-date bucket.
+        const eventDate = istDateOf(entry.at || entry.entryAt) || group.date;
+        pushUnique(entry, eventDate);
       }
     }
   }
@@ -493,9 +577,10 @@ function buildSummaryRows(reportData, { dateFrom = '', dateTo = '' } = {}, { inc
       ['Total Days', rangeSummary?.totalDays ?? '—']
     );
   } else {
+    const entryDate = istDateOf(session?.gateEntryAt);
     rows.push(
       ['In Time', formatExportTime(session?.gateEntryAt)],
-      ['Out Time', formatExportTime(session?.gateExitAt)],
+      ['Out Time', formatExportTimeOnDate(session?.gateExitAt, entryDate)],
       ['Duration', calcExportDuration(session?.gateEntryAt, session?.gateExitAt)],
       ['Active Department', session?.currentDepartmentName || '—']
     );
@@ -511,8 +596,10 @@ function buildSummaryRows(reportData, { dateFrom = '', dateTo = '' } = {}, { inc
 function buildEventRows(entries) {
   return entries.map((entry) => {
     const at = entry.at || entry.entryAt;
+    // Always use the real scan timestamp date so overnight exits show the
+    // next calendar day instead of the single shift work-date.
     return [
-      formatExportDate(entry.date || at),
+      formatExportDateIso(at || entry.date),
       formatExportTime(at),
       eventTypeLabel(entry),
       scanTypeLabel(entry),
@@ -719,11 +806,11 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
           : '—';
 
       periodSheet.addRow([
-        formatExportDate(day.date),
+        formatExportPeriodDayDate(day),
         day.code || day.status || '—',
-        formatExportTime(day.checkIn),
+        formatExportTimeOnDate(day.checkIn, day.date),
         checkInPhotoUrl ? '' : '—',
-        formatExportTime(day.lastActivityAt),
+        formatExportTimeOnDate(day.lastActivityAt, day.date),
         lastActivityLabel,
         checkOutPhotoUrl ? '' : '—',
         hoursLabel,
@@ -737,11 +824,11 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
     }
 
     periodSheet.columns = [
-      { width: 14 },
+      { width: 28 },
       { width: 10 },
-      { width: 12 },
+      { width: 20 },
       { width: 14 },
-      { width: 14 },
+      { width: 20 },
       { width: 14 },
       { width: 14 },
       { width: 10 },
@@ -769,7 +856,9 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
     const at = entry.at || entry.entryAt;
     const rowNumber = eventsSheet.rowCount + 1;
     eventsSheet.addRow([
-      formatExportDate(entry.date || at),
+      // Real scan calendar day in IST as YYYY-MM-DD — overnight exits keep
+      // the next day, and Excel won't re-parse locale date strings oddly.
+      formatExportDateIso(at || entry.date),
       formatExportTime(at),
       eventTypeLabel(entry),
       scanTypeLabel(entry),

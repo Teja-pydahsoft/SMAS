@@ -365,6 +365,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }, { timeoutMs: REPORT_TIMEOUT_MS }),
+    setAttendanceStatus: (registrationId, data = {}) =>
+      request(`/reports/registrations/${registrationId}/attendance-status`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   },
 
   divisions: {

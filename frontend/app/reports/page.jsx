@@ -8,6 +8,7 @@ import { formatCurrency, PAY_FREQUENCY_LABELS, PAY_FREQUENCIES } from '@/lib/pay
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 import { formatShiftWindow } from '@/lib/shiftTiming';
 import PassCard from '@/components/PassCard';
+import { useAuth } from '@/components/AuthProvider';
 
 /* ═══════════════════════════════════════════════════════════════
    UTILITIES
@@ -641,17 +642,168 @@ function PeriodDayTrack({ entries, workDate = '' }) {
   );
 }
 
-function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null }) {
+const ATTENDANCE_STATUS_OPTIONS = [
+  { value: 'AUTO', label: 'Auto', hint: 'Use computed status from scans' },
+  { value: 'P', label: 'Present', hint: 'Full day pay' },
+  { value: 'HD', label: 'Half Day', hint: 'Half day pay' },
+  { value: 'A', label: 'Absent', hint: 'No pay' },
+];
+
+function AttendanceStatusEditPopup({ registrationId, day, onClose, onSaved }) {
+  const [status, setStatus] = useState(day.overridden ? day.overrideStatus : 'AUTO');
+  const [note, setNote] = useState(day.overrideNote || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await api.reports.setAttendanceStatus(registrationId, {
+        date: day.date,
+        status,
+        note: note.trim(),
+      });
+      await onSaved?.();
+      onClose?.();
+    } catch (err) {
+      setError(err?.message || 'Failed to update status');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="rc-dialog-overlay rc-dialog-overlay--nested"
+      onClick={onClose}
+      role="dialog"
+      aria-modal
+      aria-label="Change attendance status"
+    >
+      <div className="rc-dialog rc-dialog--status-edit" onClick={(e) => e.stopPropagation()}>
+        <div className="rc-dialog__header">
+          <div>
+            <h3 className="rc-dialog__title">Change Status</h3>
+            <p className="rc-dialog__subtitle">{formatDate(day.date)}</p>
+          </div>
+          <button type="button" className="rc-dialog__close" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="rc-dialog__body rc-status-popup__body">
+          <p className="rc-status-popup__current">
+            Current: <strong>{day.label || day.code}</strong>
+            {day.overridden && <span className="rc-status-popup__manual"> · Manual</span>}
+          </p>
+
+          <fieldset className="rc-status-popup__options">
+            <legend className="rc-status-popup__legend">Status</legend>
+            {ATTENDANCE_STATUS_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className={`rc-status-popup__option ${status === opt.value ? 'rc-status-popup__option--active' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name="attendance-status"
+                  value={opt.value}
+                  checked={status === opt.value}
+                  onChange={() => setStatus(opt.value)}
+                  disabled={saving}
+                />
+                <span className="rc-status-popup__option-text">
+                  <span className="rc-status-popup__option-label">{opt.label}</span>
+                  <span className="rc-status-popup__option-hint">{opt.hint}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+
+          <label className="rc-status-popup__note-label" htmlFor={`status-note-${day.date}`}>
+            Note <span className="rc-status-popup__optional">(optional)</span>
+          </label>
+          <textarea
+            id={`status-note-${day.date}`}
+            className="rc-status-popup__note"
+            rows={3}
+            maxLength={500}
+            placeholder="Reason for changing this day’s status…"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            disabled={saving}
+          />
+
+          {error && <p className="error-msg rc-status-popup__error">{error}</p>}
+        </div>
+
+        <div className="rc-dialog__footer">
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button type="button" className="btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save Status'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttendanceStatusEditor({ day, canEdit, onEdit }) {
+  const badgeTitle = day.overridden
+    ? `Manually set${day.overrideBy ? ` by ${day.overrideBy}` : ''}${day.overrideNote ? ` — ${day.overrideNote}` : ''}`
+    : (day.label || day.code);
+
+  return (
+    <div className={`rc-status-edit ${day.overridden ? 'rc-status-edit--overridden' : ''}`}>
+      <span
+        className={`rc-period-sessions-table__status rc-period-sessions-table__status--${day.status?.toLowerCase()}`}
+        title={badgeTitle}
+      >
+        {day.code}
+        {day.overridden && <span className="rc-status-edit__flag" aria-hidden>•</span>}
+      </span>
+      {canEdit && (
+        <button
+          type="button"
+          className="rc-status-edit__btn"
+          onClick={() => onEdit?.(day)}
+          title="Edit status"
+          aria-label={`Edit attendance status for ${day.date}`}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PeriodDaySessionsTable({
+  periodDays,
+  entriesByDateMap,
+  payAmount = null,
+  registrationId = null,
+  canEditStatus = false,
+  onStatusChange,
+}) {
+  const [editingDay, setEditingDay] = useState(null);
   const sortedDays = [...periodDays].reverse();
   const rate = payAmount != null ? Number(payAmount) : null;
 
   return (
+    <>
     <div className="rc-period-sessions-table-wrap">
       <table className="rc-period-sessions-table">
         <thead>
           <tr>
             <th>Date</th>
-            <th>Status</th>
             <th>Gate In</th>
             <th>Last Activity</th>
             <th>Shift</th>
@@ -659,6 +811,7 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
             <th>Break</th>
             <th>Day Amount</th>
             <th>Sessions</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -689,11 +842,6 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
                     ) : (
                       formatDate(day.date)
                     )}
-                  </td>
-                  <td>
-                    <span className={`rc-period-sessions-table__status rc-period-sessions-table__status--${day.status?.toLowerCase()}`}>
-                      {day.code}
-                    </span>
                   </td>
                   <td className="rc-period-sessions-table__time">
                     <TimeWithOptionalDate at={day.checkIn} workDate={day.date} />
@@ -747,6 +895,13 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
                     {earned != null ? formatCurrency(earned) : '—'}
                   </td>
                   <td className="rc-period-sessions-table__count">{entries.length}</td>
+                  <td className="rc-period-sessions-table__status-cell">
+                    <AttendanceStatusEditor
+                      day={day}
+                      canEdit={canEditStatus && Boolean(registrationId)}
+                      onEdit={setEditingDay}
+                    />
+                  </td>
                 </tr>
                 <tr className="rc-period-sessions-table__track-row">
                   <td colSpan={9}>
@@ -763,6 +918,15 @@ function PeriodDaySessionsTable({ periodDays, entriesByDateMap, payAmount = null
         </tbody>
       </table>
     </div>
+    {editingDay && registrationId && (
+      <AttendanceStatusEditPopup
+        registrationId={registrationId}
+        day={editingDay}
+        onClose={() => setEditingDay(null)}
+        onSaved={onStatusChange}
+      />
+    )}
+    </>
   );
 }
 
@@ -780,6 +944,8 @@ function DownloadIcon() {
 }
 
 function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onClose }) {
+  const { can } = useAuth();
+  const canEditStatus = can('reports', 'write');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -804,6 +970,17 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
   const [dayPassError, setDayPassError] = useState('');
   const [showDayPass, setShowDayPass] = useState(false);
 
+  const reloadReport = useCallback(async () => {
+    if (!registrationId) return;
+    const params = {};
+    if (dateFrom) params.dateFrom = dateFrom;
+    if (dateTo) params.dateTo = dateTo;
+    if (divisionId) params.divisionId = divisionId;
+    const d = await api.reports.getRegistration(registrationId, params);
+    setData(d);
+    return d;
+  }, [registrationId, dateFrom, dateTo, divisionId]);
+
   useEffect(() => {
     if (!registrationId) return;
     setLoading(true);
@@ -812,14 +989,10 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
     setDayPass(null);
     setDayPassError('');
     setShowDayPass(false);
-    const params = {};
-    if (dateFrom) params.dateFrom = dateFrom;
-    if (dateTo) params.dateTo = dateTo;
-    if (divisionId) params.divisionId = divisionId;
-    api.reports.getRegistration(registrationId, params)
-      .then(d => { setData(d); setLoading(false); })
+    reloadReport()
+      .then(() => setLoading(false))
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [registrationId, dateFrom, dateTo, divisionId, hasDateRange]);
+  }, [registrationId, hasDateRange, reloadReport]);
 
   // Prefetch day pass for today OR a single selected past date
   useEffect(() => {
@@ -1138,6 +1311,9 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                         periodDays={periodDays}
                         entriesByDateMap={entriesByDateMap}
                         payAmount={paymentSummary?.payAmount ?? details.payAmount}
+                        registrationId={registrationId}
+                        canEditStatus={canEditStatus}
+                        onStatusChange={reloadReport}
                       />
                     ) : (
                       <div className="rc-history-list">

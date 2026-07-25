@@ -12,6 +12,7 @@ import {
   getDailyPassByRole,
   getAttendanceHistoryGrid,
   recalculateAttendanceHistory,
+  setAttendanceStatusOverride,
 } from '../services/registrationReportService.js';
 
 const router = Router();
@@ -100,6 +101,24 @@ router.post(
       divisionIds,
     });
     res.json(data);
+  })
+);
+
+router.post(
+  '/registrations/:registrationId/attendance-status',
+  requirePermission('reports', 'write'),
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const divisionIds = await resolveRequestDivisionIds(req);
+    const result = await setAttendanceStatusOverride({
+      registrationId: req.params.registrationId,
+      date: body.date,
+      status: body.status,
+      note: body.note || '',
+      user: req.user,
+      divisionIds,
+    });
+    res.json(result);
   })
 );
 

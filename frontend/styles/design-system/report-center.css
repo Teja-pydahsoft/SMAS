@@ -2584,6 +2584,168 @@
 .rc-period-sessions-table__status--pt { background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
 .rc-period-sessions-table__status--a { background: #f3f4f6; color: #6b7280; }
 
+/* Editable status cell (moved to the end of each session row) */
+.rc-period-sessions-table__status-cell { white-space: nowrap; }
+
+.rc-status-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rc-status-edit__flag {
+  color: #d97706;
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+.rc-status-edit__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-secondary, #4b5563);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.rc-status-edit__btn:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.rc-status-edit--overridden .rc-status-edit__btn {
+  border-color: #fbbf24;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.rc-dialog--status-edit {
+  width: min(420px, 94vw);
+  max-height: min(90vh, 560px);
+}
+
+.rc-status-popup__body {
+  gap: 0.85rem !important;
+}
+
+.rc-status-popup__current {
+  margin: 0;
+  font-size: var(--text-13);
+  color: var(--text-secondary);
+}
+
+.rc-status-popup__manual {
+  color: #d97706;
+  font-weight: 600;
+}
+
+.rc-status-popup__options {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.rc-status-popup__legend {
+  padding: 0;
+  margin-bottom: 0.35rem;
+  font-size: var(--text-12);
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rc-status-popup__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  cursor: pointer;
+  background: #fff;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.rc-status-popup__option:hover {
+  border-color: #93c5fd;
+  background: #f8fafc;
+}
+
+.rc-status-popup__option--active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.rc-status-popup__option input {
+  margin-top: 3px;
+  accent-color: #2563eb;
+}
+
+.rc-status-popup__option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rc-status-popup__option-label {
+  font-size: var(--text-13);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.rc-status-popup__option-hint {
+  font-size: var(--text-11);
+  color: var(--text-muted, #6b7280);
+}
+
+.rc-status-popup__note-label {
+  display: block;
+  font-size: var(--text-12);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.rc-status-popup__optional {
+  font-weight: 500;
+  color: var(--text-muted, #6b7280);
+}
+
+.rc-status-popup__note {
+  width: 100%;
+  resize: vertical;
+  min-height: 72px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  font: inherit;
+  font-size: var(--text-13);
+  color: var(--text-primary);
+  background: #fff;
+}
+
+.rc-status-popup__note:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.rc-status-popup__error {
+  margin: 0;
+}
+
 .rc-period-sessions-table__activity {
   display: flex;
   flex-direction: column;

@@ -5,6 +5,7 @@ import Role from '../models/Role.js';
 import RegistrationForm from '../models/RegistrationForm.js';
 import Shift from '../models/Shift.js';
 import ActivitySighting from '../models/ActivitySighting.js';
+import AttendanceOverride from '../models/AttendanceOverride.js';
 import mongoose from 'mongoose';
 import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS, MIN_ATTENDANCE_HOURS, SHIFT_OVERSTAY_GRACE_MS } from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
@@ -549,6 +550,127 @@ function resolveDayAttendance({
   };
 }
 
+/* ─── Manual attendance status overrides ─────────────────────────────────── */
+
+/** Canonical override presets. `AUTO` clears the override (delete row). */
+export const ATTENDANCE_OVERRIDE_STATUSES = {
+  P: { status: 'P', code: 'P', label: 'Present', payFactor: 1 },
+  HD: { status: 'HD', code: 'HD', label: 'Half Day', payFactor: 0.5 },
+  A: { status: 'A', code: 'A', label: 'Absent', payFactor: 0 },
+};
+
+/**
+ * Apply a stored override onto a computed day. Timings/hours/shift metadata are
+ * preserved — only the final status/code/label/payFactor are replaced so the
+ * timeline still shows what actually happened while payroll follows the manual
+ * decision. Blank/absorbed rows are never overridden.
+ */
+function applyDayOverride(day, override) {
+  if (!day || !override) return day;
+  if (day.status === 'blank') return day;
+  const preset = ATTENDANCE_OVERRIDE_STATUSES[override.status];
+  if (!preset) return day;
+  return {
+    ...day,
+    status: preset.status,
+    code: preset.code,
+    label: preset.label,
+    payFactor: preset.payFactor,
+    overridden: true,
+    overrideStatus: override.status,
+    overrideNote: override.note || '',
+    overrideBy: override.updatedByName || '',
+    overrideAt: override.updatedAt?.toISOString?.() || override.updatedAt || null,
+  };
+}
+
+/** date (YYYY-MM-DD) → override doc, for one registration. */
+async function loadOverrideMapForRegistration(registrationId, dateFrom, dateTo) {
+  const query = { registrationId };
+  if (dateFrom && dateTo) query.date = { $gte: dateFrom, $lte: dateTo };
+  const rows = await AttendanceOverride.find(query).lean();
+  const map = new Map();
+  for (const row of rows) map.set(row.date, row);
+  return map;
+}
+
+/** `${regId}|${date}` → override doc, for many registrations. */
+async function loadOverrideMapForRegistrations(registrationIds, dateFrom, dateTo) {
+  const map = new Map();
+  if (!registrationIds || registrationIds.length === 0) return map;
+  const query = { registrationId: { $in: registrationIds } };
+  if (dateFrom && dateTo) query.date = { $gte: dateFrom, $lte: dateTo };
+  const rows = await AttendanceOverride.find(query).lean();
+  for (const row of rows) {
+    map.set(`${row.registrationId.toString()}|${row.date}`, row);
+  }
+  return map;
+}
+
+/**
+ * Create/update/clear a manual attendance status override for one
+ * registration + work-date, then return the refreshed registration report.
+ */
+export async function setAttendanceStatusOverride({
+  registrationId,
+  date,
+  status,
+  note = '',
+  user = null,
+  divisionIds = null,
+} = {}) {
+  if (!registrationId) throw new Error('registrationId is required');
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const err = new Error('A valid work-date (YYYY-MM-DD) is required');
+    err.status = 400;
+    throw err;
+  }
+
+  const registration = await Registration.findOne({
+    _id: registrationId,
+    status: REGISTRATION_STATUS.VERIFIED,
+  }).lean();
+  if (!registration) {
+    const err = new Error('Registration not found or not verified');
+    err.status = 404;
+    throw err;
+  }
+
+  const normalized = String(status || '').toUpperCase();
+  if (normalized === 'AUTO' || normalized === '') {
+    await AttendanceOverride.deleteOne({ registrationId, date });
+    return { registrationId: registrationId.toString(), date, status: 'AUTO', cleared: true };
+  }
+
+  if (!ATTENDANCE_OVERRIDE_STATUSES[normalized]) {
+    const err = new Error(`Unsupported status "${status}"`);
+    err.status = 400;
+    throw err;
+  }
+
+  const saved = await AttendanceOverride.findOneAndUpdate(
+    { registrationId, date },
+    {
+      $set: {
+        status: normalized,
+        note: String(note || '').slice(0, 500),
+        updatedByName: user?.name || user?.username || '',
+        updatedById: user?._id || null,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean();
+
+  return {
+    registrationId: registrationId.toString(),
+    date,
+    status: saved.status,
+    note: saved.note || '',
+    updatedByName: saved.updatedByName || '',
+    updatedAt: saved.updatedAt?.toISOString?.() || saved.updatedAt || null,
+  };
+}
+
 function summarizeAttendanceDays(days) {
   let present = 0;
   let halfDay = 0;
@@ -977,6 +1099,13 @@ export async function getRegistrationReport(
     // night's shift window — these are merged into the prior overnight row.
     const absorbedDates = buildAbsorbedDatesSet(passByDate);
 
+    // Manual admin status overrides for this registration within the range.
+    const overrideMap = await loadOverrideMapForRegistration(
+      registration._id,
+      dateFrom,
+      dateTo
+    );
+
     const days = dates.map((date) => {
       // Suppress dates absorbed into the previous overnight shift row
       if (absorbedDates.has(date)) {
@@ -990,7 +1119,7 @@ export async function getRegistrationReport(
         ? getPassSessionState(initialShiftPass)
         : session;
       const shift = shiftFromSession(shiftSession, shiftMap);
-      return {
+      const day = {
         date,
         ...resolveDayAttendance({
           date,
@@ -1000,6 +1129,7 @@ export async function getRegistrationReport(
           shift,
         }),
       };
+      return applyDayOverride(day, overrideMap.get(date));
     });
 
     attendanceRange = {
@@ -1509,6 +1639,13 @@ export async function getAttendanceHistoryGrid({
 
   const normalizedSearch = search.trim().toLowerCase();
 
+  // Manual admin status overrides across all registrations on this page.
+  const overrideMap = await loadOverrideMapForRegistrations(
+    orderedRegs.map((reg) => reg._id),
+    from,
+    toDate
+  );
+
   const employees = orderedRegs
     .map((reg) => {
       const form = formById.get(reg.formId?.toString?.() || String(reg.formId));
@@ -1539,7 +1676,7 @@ export async function getAttendanceHistoryGrid({
           : session;
         const shift = shiftFromSession(shiftSession, shiftMap);
 
-        return {
+        const day = {
           date,
           ...resolveDayAttendance({
             date,
@@ -1550,6 +1687,7 @@ export async function getAttendanceHistoryGrid({
             today,
           }),
         };
+        return applyDayOverride(day, overrideMap.get(`${regId}|${date}`));
       });
 
       return {

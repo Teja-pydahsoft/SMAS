@@ -2,6 +2,7 @@ import Registration from '../models/Registration.js';
 import GateLog from '../models/GateLog.js';
 import Pass from '../models/Pass.js';
 import Role from '../models/Role.js';
+import RegistrationForm from '../models/RegistrationForm.js';
 import Shift from '../models/Shift.js';
 import mongoose from 'mongoose';
 import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS, MIN_ATTENDANCE_HOURS } from '../constants/index.js';
@@ -255,18 +256,30 @@ function toObjectIdArray(ids) {
  * inside the given divisions, optionally constrained to a date range.
  */
 async function registrationIdsWithDivisionActivity(divisionObjIds, { from, toDate } = {}) {
+  return registrationIdsWithActivity({
+    from,
+    toDate,
+    divisionObjIds: divisionObjIds?.length ? divisionObjIds : null,
+  });
+}
+
+/**
+ * Registration ids with granted gate activity or a day pass in the date range.
+ * Optional division filter. Used to prioritize people who actually appear in the grid.
+ */
+async function registrationIdsWithActivity({ from, toDate, divisionObjIds = null } = {}) {
   const logMatch = grantedGateLogFilter({
     registrationId: { $ne: null },
-    divisionId: { $in: divisionObjIds },
+    ...(divisionObjIds?.length ? { divisionId: { $in: divisionObjIds } } : {}),
   });
   const passMatch = {
     passType: PASS_TYPES.DAY_PASS,
-    divisionId: { $in: divisionObjIds },
+    ...(divisionObjIds?.length ? { divisionId: { $in: divisionObjIds } } : {}),
   };
   if (from && toDate) {
     logMatch.createdAt = {
       $gte: startOfDayIst(from),
-      $lte: endOfDayIst(toDate),
+      $lte: endOfDayIst(nextDateIst(toDate)),
     };
     passMatch.validDate = { $gte: from, $lte: toDate };
   }
@@ -323,9 +336,31 @@ function extractDayTimings(dayLogs, session) {
 }
 
 function hasDayActivity(dayLogs, session) {
-  if (filterGrantedLogs(dayLogs).length) return true;
+  if (dayLogs?.length && filterGrantedLogs(dayLogs).length) return true;
   if (session?.gateEntryAt || session?.gateExitAt) return true;
   return false;
+}
+
+/** Keep only shift/session fields needed for attendance + pay (drops fat qrPayload). */
+function slimPassForAttendance(pass) {
+  if (!pass) return pass;
+  const payload = pass.qrPayload || {};
+  return {
+    _id: pass._id,
+    registrationId: pass.registrationId,
+    validDate: pass.validDate,
+    createdAt: pass.createdAt,
+    qrPayload: {
+      shiftId: payload.shiftId || null,
+      shiftName: payload.shiftName || null,
+      shiftStartTime: payload.shiftStartTime || null,
+      shiftEndTime: payload.shiftEndTime || null,
+      halfDayMinHours: payload.halfDayMinHours ?? null,
+      fullDayMinHours: payload.fullDayMinHours ?? null,
+      gateEntryAt: payload.gateEntryAt || null,
+      gateExitAt: payload.gateExitAt || null,
+    },
+  };
 }
 
 function dayAbbrev(dateStr) {
@@ -354,12 +389,40 @@ function formatTimeFromDate(value) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false });
 }
 
-function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = null }) {
+function resolveDayAttendance({
+  date,
+  registeredAt,
+  dayLogs,
+  session,
+  shift = null,
+  today = null,
+}) {
   const joinDate = logDateKey(registeredAt);
+
+  // Fast path: empty cells skip all log sorting / hour math (most of a month grid).
+  if (date < joinDate) {
+    return {
+      status: 'blank',
+      code: 'NR',
+      label: 'Not Registered',
+      payFactor: 0,
+    };
+  }
+
+  if (!hasDayActivity(dayLogs, session)) {
+    return {
+      status: 'A',
+      code: 'A',
+      label: 'Absent',
+      payFactor: 0,
+    };
+  }
+
   const grantedLogs = filterGrantedLogs(dayLogs || []);
   const timings = extractDayTimings(dayLogs || [], session);
+  const todayKey = today || todayDateString();
   const activityWindow = computeActivityWindow(grantedLogs, session, date, {
-    today: todayDateString(),
+    today: todayKey,
   });
   const activityHours = activityWindow.hours;
   const divisionBreaks = computeDivisionBreaks(grantedLogs);
@@ -368,7 +431,7 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
   const shiftMeta = {
     activityHours,
     breakHours: divisionBreaks.breakHours,
-    breaks: divisionBreaks.breaks,
+    ...(divisionBreaks.breaks.length > 0 ? { breaks: divisionBreaks.breaks } : {}),
     shiftId: shift?._id?.toString?.() || shift?.id || session?.shiftId || null,
     shiftName: shift?.name || session?.shiftName || null,
     shiftStartTime,
@@ -378,60 +441,38 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
     fullDayMinHours: shift?.fullDayMinHours ?? session?.fullDayMinHours ?? null,
   };
 
-  if (date < joinDate) {
-    return {
-      status: 'blank',
-      code: 'NR',
-      label: 'Not Registered',
-      payFactor: 0,
-      halfSide: null,
-      ...timings,
-      ...shiftMeta,
-    };
-  }
-
-  if (!hasDayActivity(dayLogs, session)) {
-    return {
-      status: 'A',
-      code: 'A',
-      label: 'Absent',
-      checkInTime: null,
-      payFactor: 0,
-      halfSide: null,
-      ...timings,
-      ...shiftMeta,
-    };
-  }
-
   const shiftStatus = resolveShiftDayStatus(activityHours, shift, {
     checkIn: activityWindow.start || timings.checkIn,
     checkOut: activityWindow.end || timings.lastActivityAt,
   });
   if (shiftStatus) {
     return {
-      ...shiftStatus,
+      status: shiftStatus.status,
+      code: shiftStatus.code,
+      label: shiftStatus.label,
+      payFactor: shiftStatus.payFactor,
+      halfSide: shiftStatus.halfSide ?? null,
+      ...(shiftStatus.firstOverlapHours != null
+        ? { firstOverlapHours: shiftStatus.firstOverlapHours }
+        : {}),
+      ...(shiftStatus.secondOverlapHours != null
+        ? { secondOverlapHours: shiftStatus.secondOverlapHours }
+        : {}),
+      ...(shiftStatus.inShiftHours != null ? { inShiftHours: shiftStatus.inShiftHours } : {}),
       checkInTime: formatTimeFromDate(timings.checkIn),
       ...timings,
       ...shiftMeta,
-      halfSide: shiftStatus.halfSide ?? null,
-      firstOverlapHours: shiftStatus.firstOverlapHours ?? null,
-      secondOverlapHours: shiftStatus.secondOverlapHours ?? null,
-      inShiftHours: shiftStatus.inShiftHours ?? null,
     };
   }
 
   // No shift thresholds configured — still require at least 1 hour on site
   if (activityHours < MIN_ATTENDANCE_HOURS) {
-    const hasActivity = hasDayActivity(dayLogs, session);
     return {
       status: 'A',
       code: 'A',
-      label: hasActivity
-        ? `Absent (< ${MIN_ATTENDANCE_HOURS}h on site)`
-        : 'Absent',
-      checkInTime: formatTimeFromDate(timings.checkIn),
+      label: `Absent (< ${MIN_ATTENDANCE_HOURS}h on site)`,
       payFactor: 0,
-      halfSide: null,
+      checkInTime: formatTimeFromDate(timings.checkIn),
       ...timings,
       ...shiftMeta,
     };
@@ -441,9 +482,8 @@ function resolveDayAttendance({ date, registeredAt, dayLogs, session, shift = nu
     status: 'P',
     code: 'P',
     label: 'Present',
-    checkInTime: formatTimeFromDate(timings.checkIn),
     payFactor: 1,
-    halfSide: null,
+    checkInTime: formatTimeFromDate(timings.checkIn),
     ...timings,
     ...shiftMeta,
   };
@@ -1053,7 +1093,8 @@ export async function getAttendanceHistoryGrid({
   dateTo,
   search = '',
   roleId = '',
-  limit = 500,
+  limit = 50,
+  page = 1,
   divisionIds = null,
 } = {}) {
   const today = todayDateString();
@@ -1061,8 +1102,22 @@ export async function getAttendanceHistoryGrid({
   const toDate = dateTo || today;
   const dates = eachDateInRange(from, toDate);
   if (dates.length === 0) {
-    return { dateFrom: from, dateTo: toDate, dates: [], employees: [] };
+    return {
+      dateFrom: from,
+      dateTo: toDate,
+      dates: [],
+      employees: [],
+      page: 1,
+      limit: 50,
+      total: 0,
+      hasMore: false,
+    };
   }
+
+  // Keep pages small — each Registration doc carries a large faceEmbedding on disk,
+  // and Atlas round-trips dominate when we pull hundreds at once.
+  const limitN = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+  const pageN = Math.max(parseInt(page, 10) || 1, 1);
 
   const regQuery = { status: REGISTRATION_STATUS.VERIFIED };
   if (roleId) regQuery.roleId = roleId;
@@ -1073,52 +1128,117 @@ export async function getAttendanceHistoryGrid({
   const divisionObjIds = divisionScoped ? toObjectIdArray(divisionIds) : [];
   if (divisionScoped) {
     if (divisionObjIds.length === 0) {
-      return emptyAttendanceGrid(from, toDate, dates);
+      return {
+        ...emptyAttendanceGrid(from, toDate, dates),
+        page: pageN,
+        limit: limitN,
+        total: 0,
+        hasMore: false,
+      };
     }
     const scopedRegIds = await registrationIdsWithDivisionActivity(divisionObjIds, { from, toDate });
     if (scopedRegIds.size === 0) {
-      return emptyAttendanceGrid(from, toDate, dates);
+      return {
+        ...emptyAttendanceGrid(from, toDate, dates),
+        page: pageN,
+        limit: limitN,
+        total: 0,
+        hasMore: false,
+      };
     }
     regQuery._id = { $in: [...scopedRegIds].map((id) => new mongoose.Types.ObjectId(id)) };
   }
 
-  const registrations = await Registration.find(regQuery)
-    .select('-faceEmbedding')
-    .populate('roleId', 'name slug')
-    .populate('formId', 'fields')
+  // Lightweight id list (covered by status+createdAt index) then hydrate one page.
+  const idDocs = await Registration.find(regQuery)
+    .select({ _id: 1 })
     .sort({ createdAt: 1 })
-    .limit(parseInt(limit, 10) || 500)
     .lean();
+  const total = idDocs.length;
+  const startIdx = (pageN - 1) * limitN;
+  const pageIds = idDocs.slice(startIdx, startIdx + limitN).map((d) => d._id);
 
-  if (registrations.length === 0) {
-    return emptyAttendanceGrid(from, toDate, dates);
+  if (pageIds.length === 0) {
+    return {
+      ...emptyAttendanceGrid(from, toDate, dates),
+      page: pageN,
+      limit: limitN,
+      total,
+      hasMore: false,
+    };
   }
 
-  const registrationIds = registrations.map((reg) => reg._id);
   const rangeStart = startOfDayIst(from);
   // Extend upper bound by one extra IST day so post-midnight logs that belong
   // to an overnight shift on `toDate` are included in the fetch.
   const rangeEnd = endOfDayIst(nextDateIst(toDate));
 
-  const [logs, passes] = await Promise.all([
+  const passMatch = {
+    registrationId: { $in: pageIds },
+    passType: PASS_TYPES.DAY_PASS,
+    validDate: { $gte: from, $lte: toDate },
+    ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {}),
+  };
+
+  const [registrations, rawLogs, rawPasses] = await Promise.all([
+    Registration.find({ _id: { $in: pageIds } })
+      .select('formData photoPath registrationCode payFrequency customPayDays payAmount createdAt roleId formId')
+      .lean(),
     GateLog.find(
       grantedGateLogFilter({
-        registrationId: { $in: registrationIds },
+        registrationId: { $in: pageIds },
         createdAt: { $gte: rangeStart, $lte: rangeEnd },
         ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {}),
       })
     )
-      .select('registrationId scanType eventType createdAt')
+      .select({ registrationId: 1, scanType: 1, eventType: 1, createdAt: 1 })
       .lean(),
-    Pass.find({
-      registrationId: { $in: registrationIds },
-      passType: PASS_TYPES.DAY_PASS,
-      validDate: { $gte: from, $lte: toDate },
-      ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {}),
-    })
-      .select('registrationId validDate qrPayload createdAt')
-      .lean(),
+    // Project only shift/session fields — full qrPayload is huge (QR images, visits).
+    Pass.aggregate([
+      { $match: passMatch },
+      {
+        $project: {
+          registrationId: 1,
+          validDate: 1,
+          createdAt: 1,
+          qrPayload: {
+            shiftId: '$qrPayload.shiftId',
+            shiftName: '$qrPayload.shiftName',
+            shiftStartTime: '$qrPayload.shiftStartTime',
+            shiftEndTime: '$qrPayload.shiftEndTime',
+            halfDayMinHours: '$qrPayload.halfDayMinHours',
+            fullDayMinHours: '$qrPayload.fullDayMinHours',
+            gateEntryAt: '$qrPayload.gateEntryAt',
+            gateExitAt: '$qrPayload.gateExitAt',
+          },
+        },
+      },
+    ]),
   ]);
+
+  // Preserve createdAt order from idDocs
+  const regById = new Map(registrations.map((r) => [r._id.toString(), r]));
+  const orderedRegs = pageIds.map((id) => regById.get(id.toString())).filter(Boolean);
+
+  const formIds = [
+    ...new Set(orderedRegs.map((r) => r.formId?.toString?.() || String(r.formId)).filter(Boolean)),
+  ];
+  const roleIds = [
+    ...new Set(orderedRegs.map((r) => r.roleId?.toString?.() || String(r.roleId)).filter(Boolean)),
+  ];
+  const [forms, roles] = await Promise.all([
+    formIds.length
+      ? RegistrationForm.find({ _id: { $in: formIds } })
+          .select('fields.fieldId fields.label fields.type fields.order')
+          .lean()
+      : [],
+    roleIds.length ? Role.find({ _id: { $in: roleIds } }).select('name slug').lean() : [],
+  ]);
+  const formById = new Map(forms.map((f) => [f._id.toString(), f]));
+  const roleById = new Map(roles.map((r) => [r._id.toString(), r]));
+
+  const logs = rawLogs;
+  const passes = rawPasses.map(slimPassForAttendance);
 
   // Build passByRegDate first so the overnight rebucket map can reference it.
   const passByRegDate = new Map();
@@ -1159,9 +1279,11 @@ export async function getAttendanceHistoryGrid({
 
   const normalizedSearch = search.trim().toLowerCase();
 
-  const employees = registrations
+  const employees = orderedRegs
     .map((reg) => {
-      const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
+      const form = formById.get(reg.formId?.toString?.() || String(reg.formId));
+      const role = roleById.get(reg.roleId?.toString?.() || String(reg.roleId));
+      const display = buildDisplayInfo(reg.formData, form?.fields || []);
       const regId = reg._id.toString();
       const registeredAt = reg.createdAt;
       const absorbedDates = absorbedByReg.get(regId) || new Set();
@@ -1169,10 +1291,16 @@ export async function getAttendanceHistoryGrid({
       const days = dates.map((date) => {
         // Suppress dates absorbed into the previous overnight shift row
         if (absorbedDates.has(date)) {
-          return { date, status: 'blank', code: 'NR', label: 'Absorbed into overnight shift' };
+          return {
+            date,
+            status: 'blank',
+            code: 'NR',
+            label: 'Absorbed into overnight shift',
+            payFactor: 0,
+          };
         }
         const key = `${regId}|${date}`;
-        const dayLogs = logsByRegDate.get(key) || [];
+        const dayLogs = logsByRegDate.get(key);
         const pass = passByRegDate.get(key);
         const session = pass ? getPassSessionState(pass) : null;
         const initialShiftPass = initialShiftPassByRegDate.get(key);
@@ -1189,6 +1317,7 @@ export async function getAttendanceHistoryGrid({
             dayLogs,
             session,
             shift,
+            today,
           }),
         };
       });
@@ -1198,7 +1327,7 @@ export async function getAttendanceHistoryGrid({
         displayName: display.displayName,
         displayPhone: display.displayPhone || null,
         registrationCode: reg.registrationCode,
-        roleName: reg.roleId?.name || '—',
+        roleName: role?.name || '—',
         photoUrl: photoUrlFromPath(reg.photoPath),
         registeredAt: registeredAt?.toISOString?.() || registeredAt,
         selections: display.selections || [],
@@ -1223,27 +1352,27 @@ export async function getAttendanceHistoryGrid({
         emp.registrationCode?.toLowerCase().includes(normalizedSearch) ||
         emp.roleName?.toLowerCase().includes(normalizedSearch)
       );
-    })
-    .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+    });
 
   return {
     dateFrom: from,
     dateTo: toDate,
     dates: dates.map((date) => ({ date, day: dayNumber(date), weekday: dayAbbrev(date) })),
     employees,
+    page: pageN,
+    limit: limitN,
+    total,
+    hasMore: startIdx + limitN < total,
   };
 }
 
-/**
- * Sync day-pass shift snapshots from the live Shift documents, then rebuild
- * attendance + payroll for the range using current shift timings/thresholds.
- */
 export async function recalculateAttendanceHistory({
   dateFrom,
   dateTo,
   search = '',
   roleId = '',
-  limit = 500,
+  limit = 50,
+  page = 1,
   divisionIds = null,
 } = {}) {
   const today = todayDateString();
@@ -1265,6 +1394,7 @@ export async function recalculateAttendanceHistory({
         search,
         roleId,
         limit,
+        page,
         divisionIds,
       });
       return {
@@ -1287,10 +1417,10 @@ export async function recalculateAttendanceHistory({
     passSyncQuery.divisionId = { $in: divisionObjIds };
   }
 
-  const passes = await Pass.find(passSyncQuery);
+  const passes = await Pass.find(passSyncQuery).lean();
 
-  const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes.map((p) => p.toObject?.() || p)));
-  let passesUpdated = 0;
+  const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes));
+  const bulkOps = [];
 
   for (const pass of passes) {
     const payload = pass.qrPayload || {};
@@ -1326,7 +1456,7 @@ export async function recalculateAttendanceHistory({
 
     if (!changed) continue;
 
-    pass.qrPayload = {
+    const nextPayload = {
       ...payload,
       shiftId,
       shiftName: nextName,
@@ -1338,12 +1468,22 @@ export async function recalculateAttendanceHistory({
         ? { validUntil: nextValidUntil.toISOString() }
         : {}),
     };
+    const update = { qrPayload: nextPayload };
     if (!hasExited && nextValidUntil) {
-      pass.validUntil = nextValidUntil;
+      update.validUntil = nextValidUntil;
     }
-    pass.markModified('qrPayload');
-    await pass.save();
-    passesUpdated += 1;
+    bulkOps.push({
+      updateOne: {
+        filter: { _id: pass._id },
+        update: { $set: update },
+      },
+    });
+  }
+
+  let passesUpdated = 0;
+  if (bulkOps.length > 0) {
+    const bulkResult = await Pass.bulkWrite(bulkOps, { ordered: false });
+    passesUpdated = bulkResult.modifiedCount || bulkOps.length;
   }
 
   const grid = await getAttendanceHistoryGrid({
@@ -1352,6 +1492,7 @@ export async function recalculateAttendanceHistory({
     search,
     roleId,
     limit,
+    page,
     divisionIds,
   });
 

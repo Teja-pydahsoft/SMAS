@@ -31,5 +31,6 @@ const registrationSchema = new mongoose.Schema(
 );
 
 registrationSchema.index({ roleId: 1, status: 1 });
+registrationSchema.index({ status: 1, createdAt: 1 });
 
 export default mongoose.model('Registration', registrationSchema);

@@ -6,9 +6,26 @@ const AUTH_RETRY_BASE_MS = 350;
 const WARMUP_INTERVAL_MS = 350;
 const WARMUP_MAX_ATTEMPTS = 12;
 const TRANSIENT_STATUSES = new Set([404, 408, 429, 502, 503, 504]);
+// Attendance history builds a dense month grid — allow longer, and prefer a
+// direct backend hop when configured so Next.js rewrites do not socket-hang.
+const REPORT_TIMEOUT_MS = 120_000;
+const DIRECT_BACKEND =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BACKEND_URL
+    ? String(process.env.NEXT_PUBLIC_BACKEND_URL).replace(/\/$/, '')
+    : '') ||
+  (typeof window !== 'undefined' && window.location?.hostname === 'localhost'
+    ? 'http://localhost:3001'
+    : '');
 
 let backendReady = false;
 let warmupPromise = null;
+
+function apiUrl(path) {
+  if (DIRECT_BACKEND && path.startsWith('/reports/attendance-history')) {
+    return `${DIRECT_BACKEND}/api${path}`;
+  }
+  return `${BASE}${path}`;
+}
 
 function getAuthHeaders(extra = {}) {
   if (typeof window === 'undefined') return extra;
@@ -38,7 +55,7 @@ async function requestOnce(path, options = {}, { timeoutMs = null } = {}) {
   const timeout = timeoutMs ? withTimeout(timeoutMs) : null;
 
   try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await fetch(apiUrl(path), {
       ...options,
       signal: timeout?.signal ?? options.signal ?? undefined,
       headers: getAuthHeaders(
@@ -329,13 +346,13 @@ export const api = {
     divisions: () => request('/reports/divisions'),
     attendanceHistory: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
-      return request(`/reports/attendance-history${qs ? `?${qs}` : ''}`);
+      return requestOnce(`/reports/attendance-history${qs ? `?${qs}` : ''}`, {}, { timeoutMs: REPORT_TIMEOUT_MS });
     },
     recalculateAttendanceHistory: (data = {}) =>
-      request('/reports/attendance-history/recalculate', {
+      requestOnce('/reports/attendance-history/recalculate', {
         method: 'POST',
         body: JSON.stringify(data),
-      }),
+      }, { timeoutMs: REPORT_TIMEOUT_MS }),
   },
 
   divisions: {

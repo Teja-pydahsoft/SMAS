@@ -25,8 +25,9 @@ function dayPayAmount(ratePerDay, day) {
 }
 
 /**
- * Payment is prorated by hours worked when payFactor is set on each day
- * (activityHours / shiftTotalHours, capped at 1). Absent days pay 0.
+ * Payment uses each day's payFactor:
+ * full day = 1, half day = 0.5, below half-day = hourly proration.
+ * Absent days pay 0.
  */
 export function calculatePaymentSummary({ payFrequency, customPayDays, payAmount, days = [] }) {
   if (!payFrequency || payAmount == null || Number(payAmount) < 0) {

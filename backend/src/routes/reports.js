@@ -72,7 +72,8 @@ router.get(
       dateTo: req.query.dateTo || '',
       search: req.query.search || '',
       roleId: req.query.roleId || '',
-      limit: req.query.limit || 500,
+      limit: req.query.limit || 50,
+      page: req.query.page || 1,
       divisionIds,
     });
     res.json(data);
@@ -94,7 +95,8 @@ router.post(
       dateTo: body.dateTo || req.query.dateTo || '',
       search: body.search || req.query.search || '',
       roleId: body.roleId || req.query.roleId || '',
-      limit: body.limit || req.query.limit || 500,
+      limit: body.limit || req.query.limit || 50,
+      page: body.page || req.query.page || 1,
       divisionIds,
     });
     res.json(data);

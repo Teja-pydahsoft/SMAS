@@ -1772,12 +1772,17 @@ function AttendanceDayDialog({ employee, day, onClose }) {
       ? Math.round(dayRate * day.payFactor * 100) / 100
       : null;
   const payBreakdown =
-    earned != null &&
-    day.activityHours != null &&
-    day.shiftTotalHours != null &&
-    day.shiftTotalHours > 0
-      ? `${day.activityHours}h / ${day.shiftTotalHours}h × ${formatCurrency(dayRate)}`
-      : null;
+    earned == null
+      ? null
+      : day.status === 'P'
+        ? `Full day × ${formatCurrency(dayRate)}`
+        : day.status === 'HD' || day.status === 'FH' || day.status === 'SH'
+          ? `Half day × ${formatCurrency(dayRate)}`
+          : day.activityHours != null &&
+              day.shiftTotalHours != null &&
+              day.shiftTotalHours > 0
+            ? `${day.activityHours}h / ${day.shiftTotalHours}h × ${formatCurrency(dayRate)}`
+            : null;
 
   return (
     <div className="rc-dialog-overlay" onClick={onClose} role="dialog" aria-modal aria-label="Day attendance details">
@@ -2000,6 +2005,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [divisions, setDivisions] = useState([]);
   const [shiftOptions, setShiftOptions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -2036,6 +2042,40 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     return { dateFrom: filters.dateFrom, dateTo: filters.dateTo };
   }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo]);
 
+  const HISTORY_PAGE_SIZE = 50;
+
+  const mergeHistoryPage = (base, next) => {
+    if (!base) return next;
+    if (!next) return base;
+    const seen = new Set((base.employees || []).map((e) => e.registrationId));
+    const appended = (next.employees || []).filter((e) => !seen.has(e.registrationId));
+    return {
+      ...next,
+      employees: [...(base.employees || []), ...appended],
+      page: next.page,
+      hasMore: next.hasMore,
+      total: next.total ?? base.total,
+    };
+  };
+
+  const fetchHistoryPages = useCallback(async ({ dateFrom, dateTo, roleId, divisionId, onPage }) => {
+    let page = 1;
+    let merged = null;
+    let guard = 0;
+    while (guard < 40) {
+      guard += 1;
+      const params = { dateFrom, dateTo, limit: HISTORY_PAGE_SIZE, page };
+      if (roleId) params.roleId = roleId;
+      if (divisionId) params.divisionId = divisionId;
+      const result = await api.reports.attendanceHistory(params);
+      merged = mergeHistoryPage(merged, result);
+      onPage?.(merged, result);
+      if (!result?.hasMore) break;
+      page += 1;
+    }
+    return merged;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -2062,25 +2102,38 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
         setSuccess('');
       }
 
-      const params = { dateFrom, dateTo, limit: 500 };
-      if (filters.roleId) params.roleId = filters.roleId;
-      if (filters.divisionId) params.divisionId = filters.divisionId;
-
       try {
-        const result = await api.reports.attendanceHistory(params);
-        if (!cancelled) setData(result);
+        await fetchHistoryPages({
+          dateFrom,
+          dateTo,
+          roleId: filters.roleId,
+          divisionId: filters.divisionId,
+          onPage: (merged, pageResult) => {
+            if (cancelled) return;
+            setData(merged);
+            // First page is enough to paint the table; keep loading quietly for the rest.
+            if (pageResult?.page === 1) {
+              setLoading(false);
+              if (pageResult?.hasMore) setLoadingMore(true);
+            }
+            if (!pageResult?.hasMore) setLoadingMore(false);
+          },
+        });
       } catch (e) {
         if (!cancelled) {
           // Keep previous rows on transient proxy/backend blips (ECONNRESET during restart).
           setError(e.message || 'Failed to load attendance history');
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [resolveDateRange, filters.roleId, filters.divisionId]);
+  }, [resolveDateRange, filters.roleId, filters.divisionId, fetchHistoryPages]);
 
   const loadHistory = useCallback(async ({ silent = false } = {}) => {
     const { dateFrom, dateTo } = resolveDateRange();
@@ -2093,13 +2146,17 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
       setSuccess('');
     }
 
-    const params = { dateFrom, dateTo, limit: 500 };
-    if (filters.roleId) params.roleId = filters.roleId;
-    if (filters.divisionId) params.divisionId = filters.divisionId;
-
     try {
-      const result = await api.reports.attendanceHistory(params);
-      setData(result);
+      const result = await fetchHistoryPages({
+        dateFrom,
+        dateTo,
+        roleId: filters.roleId,
+        divisionId: filters.divisionId,
+        onPage: (merged, pageResult) => {
+          setData(merged);
+          if (!silent && pageResult?.page === 1) setLoading(false);
+        },
+      });
       if (silent) setError('');
       return result;
     } catch (e) {
@@ -2108,7 +2165,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [resolveDateRange, filters.roleId, filters.divisionId]);
+  }, [resolveDateRange, filters.roleId, filters.divisionId, fetchHistoryPages]);
 
   const handleRecalculate = useCallback(async () => {
     const { dateFrom, dateTo } = resolveDateRange();
@@ -2126,12 +2183,29 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     setSuccess('');
 
     try {
-      const payload = { dateFrom, dateTo, limit: 500 };
+      const payload = { dateFrom, dateTo, limit: HISTORY_PAGE_SIZE, page: 1 };
       if (filters.roleId) payload.roleId = filters.roleId;
       if (filters.divisionId) payload.divisionId = filters.divisionId;
 
       const result = await api.reports.recalculateAttendanceHistory(payload);
       setData(result);
+      setRecalculating(false);
+
+      // Pull remaining pages after shift sync so the full grid is available.
+      if (result?.hasMore) {
+        let page = 2;
+        let merged = result;
+        while (page <= 40) {
+          const params = { dateFrom, dateTo, limit: HISTORY_PAGE_SIZE, page };
+          if (filters.roleId) params.roleId = filters.roleId;
+          if (filters.divisionId) params.divisionId = filters.divisionId;
+          const next = await api.reports.attendanceHistory(params);
+          merged = mergeHistoryPage(merged, next);
+          setData(merged);
+          if (!next?.hasMore) break;
+          page += 1;
+        }
+      }
 
       const meta = result?.recalculation;
       if (meta) {
@@ -2364,10 +2438,16 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
             </button>
           </div>
 
-          {(loading || recalculating) && (
+          {(loading || loadingMore || recalculating) && (
             <div className="rc-filter-inline__loading" aria-live="polite">
               <Spinner size={16} />
-              <span>{recalculating ? 'Recalculating from current shifts…' : 'Updating…'}</span>
+              <span>
+                {recalculating
+                  ? 'Recalculating from current shifts…'
+                  : loadingMore
+                    ? `Loading more… ${data?.employees?.length || 0}/${data?.total || '—'}`
+                    : 'Updating…'}
+              </span>
             </div>
           )}
         </div>

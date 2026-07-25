@@ -242,6 +242,7 @@ export function resolveNearestHalf({
 
 /**
  * Pay factor from hours worked vs shift total (0–1).
+ * Used only when attendance is below the half-day threshold (partial/hourly pay).
  */
 export function computeHourlyPayFactor(activityHours, shiftTotalHours) {
   const total = Number(shiftTotalHours);
@@ -253,7 +254,12 @@ export function computeHourlyPayFactor(activityHours, shiftTotalHours) {
 /**
  * Resolve attendance against shift thresholds with first/second half logic.
  * Late login + early logout are evaluated via login→logout overlap with each half;
- * nearest half wins for FH/SH labeling. Pay stays prorated by hours worked.
+ * nearest half wins for FH/SH labeling.
+ *
+ * Pay rules:
+ * - Full-day threshold met → full day pay (1)
+ * - Half-day threshold met → half day pay (0.5)
+ * - Below half-day but on site → hourly proration only
  */
 export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, checkOut = null } = {}) {
   if (!shift) return null;
@@ -286,7 +292,6 @@ export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, ch
   const shiftTotalHours = getShiftDurationHours(shift.startTime, shift.endTime);
   const payDenominator =
     shiftTotalHours ?? (hasFull ? full : hasHalf ? roundHours(half * 2) : null);
-  const payFactor = payDenominator ? computeHourlyPayFactor(hours, payDenominator) : 0;
   const hoursLabel = formatActivityHours(hours);
 
   const nearest = resolveNearestHalf({
@@ -304,10 +309,8 @@ export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, ch
     return {
       status: 'P',
       code: 'P',
-      label: payDenominator && hours < payDenominator
-        ? `Present (${hoursLabel}h)`
-        : 'Present (Full Day)',
-      payFactor,
+      label: 'Present (Full Day)',
+      payFactor: 1,
       halfSide: null,
       firstOverlapHours: nearest?.firstOverlapHours ?? null,
       secondOverlapHours: nearest?.secondOverlapHours ?? null,
@@ -320,7 +323,7 @@ export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, ch
       status: halfCode,
       code: halfCode,
       label: `${halfLabel} (${hoursLabel}h)`,
-      payFactor,
+      payFactor: 0.5,
       halfSide,
       firstOverlapHours: nearest?.firstOverlapHours ?? null,
       secondOverlapHours: nearest?.secondOverlapHours ?? null,
@@ -328,14 +331,15 @@ export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, ch
     };
   }
 
-  // Below half-day minimum but still on site — pay for hours worked
+  // Below half-day minimum but still on site — hourly pay for hours worked
+  const hourlyPayFactor = payDenominator ? computeHourlyPayFactor(hours, payDenominator) : 0;
   return {
     status: 'PT',
     code: 'PT',
     label: halfSide
       ? `Hours Worked · ${halfLabel} (${hoursLabel}h)`
       : `Hours Worked (${hoursLabel}h)`,
-    payFactor,
+    payFactor: hourlyPayFactor,
     halfSide,
     firstOverlapHours: nearest?.firstOverlapHours ?? null,
     secondOverlapHours: nearest?.secondOverlapHours ?? null,

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import jpeg from 'jpeg-js';
 import { uploadDir } from './storage.js';
-import { isCloudinaryEnabled, uploadToCloudinary } from '../services/cloudinaryService.js';
+import { isObjectStorageEnabled, uploadPhoto } from '../services/objectStorage.js';
 
 /**
  * Crop a face region from a JPEG buffer into a smaller JPEG Buffer.
@@ -74,20 +74,20 @@ export function cropActivityFaceBuffer(imageBuffer, faceBox, { pad = 0.25, maxSi
 
 /**
  * Persist an activity face JPEG buffer the same way as gate/registration photos:
- * Cloudinary hosted URL when configured, otherwise local uploads/activity/.
+ * S3/Cloudinary hosted URL when configured, otherwise local uploads/activity/.
  * @returns {Promise<{ photoPath: string, dataUrl: string } | null>}
  */
 export async function persistActivityFaceBuffer(jpegBuffer, filenameHint = null) {
   if (!jpegBuffer?.length) return null;
   const dataUrl = `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
-  const filename = filenameHint || `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const filename = filenameHint || `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
 
-  if (isCloudinaryEnabled()) {
+  if (isObjectStorageEnabled()) {
     try {
-      const result = await uploadToCloudinary(jpegBuffer, 'activity', filename);
+      const result = await uploadPhoto(jpegBuffer, 'activity', filename, 'image/jpeg');
       return { photoPath: result.url, dataUrl };
     } catch (err) {
-      console.error('Cloudinary activity upload failed, falling back to local:', err.message);
+      console.error('Object storage activity upload failed, falling back to local:', err.message);
     }
   }
 
@@ -105,7 +105,7 @@ export async function persistActivityFaceBuffer(jpegBuffer, filenameHint = null)
 }
 
 /**
- * Crop from full frame + face box, then persist (Cloudinary or local).
+ * Crop from full frame + face box, then persist (S3/Cloudinary or local).
  * @returns {Promise<{ photoPath: string, dataUrl: string } | null>}
  */
 export async function cropAndSaveActivityFace(imageBuffer, faceBox, options = {}) {

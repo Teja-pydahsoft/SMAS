@@ -22,7 +22,10 @@ if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
       );
     });
 } else {
-  console.warn('⚠ Cloudinary not configured — using local storage fallback');
+  // Only warn about Cloudinary when S3 is also missing — otherwise the message is misleading.
+  if (!process.env.S3_BUCKET || !process.env.AWS_ACCESS_KEY_ID) {
+    console.warn('⚠ Cloudinary not configured — using local storage fallback');
+  }
 }
 
 export function isCloudinaryEnabled() {

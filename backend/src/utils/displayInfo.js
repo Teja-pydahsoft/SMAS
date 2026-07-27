@@ -1,10 +1,24 @@
+import { isS3Url, extractS3Key } from '../services/s3StorageService.js';
+
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif']);
+
+/** Private S3 objects are served via backend proxy so the bucket can stay closed. */
+function toDisplayUrl(storedPath) {
+  if (!storedPath) return null;
+  if (isS3Url(storedPath)) {
+    const key = extractS3Key(storedPath);
+    return key ? `/uploads/s3/${key.split('/').map(encodeURIComponent).join('/')}` : null;
+  }
+  if (storedPath.startsWith('http://') || storedPath.startsWith('https://')) {
+    return storedPath;
+  }
+  return null;
+}
 
 export function mediaUrlFromPath(mediaPath) {
   if (!mediaPath) return null;
-  if (mediaPath.startsWith('http://') || mediaPath.startsWith('https://')) {
-    return mediaPath;
-  }
+  const remote = toDisplayUrl(mediaPath);
+  if (remote) return remote;
   const normalized = mediaPath.replace(/\\/g, '/');
   const name = normalized.split('/').pop();
   if (normalized.includes('/registrations-media/')) {
@@ -28,11 +42,11 @@ export function parseMediaValue(value) {
   if (typeof value === 'object' && (value.path || value.url)) {
     const path = value.path || value.url;
     const extension = value.extension || getExtension(value.originalName || path);
-    const url = value.url?.startsWith('http')
-      ? value.url
-      : path?.startsWith('http')
-        ? path
-        : value.url || mediaUrlFromPath(path);
+    const url =
+      toDisplayUrl(value.url) ||
+      toDisplayUrl(path) ||
+      value.url ||
+      mediaUrlFromPath(path);
     return {
       path,
       url,
@@ -113,10 +127,8 @@ export function buildDisplayInfo(formData, fields = []) {
 
 export function photoUrlFromPath(photoPath) {
   if (!photoPath) return null;
-  // Cloudinary URLs are already full https:// URLs — return as-is
-  if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
-    return photoPath;
-  }
+  const remote = toDisplayUrl(photoPath);
+  if (remote) return remote;
   // Local fallback: derive URL from filename
   const name = photoPath.replace(/\\/g, '/').split('/').pop();
   // Detect subfolder from the path so gate photos resolve correctly

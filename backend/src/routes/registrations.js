@@ -18,13 +18,12 @@ import { buildDisplayInfo, photoUrlFromPath, mediaUrlFromPath } from '../utils/d
 import { PASS_TYPES } from '../constants/index.js';
 import { createMulter, createMediaMulter, uploadDir } from '../utils/storage.js';
 import {
-  isCloudinaryEnabled,
-  uploadToCloudinary,
-  uploadMediaToCloudinary,
-  deleteFromCloudinary,
-  deleteMediaFromCloudinary,
-  extractPublicId,
-} from '../services/cloudinaryService.js';
+  isObjectStorageEnabled,
+  uploadPhoto,
+  uploadMedia,
+  deleteStoredObject,
+  deleteStoredMedia,
+} from '../services/objectStorage.js';
 import { generateRegistrationCode, shouldAssignRegistrationCode, syncPassRegistrationCode, isLegacySamsCode, buildRegistrationCodePrefix } from '../utils/registrationCode.js';
 
 const router = Router();
@@ -646,21 +645,28 @@ router.post(
       return res.status(400).json({ error: 'No face detected in the photo. Please retake.' });
     }
 
-    // Delete old photo (Cloudinary or local)
+    // Delete old photo (S3/Cloudinary or local)
     if (registration.photoPath) {
-      if (registration.photoPath.includes('cloudinary.com')) {
-        const publicId = extractPublicId(registration.photoPath);
-        await deleteFromCloudinary(publicId);
+      if (
+        registration.photoPath.includes('cloudinary.com') ||
+        registration.photoPath.includes('amazonaws.com')
+      ) {
+        await deleteStoredObject(registration.photoPath);
       } else if (fs.existsSync(registration.photoPath)) {
         fs.unlinkSync(registration.photoPath);
       }
     }
 
-    // Upload to Cloudinary if enabled, otherwise use local path
+    // Upload to S3/Cloudinary if enabled, otherwise use local path
     let photoUrl;
-    if (isCloudinaryEnabled()) {
-      const filename = `${req.params.id}-${Date.now()}`;
-      const result = await uploadToCloudinary(imageBuffer, 'registrations', filename);
+    if (isObjectStorageEnabled()) {
+      const filename = `${req.params.id}-${Date.now()}.jpg`;
+      const result = await uploadPhoto(
+        imageBuffer,
+        'registrations',
+        filename,
+        req.file.mimetype || 'image/jpeg'
+      );
       photoUrl = result.url;
     } else {
       photoUrl = req.file.path;
@@ -726,10 +732,12 @@ router.post(
     if (existingMedia) {
       const existingPath = typeof existingMedia === 'string' ? existingMedia : existingMedia.path;
       if (existingPath) {
-        if (existingPath.includes('cloudinary.com')) {
-          const publicId = extractPublicId(existingPath);
+        if (
+          existingPath.includes('cloudinary.com') ||
+          existingPath.includes('amazonaws.com')
+        ) {
           const resourceType = typeof existingMedia === 'object' ? existingMedia.resourceType : 'image';
-          await deleteMediaFromCloudinary(publicId, resourceType);
+          await deleteStoredMedia(existingPath, resourceType);
         } else if (fs.existsSync(existingPath)) {
           fs.unlinkSync(existingPath);
         }
@@ -738,13 +746,14 @@ router.post(
 
     let storedPath;
     let resourceType = null;
-    if (isCloudinaryEnabled()) {
+    if (isObjectStorageEnabled()) {
       const filename = `${req.params.id}-${req.params.fieldId}-${Date.now()}${extension}`;
       try {
-        const result = await uploadMediaToCloudinary(
+        const result = await uploadMedia(
           fileBuffer,
           'registrations-media',
-          filename
+          filename,
+          req.file.mimetype || 'application/octet-stream'
         );
         storedPath = result.url;
         resourceType = result.resourceType;
@@ -752,7 +761,7 @@ router.post(
           fs.unlinkSync(req.file.path);
         }
       } catch (cloudErr) {
-        console.error('Cloudinary media upload failed, falling back to local:', cloudErr.message);
+        console.error('Object storage media upload failed, falling back to local:', cloudErr.message);
         const localDir = path.join(uploadDir, 'registrations-media');
         if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
         const localName = `${req.params.id}-${req.params.fieldId}-${Date.now()}${extension}`;
@@ -885,9 +894,11 @@ router.delete(
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
 
     if (registration.photoPath) {
-      if (registration.photoPath.includes('cloudinary.com')) {
-        const publicId = extractPublicId(registration.photoPath);
-        await deleteFromCloudinary(publicId);
+      if (
+        registration.photoPath.includes('cloudinary.com') ||
+        registration.photoPath.includes('amazonaws.com')
+      ) {
+        await deleteStoredObject(registration.photoPath);
       } else if (fs.existsSync(registration.photoPath)) {
         fs.unlinkSync(registration.photoPath);
       }

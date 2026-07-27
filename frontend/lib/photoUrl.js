@@ -21,7 +21,12 @@ export function resolvePhotoUrl(photoPath) {
   if (!filename) return null;
 
   let relativePath;
-  if (normalized.includes('/gate/') || normalized.startsWith('/uploads/gate/')) {
+  // Private S3 objects are proxied by the backend — keep the full key path.
+  // Must run before /gate/ and /activity/ checks, or S3 gate URLs get rewritten
+  // to local /uploads/gate/<filename> and break.
+  if (normalized.startsWith('/uploads/s3/')) {
+    relativePath = normalized;
+  } else if (normalized.includes('/gate/') || normalized.startsWith('/uploads/gate/')) {
     relativePath = `/uploads/gate/${filename}`;
   } else if (normalized.includes('/activity/') || normalized.startsWith('/uploads/activity/')) {
     relativePath = `/uploads/activity/${filename}`;

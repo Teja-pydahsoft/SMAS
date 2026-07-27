@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { connectDB } from './config/db.js';
 import { ensureUploadDirs, uploadDir } from './utils/storage.js';
+import { isS3Enabled, getS3Object } from './services/s3StorageService.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { checkAiServerHealth, getFaceIndexStats, waitForAiServer } from './services/aiClient.js';
 import { rebuildFaceIndexFromDb } from './services/faceIndexService.js';
@@ -60,6 +61,39 @@ app.use(
 app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Private S3 photos — stream through the API so the bucket can stay closed.
+app.use('/uploads/s3', async (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  if (!isS3Enabled()) {
+    return res.status(404).json({ error: 'S3 storage is not configured' });
+  }
+  const key = decodeURIComponent((req.path || '').replace(/^\/+/, ''));
+  if (!key || key.includes('..')) {
+    return res.status(400).json({ error: 'Invalid object key' });
+  }
+  try {
+    const obj = await getS3Object(key);
+    if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
+    if (obj.ContentLength != null) res.setHeader('Content-Length', String(obj.ContentLength));
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    if (req.method === 'HEAD') {
+      return res.end();
+    }
+    if (obj.Body?.pipe) {
+      obj.Body.pipe(res);
+    } else if (obj.Body?.transformToByteArray) {
+      const bytes = await obj.Body.transformToByteArray();
+      res.send(Buffer.from(bytes));
+    } else {
+      res.status(500).json({ error: 'Unable to read S3 object body' });
+    }
+  } catch (err) {
+    console.error('S3 proxy failed:', err.message);
+    res.status(404).json({ error: 'File not found' });
+  }
+});
+
 app.use('/uploads', express.static(uploadDir, { maxAge: '7d', immutable: false }));
 
 // Instant wake-up probe for login — no DB or AI calls (used before auth on cold hosts).

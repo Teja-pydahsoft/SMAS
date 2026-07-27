@@ -6,9 +6,16 @@ import multer from 'multer';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads');
 
+function useRemoteObjectStorage() {
+  return Boolean(
+    (process.env.S3_BUCKET && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) ||
+      process.env.CLOUDINARY_CLOUD_NAME
+  );
+}
+
 export function ensureUploadDirs() {
-  // Only create local dirs if Cloudinary is NOT configured (local fallback)
-  if (process.env.CLOUDINARY_CLOUD_NAME) return;
+  // Only create local dirs if remote object storage is NOT configured (local fallback)
+  if (useRemoteObjectStorage()) return;
   const dirs = ['registrations', 'registrations-media', 'gate', 'activity'].map((sub) => path.join(uploadDir, sub));
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) {
@@ -23,11 +30,11 @@ export function getUploadPath(subfolder, filename) {
 
 /**
  * Returns a multer instance.
- * - If Cloudinary is configured: uses memoryStorage (buffer only, nothing written to disk)
+ * - If S3/Cloudinary is configured: uses memoryStorage (buffer only, nothing written to disk)
  * - Otherwise: writes to local uploadDir/subfolder
  */
 export function createMulter(subfolder, filenameFn) {
-  const useMemory = Boolean(process.env.CLOUDINARY_CLOUD_NAME);
+  const useMemory = useRemoteObjectStorage();
 
   const storage = useMemory
     ? multer.memoryStorage()
@@ -59,7 +66,7 @@ export function createMulter(subfolder, filenameFn) {
  * Multer for registration media/document uploads — accepts any file type.
  */
 export function createMediaMulter(subfolder, filenameFn) {
-  const useMemory = Boolean(process.env.CLOUDINARY_CLOUD_NAME);
+  const useMemory = useRemoteObjectStorage();
 
   const storage = useMemory
     ? multer.memoryStorage()

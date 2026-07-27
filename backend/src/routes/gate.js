@@ -42,9 +42,9 @@ import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
 import { createMulter } from '../utils/storage.js';
 import { cropAndSaveActivityFace, persistActivityFaceBuffer } from '../utils/activityFaceCrop.js';
 import {
-  isCloudinaryEnabled,
-  uploadToCloudinary,
-} from '../services/cloudinaryService.js';
+  isObjectStorageEnabled,
+  uploadPhoto,
+} from '../services/objectStorage.js';
 import { hasDivisionScope, hasDepartmentScope, hasGateScope } from '../middleware/auth.js';
 import { getScopedDivisionIds, resolveDivisionFilterIds } from '../services/accessScopeService.js';
 import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
@@ -380,14 +380,14 @@ async function identifyFromPhoto(file, registrationId) {
 
   // Kick off the audit-photo upload in parallel with face matching instead of
   // blocking the scan on it — it only produces the stored photo path.
-  const uploadPromise = isCloudinaryEnabled()
-    ? uploadToCloudinary(imageBuffer, 'gate', `gate-${Date.now()}`)
+  const uploadPromise = isObjectStorageEnabled()
+    ? uploadPhoto(imageBuffer, 'gate', `gate-${Date.now()}.jpg`, 'image/jpeg')
         .then((result) => {
           if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
           return result.url;
         })
         .catch((err) => {
-          console.error('Cloudinary gate upload failed, falling back to local:', err.message);
+          console.error('Object storage gate upload failed, falling back to local:', err.message);
           return filePath;
         })
     : Promise.resolve(filePath);

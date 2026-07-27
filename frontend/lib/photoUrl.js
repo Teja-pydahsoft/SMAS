@@ -11,10 +11,38 @@
  *
  * Falls back to the relative /uploads/... path so local dev still works.
  */
+
+/** Private S3 object URLs must go through the backend proxy (bucket is not public). */
+function s3ProxyPathFromHttps(url) {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.includes('amazonaws.com')) return null;
+    let key = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+    // Path-style: s3.region.amazonaws.com/bucket/key
+    if (parsed.hostname.startsWith('s3.') || parsed.hostname === 's3.amazonaws.com') {
+      const slash = key.indexOf('/');
+      if (slash > 0) key = key.slice(slash + 1);
+    }
+    if (!key) return null;
+    return `/uploads/s3/${key.split('/').map(encodeURIComponent).join('/')}`;
+  } catch {
+    return null;
+  }
+}
+
 export function resolvePhotoUrl(photoPath) {
   if (!photoPath) return null;
 
-  if (/^https?:\/\/|^data:/.test(photoPath)) return photoPath;
+  if (/^data:/.test(photoPath)) return photoPath;
+
+  if (/^https?:\/\//.test(photoPath)) {
+    const s3Proxy = s3ProxyPathFromHttps(photoPath);
+    if (s3Proxy) {
+      photoPath = s3Proxy;
+    } else {
+      return photoPath; // Cloudinary / other public HTTPS
+    }
+  }
 
   const normalized = photoPath.replace(/\\/g, '/');
   const filename = normalized.split('/').pop();
@@ -41,7 +69,7 @@ export function resolvePhotoUrl(photoPath) {
   if (typeof window !== 'undefined') {
     const backendUrl =
       process.env.NEXT_PUBLIC_BACKEND_URL ||
-      (window.__SMAS_BACKEND_URL__) ||
+      window.__SMAS_BACKEND_URL__ ||
       null;
 
     if (backendUrl) {

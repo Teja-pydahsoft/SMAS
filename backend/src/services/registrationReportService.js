@@ -6,8 +6,17 @@ import RegistrationForm from '../models/RegistrationForm.js';
 import Shift from '../models/Shift.js';
 import ActivitySighting from '../models/ActivitySighting.js';
 import AttendanceOverride from '../models/AttendanceOverride.js';
+import Department from '../models/Department.js';
 import mongoose from 'mongoose';
-import { REGISTRATION_STATUS, PASS_TYPES, GENDER_LABELS, MIN_ATTENDANCE_HOURS, SHIFT_OVERSTAY_GRACE_MS } from '../constants/index.js';
+import {
+  REGISTRATION_STATUS,
+  PASS_TYPES,
+  GENDER_LABELS,
+  MIN_ATTENDANCE_HOURS,
+  SHIFT_OVERSTAY_GRACE_MS,
+  SCAN_TYPES,
+  GATE_EVENT_TYPES,
+} from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import {
   getActiveDivisionSession,
@@ -1900,5 +1909,165 @@ export async function recalculateAttendanceHistory({
       absentDays,
       totalPayroll: Math.round(totalPayroll * 100) / 100,
     },
+  };
+}
+
+/**
+ * Department activity for a single division + department on a work date.
+ * Counts (unique people):
+ *   - enteredCount — had at least one department entry
+ *   - inCount      — currently checked into the department (open visit)
+ *   - exitCount    — had at least one department exit
+ */
+export async function getDepartmentActivity({
+  divisionId = null,
+  departmentId = null,
+  date = null,
+} = {}) {
+  const today = todayDateString();
+  const validDate =
+    typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
+
+  if (!divisionId || !mongoose.Types.ObjectId.isValid(divisionId)) {
+    const err = new Error('divisionId is required');
+    err.status = 400;
+    throw err;
+  }
+  if (!departmentId || !mongoose.Types.ObjectId.isValid(departmentId)) {
+    const err = new Error('departmentId is required');
+    err.status = 400;
+    throw err;
+  }
+
+  const department = await Department.findById(departmentId).lean();
+  if (!department) {
+    const err = new Error('Department not found');
+    err.status = 404;
+    throw err;
+  }
+
+  const belongsToDivision = (department.divisionIds || []).some(
+    (id) => id.toString() === String(divisionId)
+  );
+  if (!belongsToDivision) {
+    const err = new Error('Department does not belong to the selected division');
+    err.status = 400;
+    throw err;
+  }
+
+  const dayStart = startOfDayIst(validDate);
+  const dayEnd = endOfDayIst(validDate);
+
+  const logs = await GateLog.find(
+    grantedGateLogFilter({
+      divisionId,
+      departmentId,
+      scanType: SCAN_TYPES.DEPARTMENT,
+      registrationId: { $ne: null },
+      createdAt: { $gte: dayStart, $lte: dayEnd },
+    })
+  )
+    .sort({ createdAt: 1 })
+    .lean();
+
+  const logsByReg = new Map();
+  for (const log of logs) {
+    const regId = log.registrationId?.toString();
+    if (!regId) continue;
+    if (!logsByReg.has(regId)) logsByReg.set(regId, []);
+    logsByReg.get(regId).push(log);
+  }
+
+  const regIds = [...logsByReg.keys()];
+  if (regIds.length === 0) {
+    return {
+      date: validDate,
+      divisionId: String(divisionId),
+      departmentId: String(departmentId),
+      departmentName: department.name,
+      enteredCount: 0,
+      inCount: 0,
+      exitCount: 0,
+      people: [],
+    };
+  }
+
+  const registrations = await Registration.find({
+    _id: { $in: regIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    status: REGISTRATION_STATUS.VERIFIED,
+  })
+    .select('-faceEmbedding')
+    .populate('roleId', 'name slug')
+    .populate('formId', 'fields')
+    .lean();
+
+  const regMap = new Map(registrations.map((r) => [r._id.toString(), r]));
+  const people = [];
+
+  for (const [regId, personLogs] of logsByReg) {
+    const reg = regMap.get(regId);
+    if (!reg) continue;
+
+    let openEntryAt = null;
+    let firstEntryAt = null;
+    let lastExitAt = null;
+    let entryEvents = 0;
+    let exitEvents = 0;
+    let lastRemark = '';
+
+    for (const log of personLogs) {
+      const at = log.createdAt;
+      const remark =
+        typeof log.remark === 'string' && log.remark.trim() ? log.remark.trim() : '';
+
+      if (log.eventType === GATE_EVENT_TYPES.ENTRY) {
+        entryEvents += 1;
+        if (!firstEntryAt) firstEntryAt = at;
+        openEntryAt = at;
+        if (remark) lastRemark = remark;
+      } else if (log.eventType === GATE_EVENT_TYPES.EXIT) {
+        exitEvents += 1;
+        lastExitAt = at;
+        openEntryAt = null;
+        if (remark) lastRemark = remark;
+      }
+    }
+
+    const currentlyIn = openEntryAt !== null;
+    const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
+
+    people.push({
+      registrationId: regId,
+      displayName: display.displayName,
+      registrationCode: reg.registrationCode,
+      photoUrl: photoUrlFromPath(reg.photoPath),
+      roleId: reg.roleId?._id?.toString() || null,
+      roleName: reg.roleId?.name || null,
+      entryAt: firstEntryAt || openEntryAt || null,
+      exitAt: currentlyIn ? null : lastExitAt,
+      currentlyIn,
+      hadEntry: entryEvents > 0,
+      hadExit: exitEvents > 0,
+      remark: lastRemark,
+      selections: display.selections || [],
+    });
+  }
+
+  people.sort((a, b) => {
+    if (a.currentlyIn !== b.currentlyIn) return a.currentlyIn ? -1 : 1;
+    const ae = a.entryAt ? new Date(a.entryAt).getTime() : 0;
+    const be = b.entryAt ? new Date(b.entryAt).getTime() : 0;
+    return be - ae;
+  });
+
+  return {
+    date: validDate,
+    divisionId: String(divisionId),
+    departmentId: String(departmentId),
+    departmentName: department.name,
+    enteredCount: people.filter((p) => p.hadEntry).length,
+    inCount: people.filter((p) => p.currentlyIn).length,
+    exitCount: people.filter((p) => p.hadExit).length,
+    people,
   };
 }

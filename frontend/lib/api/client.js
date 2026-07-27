@@ -137,16 +137,16 @@ export async function ensureBackendReady(options = {}) {
   return backendReady;
 }
 
-async function request(path, options = {}) {
+async function request(path, options = {}, { timeoutMs = null } = {}) {
   const isAuthPath = path.startsWith('/auth/') || path === '/health' || path === '/ping';
   if (!isAuthPath) {
-    return requestOnce(path, options);
+    return requestOnce(path, options, { timeoutMs });
   }
 
   let lastErr;
   for (let attempt = 0; attempt < AUTH_MAX_RETRIES; attempt += 1) {
     try {
-      const data = await requestOnce(path, options, { timeoutMs: AUTH_TIMEOUT_MS });
+      const data = await requestOnce(path, options, { timeoutMs: timeoutMs || AUTH_TIMEOUT_MS });
       backendReady = true;
       return data;
     } catch (err) {
@@ -303,20 +303,25 @@ export const api = {
       if (gateId) form.append('gateId', gateId);
       if (departmentId) form.append('departmentId', departmentId);
       if (divisionId) form.append('divisionId', divisionId);
-      return request('/gate/scan', { method: 'POST', body: form });
+      // Face match + S3 upload can take a bit; fail clearly instead of hanging on Processing.
+      return request('/gate/scan', { method: 'POST', body: form }, { timeoutMs: 60_000 });
     },
     qrScan: (passCode, eventType, options = {}) => {
       const { gateId = null, departmentId = null, divisionId = null } = options;
-      return request('/gate/qr-scan', {
-        method: 'POST',
-        body: JSON.stringify({
-          passCode,
-          eventType,
-          gateId,
-          departmentId,
-          divisionId,
-        }),
-      });
+      return request(
+        '/gate/qr-scan',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            passCode,
+            eventType,
+            gateId,
+            departmentId,
+            divisionId,
+          }),
+        },
+        { timeoutMs: 60_000 }
+      );
     },
     activityScan: (photoBlob) => {
       const form = new FormData();
@@ -354,6 +359,10 @@ export const api = {
     dailyPasses: (params = {}) => {
       const qs = new URLSearchParams(params).toString();
       return request(`/reports/daily-passes${qs ? `?${qs}` : ''}`);
+    },
+    departmentActivity: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return request(`/reports/department-activity${qs ? `?${qs}` : ''}`);
     },
     divisions: () => request('/reports/divisions'),
     attendanceHistory: (params = {}) => {

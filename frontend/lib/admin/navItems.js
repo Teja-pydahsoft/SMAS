@@ -5,6 +5,7 @@
 export const SUPER_ADMIN_NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: 'dashboard', module: null },
   { path: '/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate' },
+  { path: '/activity', label: 'Activity', icon: 'cameras', module: 'activity' },
   { path: '/roles', label: 'Roles', icon: 'roles', module: 'registration_roles' },
   { path: '/registrations', label: 'Registrations', icon: 'registrations', module: 'registrations' },
   {
@@ -26,6 +27,8 @@ export const SUPER_ADMIN_NAV_ITEMS = [
     module: 'reports',
     children: [
       { path: '/reports?tab=today', label: "Today's Activity", module: 'reports' },
+      { path: '/reports?tab=division', label: 'Division Activity', module: 'reports' },
+      { path: '/reports?tab=department', label: 'Department Activity', module: 'reports' },
       { path: '/reports?tab=history', label: 'Attendance History', module: 'reports' },
       { path: '/reports?tab=analytics', label: 'Analytics', module: 'reports' },
       { path: '/reports?tab=export', label: 'Export Center', module: 'reports' },

@@ -12,6 +12,7 @@ import { checkAiServerHealth, getFaceIndexStats, waitForAiServer } from './servi
 import { rebuildFaceIndexFromDb } from './services/faceIndexService.js';
 import { migrateDepartmentsToMultiDivision } from './services/departmentMigration.js';
 import { migrateLegacyRegistrationCodes } from './services/registrationCodeMigration.js';
+import { migrateActivityPermissionsFromGate } from './services/activityPermissionMigration.js';
 import { ensureSuperAdmin } from './services/superAdminService.js';
 import { authenticateUnlessPublic } from './middleware/auth.js';
 
@@ -56,13 +57,10 @@ app.use(
     credentials: true,
   })
 );
-// Gzip JSON responses — report/attendance payloads shrink ~10x, which matters
-// a lot on the free-tier network. Small responses (<1KB) are left untouched.
-app.use(compression({ threshold: 1024 }));
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true }));
 
-// Private S3 photos — stream through the API so the bucket can stay closed.
+// Serve photos BEFORE compression. Gzip + Content-Length on proxied S3 bodies
+// can stall browser sockets; hung photo requests then block gate/department scans
+// (browser connection limit) so the UI stays on "Processing...".
 app.use('/uploads/s3', async (req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   if (!isS3Enabled()) {
@@ -75,26 +73,46 @@ app.use('/uploads/s3', async (req, res, next) => {
   try {
     const obj = await getS3Object(key);
     if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
-    if (obj.ContentLength != null) res.setHeader('Content-Length', String(obj.ContentLength));
     res.setHeader('Cache-Control', 'private, max-age=86400');
     if (req.method === 'HEAD') {
+      if (obj.ContentLength != null) res.setHeader('Content-Length', String(obj.ContentLength));
       return res.end();
     }
-    if (obj.Body?.pipe) {
-      obj.Body.pipe(res);
-    } else if (obj.Body?.transformToByteArray) {
+    // Buffer the object — more reliable than piping through Express middleware.
+    if (typeof obj.Body?.transformToByteArray === 'function') {
       const bytes = await obj.Body.transformToByteArray();
-      res.send(Buffer.from(bytes));
-    } else {
-      res.status(500).json({ error: 'Unable to read S3 object body' });
+      const buffer = Buffer.from(bytes);
+      res.setHeader('Content-Length', String(buffer.length));
+      return res.send(buffer);
     }
+    if (obj.Body?.pipe) {
+      return obj.Body.pipe(res);
+    }
+    return res.status(500).json({ error: 'Unable to read S3 object body' });
   } catch (err) {
     console.error('S3 proxy failed:', err.message);
-    res.status(404).json({ error: 'File not found' });
+    if (!res.headersSent) {
+      return res.status(404).json({ error: 'File not found' });
+    }
   }
 });
 
 app.use('/uploads', express.static(uploadDir, { maxAge: '7d', immutable: false }));
+
+// Gzip JSON responses — report/attendance payloads shrink ~10x, which matters
+// a lot on the free-tier network. Small responses (<1KB) are left untouched.
+app.use(
+  compression({
+    threshold: 1024,
+    filter(req, res) {
+      const url = req.originalUrl || req.url || '';
+      if (url.startsWith('/uploads/s3') || url.startsWith('/uploads/')) return false;
+      return compression.filter(req, res);
+    },
+  })
+);
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 // Instant wake-up probe for login — no DB or AI calls (used before auth on cold hosts).
 app.get('/api/ping', (req, res) => {
@@ -197,6 +215,17 @@ async function runBackgroundBootstrap() {
     }
   } catch (err) {
     console.warn('Registration code migration skipped:', err.message);
+  }
+
+  try {
+    const activityPermMigration = await migrateActivityPermissionsFromGate();
+    if (activityPermMigration.migrated > 0) {
+      console.log(
+        `Granted Activity permission on ${activityPermMigration.migrated} role(s) that already had Gate access`
+      );
+    }
+  } catch (err) {
+    console.warn('Activity permission migration skipped:', err.message);
   }
 
   try {

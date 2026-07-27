@@ -5,6 +5,7 @@ import { getGateSession } from '@/lib/gateSession';
 export const MODULE_ROUTES = [
   { module: 'gate', path: '/access-scope', label: 'Gate Access' },
   { module: 'gate', path: '/entry-exit', label: 'Entry & Exit' },
+  { module: 'activity', path: '/activity', label: 'Activity' },
   { module: 'divisions', path: '/divisions/manage', label: 'Divisions' },
   { module: 'departments', path: '/departments/manage', label: 'Departments' },
   { module: 'registrations', path: '/registrations/manage', label: 'Registrations' },

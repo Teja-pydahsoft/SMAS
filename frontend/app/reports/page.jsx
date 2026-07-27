@@ -1817,6 +1817,371 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   );
 }
 
+/**
+ * Department Activity — pick a division, then a department, and view
+ * entered / currently-in / exit counts for that department on the selected day.
+ */
+function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [divisionFilter, setDivisionFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [divisions, setDivisions] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
+  const [sort, setSort] = useState({ key: 'entry', dir: 'desc' });
+  const intervalRef = useRef(null);
+
+  const activityDate = selectedDate || todayDateStringIst();
+  const isToday = activityDate === todayDateStringIst();
+  const dayLabel = isToday ? 'Today' : formatDate(activityDate);
+
+  const handleSort = useCallback((key) => {
+    setSort((prev) => (
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' }
+    ));
+  }, []);
+
+  useEffect(() => {
+    api.reports.divisions()
+      .then((res) => setDivisions(Array.isArray(res?.divisions) ? res.divisions : []))
+      .catch(() => setDivisions([]));
+  }, []);
+
+  useEffect(() => {
+    setDepartmentFilter('');
+    setData(null);
+    if (!divisionFilter) {
+      setDepartments([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setLoadingDepartments(true);
+    api.departments.list({ divisionId: divisionFilter, isActive: 'true' })
+      .then((list) => {
+        if (!cancelled) setDepartments(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!cancelled) setDepartments([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDepartments(false);
+      });
+    return () => { cancelled = true; };
+  }, [divisionFilter]);
+
+  const load = useCallback(async (silent = false) => {
+    if (!divisionFilter || !departmentFilter) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    if (!silent) setLoading(true);
+    setError('');
+    try {
+      const result = await api.reports.departmentActivity({
+        date: activityDate,
+        divisionId: divisionFilter,
+        departmentId: departmentFilter,
+      });
+      setData(result);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [divisionFilter, departmentFilter, activityDate]);
+
+  useEffect(() => {
+    if (!divisionFilter || !departmentFilter) {
+      setData(null);
+      setLoading(false);
+      return undefined;
+    }
+    setData(null);
+    load();
+    if (isToday) {
+      intervalRef.current = setInterval(() => load(true), 30000);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [load, divisionFilter, departmentFilter, isToday]);
+
+  const allPeople = data?.people || [];
+  const selectedDivision = divisions.find((d) => d._id === divisionFilter);
+  const selectedDepartment = departments.find((d) => d._id === departmentFilter)
+    || (data?.departmentName ? { name: data.departmentName } : null);
+
+  const filtered = allPeople.filter((p) => {
+    const q = search.toLowerCase();
+    const matchSearch = !q
+      || (p.displayName || '').toLowerCase().includes(q)
+      || (p.registrationCode || '').toLowerCase().includes(q)
+      || (p.roleName || '').toLowerCase().includes(q);
+    const matchStatus =
+      filterStatus === 'all'
+      || (filterStatus === 'inside' && p.currentlyIn)
+      || (filterStatus === 'exited' && p.hadExit && !p.currentlyIn)
+      || (filterStatus === 'entered' && p.hadEntry);
+    return matchSearch && matchStatus;
+  }).sort((a, b) => {
+    const valueFor = (person, key) => {
+      switch (key) {
+        case 'name': return person.displayName || '';
+        case 'role': return person.roleName || '';
+        case 'code': return person.registrationCode || '';
+        case 'entry': return person.entryAt ? new Date(person.entryAt).getTime() : 0;
+        case 'exit': return person.exitAt ? new Date(person.exitAt).getTime() : 0;
+        case 'status': return person.currentlyIn ? 2 : person.hadExit ? 1 : 0;
+        default: return '';
+      }
+    };
+    const res = compareSortValues(valueFor(a, sort.key), valueFor(b, sort.key));
+    return sort.dir === 'asc' ? res : -res;
+  });
+
+  const enteredCount = data?.enteredCount ?? 0;
+  const inCount = data?.inCount ?? 0;
+  const exitCount = data?.exitCount ?? 0;
+  const ready = Boolean(divisionFilter && departmentFilter);
+
+  const openPerson = (registrationId) => {
+    if (isToday) {
+      onViewPerson(registrationId, divisionFilter);
+    } else {
+      onViewPerson(registrationId, divisionFilter, activityDate, activityDate);
+    }
+  };
+
+  return (
+    <div>
+      <div className="rc-filters-bar">
+        <div className="rc-filters-bar__left">
+          <ActivityDatePicker
+            value={activityDate}
+            onChange={onDateChange}
+            displayLabel={isToday ? `Today · ${formatDate(activityDate)}` : formatDate(activityDate)}
+            className="rc-activity-date--filter"
+          />
+          <div className="rc-search-wrap">
+            <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="search"
+              className="rc-search-input"
+              placeholder="Search name, code, role…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search"
+              disabled={!ready}
+            />
+          </div>
+          <select
+            className="rc-select"
+            value={divisionFilter}
+            onChange={(e) => setDivisionFilter(e.target.value)}
+            aria-label="Select division"
+          >
+            <option value="">Select Division</option>
+            {divisions.map((d) => (
+              <option key={d._id} value={d._id}>{d.name}</option>
+            ))}
+          </select>
+          <select
+            className="rc-select"
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            aria-label="Select department"
+            disabled={!divisionFilter || loadingDepartments}
+          >
+            <option value="">
+              {!divisionFilter
+                ? 'Select division first'
+                : loadingDepartments
+                  ? 'Loading…'
+                  : 'Select Department'}
+            </option>
+            {departments.map((d) => (
+              <option key={d._id} value={d._id}>{d.name}</option>
+            ))}
+          </select>
+          <select
+            className="rc-select"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            aria-label="Filter by status"
+            disabled={!ready}
+          >
+            <option value="all">All Status</option>
+            <option value="inside">Currently In</option>
+            <option value="entered">Entered</option>
+            <option value="exited">Exited</option>
+          </select>
+        </div>
+        <div className="rc-filters-bar__right">
+          {ready && (
+            <>
+              <span className="rc-filter-pill">
+                <span className="daily-pass-dot daily-pass-dot--inside" />
+                {enteredCount} Entered
+              </span>
+              <span className="rc-filter-pill">
+                <span className="daily-pass-dot daily-pass-dot--inside" />
+                {inCount} In
+              </span>
+              <span className="rc-filter-pill rc-filter-pill--muted">
+                {exitCount} Exit
+              </span>
+            </>
+          )}
+          <button
+            className="btn-secondary btn-sm"
+            onClick={() => load()}
+            disabled={loading || !ready}
+          >
+            {loading ? <Spinner size={14} /> : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+            )}
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {error && <p className="error-msg" style={{ marginBottom: '1rem' }}>{error}</p>}
+
+      {!divisionFilter ? (
+        <EmptyState
+          icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1M9 13h1m4 0h1M9 17h1m4 0h1" /></svg>}
+          title="Select a division"
+          desc={`Choose a division, then a department, to view department activity for ${isToday ? 'today' : dayLabel}.`}
+        />
+      ) : !departmentFilter ? (
+        <EmptyState
+          icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
+          title={loadingDepartments ? 'Loading departments…' : departments.length === 0 ? 'No departments' : 'Select a department'}
+          desc={
+            loadingDepartments
+              ? 'Fetching departments for this division.'
+              : departments.length === 0
+                ? `${selectedDivision?.name || 'This division'} has no active departments.`
+                : `Choose a department in ${selectedDivision?.name || 'this division'} to view entered, in, and exit counts.`
+          }
+        />
+      ) : loading && !data ? (
+        <div className="rc-table-loading">
+          {[...Array(5)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
+          title={search || filterStatus !== 'all' ? 'No matching people' : `No department activity ${isToday ? 'today' : `on ${dayLabel}`}`}
+          desc={
+            search || filterStatus !== 'all'
+              ? 'Try adjusting your search or filters.'
+              : `No check-ins recorded for ${selectedDepartment?.name || 'this department'} ${isToday ? 'today' : 'on this date'} yet.`
+          }
+        />
+      ) : (
+        <div className="rc-table-wrap">
+          <table className="rc-table">
+            <thead>
+              <tr>
+                <SortHeader label="Person" columnKey="name" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <SortHeader label="Role" columnKey="role" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <SortHeader label="Code" columnKey="code" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <SortHeader label="Entry Time" columnKey="entry" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <SortHeader label="Exit Time" columnKey="exit" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <th>Duration</th>
+                <SortHeader label="Status" columnKey="status" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+                <th>Remark</th>
+                <th aria-label="Actions"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((person) => (
+                <tr
+                  key={person.registrationId}
+                  className="rc-table__row"
+                  onClick={() => openPerson(person.registrationId)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View report for ${person.displayName || 'Unnamed'}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openPerson(person.registrationId);
+                    }
+                  }}
+                >
+                  <td>
+                    <div className="rc-table__person">
+                      <div className="rc-table__status-dot-wrap">
+                        <span className={`rc-table__status-dot ${person.currentlyIn ? 'rc-table__status-dot--inside' : ''}`} />
+                      </div>
+                      <Avatar url={person.photoUrl} name={person.displayName} size={34} />
+                      <span className="rc-table__name">{person.displayName || 'Unnamed'}</span>
+                    </div>
+                  </td>
+                  <td><span className="rc-table__muted">{person.roleName || '—'}</span></td>
+                  <td><code className="rc-table__code">{person.registrationCode}</code></td>
+                  <td className="rc-table__time">{person.entryAt ? formatTime(person.entryAt) : '—'}</td>
+                  <td className="rc-table__time">
+                    {person.exitAt ? (
+                      <span className="rc-table__time-stack">
+                        <span>{formatTime(person.exitAt)}</span>
+                        {istDateOf(person.exitAt) !== activityDate && (
+                          <span className="rc-table__time-date" title="Exited on a different day">
+                            {formatShortDate(person.exitAt)}
+                          </span>
+                        )}
+                      </span>
+                    ) : person.currentlyIn ? (
+                      <span className="rc-badge-live">In</span>
+                    ) : '—'}
+                  </td>
+                  <td className="rc-table__time">
+                    {calcDuration(
+                      person.entryAt,
+                      person.exitAt || (person.currentlyIn && isToday ? new Date() : null)
+                    )}
+                  </td>
+                  <td>
+                    {person.currentlyIn ? (
+                      <span className="badge badge-success rc-status-badge">In</span>
+                    ) : person.hadExit ? (
+                      <span className="badge badge-info rc-status-badge">Exited</span>
+                    ) : (
+                      <span className="badge badge-info rc-status-badge">Entered</span>
+                    )}
+                  </td>
+                  <td className="rc-table__muted">{person.remark || '—'}</td>
+                  <td>
+                    <button
+                      className="rc-table__view-btn"
+                      onClick={(e) => { e.stopPropagation(); openPerson(person.registrationId); }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function parseDateForPdf(dateStr) {
   if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     return new Date(`${dateStr}T12:00:00+05:30`);
@@ -3331,6 +3696,7 @@ function ExportCenterTab() {
 const REPORT_TABS = [
   { id: 'today',    label: "Today's Activity" },
   { id: 'division', label: 'Division Activity' },
+  { id: 'department', label: 'Department Activity' },
   { id: 'history', label: 'Attendance History' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'export',  label: 'Export Center' },
@@ -3341,7 +3707,7 @@ function ReportsContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
   const tab = REPORT_TABS.find(t => t.id === tabParam) ? tabParam : 'today';
-  const dateSelectable = tab === 'today' || tab === 'division';
+  const dateSelectable = tab === 'today' || tab === 'division' || tab === 'department';
 
   const [selectedDate, setSelectedDate] = useState(() => todayDateStringIst());
   const [selectedPerson, setSelectedPerson] = useState(null);
@@ -3468,6 +3834,13 @@ function ReportsContent() {
               onDateChange={setSelectedDate}
               onViewPerson={handleViewPerson}
               onPrintReady={registerTabPrint}
+            />
+          )}
+          {tab === 'department' && (
+            <DepartmentActivityTab
+              selectedDate={selectedDate}
+              onDateChange={setSelectedDate}
+              onViewPerson={handleViewPerson}
             />
           )}
           {tab === 'history' && (

@@ -113,7 +113,7 @@ function ActivityPerson({ person }) {
 
 export default function ActivityPage() {
   const { can } = useAuth();
-  const canView = can('gate', 'read');
+  const canView = can('activity', 'read');
 
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);

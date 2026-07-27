@@ -39,13 +39,13 @@ import {
 import { resolveDayPassValidUntil, startOfDayIst, endOfDayIst } from '../utils/istTime.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
-import { createMulter } from '../utils/storage.js';
+import { createMulter, uploadDir } from '../utils/storage.js';
 import { cropAndSaveActivityFace, persistActivityFaceBuffer } from '../utils/activityFaceCrop.js';
 import {
   isObjectStorageEnabled,
   uploadPhoto,
 } from '../services/objectStorage.js';
-import { hasDivisionScope, hasDepartmentScope, hasGateScope } from '../middleware/auth.js';
+import { hasDivisionScope, hasDepartmentScope, hasGateScope, requirePermission } from '../middleware/auth.js';
 import { getScopedDivisionIds, resolveDivisionFilterIds } from '../services/accessScopeService.js';
 import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
 
@@ -388,7 +388,20 @@ async function identifyFromPhoto(file, registrationId) {
         })
         .catch((err) => {
           console.error('Object storage gate upload failed, falling back to local:', err.message);
-          return filePath;
+          // Memory-mode multer has no filePath — persist buffer locally so the
+          // scan can still complete and keep an audit photo.
+          if (filePath) return filePath;
+          try {
+            const dir = path.join(uploadDir, 'gate');
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            const localName = `gate-${Date.now()}.jpg`;
+            const localPath = path.join(dir, localName);
+            fs.writeFileSync(localPath, imageBuffer);
+            return localPath;
+          } catch (writeErr) {
+            console.error('Local gate photo fallback failed:', writeErr.message);
+            return null;
+          }
         })
     : Promise.resolve(filePath);
 
@@ -1093,11 +1106,7 @@ router.post(
       }
     }
 
-    const photoUrl = savedPhotoPath
-      ? savedPhotoPath.startsWith('http')
-        ? savedPhotoPath
-        : `/uploads/gate/${path.basename(savedPhotoPath)}`
-      : null;
+    const photoUrl = savedPhotoPath ? photoUrlFromPath(savedPhotoPath) : null;
 
     res.json({
       matched: true,
@@ -1188,6 +1197,7 @@ async function resolveActivityFaceImage(imageBuffer, faceBox, thumbnailB64) {
 
 router.post(
   '/activity-scan',
+  requirePermission('activity', 'read'),
   upload.single('photo'),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Photo is required' });

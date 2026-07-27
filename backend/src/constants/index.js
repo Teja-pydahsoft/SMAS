@@ -91,6 +91,7 @@ export const PASS_TYPES = {
 
 export const PERMISSION_MODULES = {
   GATE: 'gate',
+  ACTIVITY: 'activity',
   DIVISIONS: 'divisions',
   DEPARTMENTS: 'departments',
   REGISTRATIONS: 'registrations',
@@ -105,6 +106,7 @@ export const PERMISSION_MODULE_LIST = Object.values(PERMISSION_MODULES);
 
 export const PERMISSION_LABELS = {
   gate: 'Gate Entry / Exit',
+  activity: 'Activity',
   divisions: 'Divisions',
   departments: 'Departments',
   registrations: 'Registrations',

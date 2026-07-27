@@ -59,6 +59,58 @@ const upload = createMulter('gate', (req, file) => {
   return `gate-${Date.now()}${path.extname(file.originalname) || '.jpg'}`;
 });
 
+/**
+ * Start gate audit-photo upload without blocking the scan response.
+ * Face match is fast; S3 put can take longer — attach the URL to the log later.
+ */
+function startGatePhotoUpload(imageBuffer, filePath) {
+  if (!isObjectStorageEnabled()) {
+    return Promise.resolve(filePath);
+  }
+  return uploadPhoto(imageBuffer, 'gate', `gate-${Date.now()}.jpg`, 'image/jpeg')
+    .then((result) => {
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      return result.url;
+    })
+    .catch((err) => {
+      console.error('Object storage gate upload failed, falling back to local:', err.message);
+      if (filePath) return filePath;
+      try {
+        const dir = path.join(uploadDir, 'gate');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const localPath = path.join(dir, `gate-${Date.now()}.jpg`);
+        fs.writeFileSync(localPath, imageBuffer);
+        return localPath;
+      } catch (writeErr) {
+        console.error('Local gate photo fallback failed:', writeErr.message);
+        return null;
+      }
+    });
+}
+
+function attachGatePhotoWhenReady(logId, uploadPromise) {
+  if (!logId || !uploadPromise) return;
+  uploadPromise
+    .then(async (savedPath) => {
+      if (!savedPath) return;
+      await GateLog.findByIdAndUpdate(logId, { photoPath: savedPath });
+    })
+    .catch((err) => {
+      console.error('Background gate photo attach failed:', err.message);
+    });
+}
+
+function discardGatePhotoUpload(uploadPromise) {
+  if (!uploadPromise) return;
+  uploadPromise
+    .then((savedPath) => {
+      if (savedPath && !String(savedPath).startsWith('http') && fs.existsSync(savedPath)) {
+        fs.unlinkSync(savedPath);
+      }
+    })
+    .catch(() => {});
+}
+
 async function finalizeGateLog(log) {
   if (!log) return log;
   log.accessGranted = true;
@@ -378,39 +430,9 @@ async function identifyFromPhoto(file, registrationId) {
     return { error: 'No face detected in the photo' };
   }
 
-  // Kick off the audit-photo upload in parallel with face matching instead of
-  // blocking the scan on it — it only produces the stored photo path.
-  const uploadPromise = isObjectStorageEnabled()
-    ? uploadPhoto(imageBuffer, 'gate', `gate-${Date.now()}.jpg`, 'image/jpeg')
-        .then((result) => {
-          if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-          return result.url;
-        })
-        .catch((err) => {
-          console.error('Object storage gate upload failed, falling back to local:', err.message);
-          // Memory-mode multer has no filePath — persist buffer locally so the
-          // scan can still complete and keep an audit photo.
-          if (filePath) return filePath;
-          try {
-            const dir = path.join(uploadDir, 'gate');
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            const localName = `gate-${Date.now()}.jpg`;
-            const localPath = path.join(dir, localName);
-            fs.writeFileSync(localPath, imageBuffer);
-            return localPath;
-          } catch (writeErr) {
-            console.error('Local gate photo fallback failed:', writeErr.message);
-            return null;
-          }
-        })
-    : Promise.resolve(filePath);
-
-  const cleanupLocalPhoto = async () => {
-    const savedPath = await uploadPromise;
-    if (savedPath && !savedPath.startsWith('http') && fs.existsSync(savedPath)) {
-      fs.unlinkSync(savedPath);
-    }
-  };
+  // Start upload in parallel with face search — do NOT await before responding.
+  // The scan handler attaches the URL to GateLog in the background.
+  const uploadPromise = startGatePhotoUpload(imageBuffer, filePath);
 
   let matchedRegistration = null;
   let matchScore = 0;
@@ -420,15 +442,15 @@ async function identifyFromPhoto(file, registrationId) {
       'status faceEmbedding roleId registrationCode'
     );
     if (!matchedRegistration) {
-      await cleanupLocalPhoto();
+      discardGatePhotoUpload(uploadPromise);
       return { error: 'Registration not found', status: 404 };
     }
     if (matchedRegistration.status !== REGISTRATION_STATUS.VERIFIED) {
-      await cleanupLocalPhoto();
+      discardGatePhotoUpload(uploadPromise);
       return { error: 'Registration is not verified', status: 400 };
     }
     if (matchedRegistration.faceEmbedding?.length !== EMBEDDING_SIZE) {
-      await cleanupLocalPhoto();
+      discardGatePhotoUpload(uploadPromise);
       return {
         error: 'Registration photo uses an outdated face model. Please re-upload the photo.',
         status: 400,
@@ -444,11 +466,11 @@ async function identifyFromPhoto(file, registrationId) {
     });
 
     if (searchResult.ambiguous) {
+      discardGatePhotoUpload(uploadPromise);
       return {
         ambiguous: true,
         matchScore: searchResult.best?.similarity ?? 0,
         candidates: searchResult.matches?.slice(0, 3) ?? [],
-        savedPhotoPath: await uploadPromise,
       };
     }
 
@@ -462,8 +484,13 @@ async function identifyFromPhoto(file, registrationId) {
   }
 
   const matched = matchScore >= MATCH_THRESHOLD && !!matchedRegistration;
-  const savedPhotoPath = await uploadPromise;
-  return { matchedRegistration, matchScore, matched, autoIdentified: !registrationId, savedPhotoPath };
+  return {
+    matchedRegistration,
+    matchScore,
+    matched,
+    autoIdentified: !registrationId,
+    uploadPromise,
+  };
 }
 
 // ─── QR-code gate scan ────────────────────────────────────────────────────────
@@ -894,14 +921,15 @@ router.post(
       });
     }
 
-    const { matchedRegistration, matchScore, matched, autoIdentified, savedPhotoPath } = identify;
+    const { matchedRegistration, matchScore, matched, autoIdentified, uploadPromise } = identify;
 
     const log = await GateLog.create({
       registrationId: matchedRegistration?._id || undefined,
       roleId: matchedRegistration?.roleId || undefined,
       matchScore,
       matched,
-      photoPath: savedPhotoPath,
+      // Photo uploads to S3 in the background so face-match latency stays low.
+      photoPath: undefined,
       ...logFields,
       metadata: {
         threshold: MATCH_THRESHOLD,
@@ -910,6 +938,7 @@ router.post(
         scanType,
       },
     });
+    attachGatePhotoWhenReady(log._id, uploadPromise);
 
     if (!matched) {
       const reason = registrationId ? 'face_mismatch' : 'not_found';
@@ -1106,7 +1135,7 @@ router.post(
       }
     }
 
-    const photoUrl = savedPhotoPath ? photoUrlFromPath(savedPhotoPath) : null;
+    const photoUrl = null;
 
     res.json({
       matched: true,

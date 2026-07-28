@@ -18,6 +18,8 @@ import {
 } from '../services/aiClient.js';
 import { loadRegistrationContext, formatPassResponse } from '../services/passService.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
+import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
+import { withRegistrationScanLock } from '../utils/scanLock.js';
 import {
   getActiveDayPass,
   getPassSessionState,
@@ -33,6 +35,7 @@ import {
   resolveAutoGateEventType,
   resolveAutoDepartmentEventType,
   isOppositeGateEvent,
+  assertNotDuplicateScan,
   GATE_DENIAL_REASONS,
   todayDateString,
 } from '../services/attendanceService.js';
@@ -47,7 +50,6 @@ import {
 } from '../services/objectStorage.js';
 import { hasDivisionScope, hasDepartmentScope, hasGateScope, requirePermission } from '../middleware/auth.js';
 import { getScopedDivisionIds, resolveDivisionFilterIds } from '../services/accessScopeService.js';
-import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
 
 const router = Router();
 const MATCH_THRESHOLD = parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.42');
@@ -609,11 +611,13 @@ router.post(
       roleId: matchedRegistration.roleId,
       matchScore,
       matched: true,
+      accessGranted: false,
       ...logFields,
       eventType, // will be updated if auto-resolved
       metadata: { qrScan: true, passCode: pass.passCode, scanType: effectiveScanType },
     });
 
+    return withRegistrationScanLock(matchedRegistration._id, async () => {
     const [populated, activePass] = await Promise.all([
       formatRegistrationForScan(matchedRegistration),
       getActiveDayPass(matchedRegistration._id, divisionId),
@@ -662,6 +666,28 @@ router.post(
       } else if (isAutoEvent) {
         await markGateLogDenied(log, 'invalid_gate_config', 'Auto entry/exit is only available at combined entry & exit gates');
         return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
+      }
+
+      const gateDup = await assertNotDuplicateScan({
+        registrationId: matchedRegistration._id,
+        scanType: effectiveScanType,
+        eventType: resolvedEventType,
+        divisionId,
+        gateRefId: gateRecord?._id,
+        excludeLogId: log._id,
+      });
+      if (!gateDup.ok) {
+        return respondScanDenial(res, {
+          scanType: effectiveScanType,
+          matchScore,
+          registration: populated,
+          log,
+          error: gateDup.error,
+          reason: gateDup.reason,
+          sessionState,
+          dayPass,
+          requiredSteps: getRequiredSteps(gateDup.reason),
+        });
       }
 
       const gateCheck = await validateGateScan(
@@ -721,6 +747,28 @@ router.post(
         deptAutoResolved = true;
         log.eventType = resolvedDeptEventType;
         await log.save();
+      }
+
+      const deptDup = await assertNotDuplicateScan({
+        registrationId: matchedRegistration._id,
+        scanType: effectiveScanType,
+        eventType: resolvedDeptEventType,
+        divisionId,
+        departmentId: department._id,
+        excludeLogId: log._id,
+      });
+      if (!deptDup.ok) {
+        return respondScanDenial(res, {
+          scanType: effectiveScanType,
+          matchScore,
+          registration: populated,
+          log,
+          error: deptDup.error,
+          reason: deptDup.reason,
+          sessionState,
+          dayPass,
+          requiredSteps: getRequiredSteps(deptDup.reason),
+        });
       }
 
       const deptCheck = await validateDepartmentScan(
@@ -793,6 +841,7 @@ router.post(
       resolvedEventType,
       autoResolved: isAutoEvent,
       qrScan: true,
+    });
     });
   })
 );
@@ -928,6 +977,7 @@ router.post(
       roleId: matchedRegistration?.roleId || undefined,
       matchScore,
       matched,
+      accessGranted: false,
       // Photo uploads to S3 in the background so face-match latency stays low.
       photoPath: undefined,
       ...logFields,
@@ -957,6 +1007,7 @@ router.post(
       });
     }
 
+    return withRegistrationScanLock(matchedRegistration._id, async () => {
     const [populated, activePass] = await Promise.all([
       formatRegistrationForScan(matchedRegistration),
       getActiveDayPass(matchedRegistration._id, divisionId),
@@ -1008,6 +1059,28 @@ router.post(
       } else if (isAutoEvent) {
         await markGateLogDenied(log, 'invalid_gate_config', 'Auto entry/exit is only available at combined entry & exit gates');
         return res.status(400).json({ error: 'Auto entry/exit is only available at combined entry & exit gates' });
+      }
+
+      const gateDup = await assertNotDuplicateScan({
+        registrationId: matchedRegistration._id,
+        scanType,
+        eventType: resolvedEventType,
+        divisionId,
+        gateRefId: gateRecord?._id,
+        excludeLogId: log._id,
+      });
+      if (!gateDup.ok) {
+        return respondScanDenial(res, {
+          scanType,
+          matchScore,
+          registration: populated,
+          log,
+          error: gateDup.error,
+          reason: gateDup.reason,
+          sessionState,
+          dayPass,
+          requiredSteps: getRequiredSteps(gateDup.reason),
+        });
       }
 
       const gateCheck = await validateGateScan(
@@ -1083,6 +1156,28 @@ router.post(
         await log.save();
       }
 
+      const deptDup = await assertNotDuplicateScan({
+        registrationId: matchedRegistration._id,
+        scanType,
+        eventType: resolvedDeptEventType,
+        divisionId,
+        departmentId: department._id,
+        excludeLogId: log._id,
+      });
+      if (!deptDup.ok) {
+        return respondScanDenial(res, {
+          scanType,
+          matchScore,
+          registration: populated,
+          log,
+          error: deptDup.error,
+          reason: deptDup.reason,
+          sessionState,
+          dayPass,
+          requiredSteps: getRequiredSteps(deptDup.reason),
+        });
+      }
+
       const deptCheck = await validateDepartmentScan(
         activePass,
         department,
@@ -1156,6 +1251,7 @@ router.post(
       photoUrl,
       resolvedEventType,
       autoResolved: isAutoEvent,
+    });
     });
   })
 );

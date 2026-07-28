@@ -282,6 +282,7 @@ function EntryExitContent() {
   const handleFaceCapture = useCallback(
     async (blob) => {
       if (!blob) { resetScanState(); return; }
+      if (loading) return; // already processing — blocks double Capture races
       if (!canScan) {
         setError('This access point is not available. Return to Gate Access and select one.');
         return;
@@ -307,7 +308,7 @@ function EntryExitContent() {
         setLoading(false);
       }
     },
-    [canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState, maybePromptShift, maybePromptRemark]
+    [loading, canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState, maybePromptShift, maybePromptRemark]
   );
 
   // ── QR scan ───────────────────────────────────────────────────────────────

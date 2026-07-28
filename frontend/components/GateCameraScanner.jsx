@@ -90,6 +90,8 @@ export default function GateCameraScanner({
   const [flipping, setFlipping] = useState(false);
   const [pendingQr, setPendingQr] = useState(null); // {passCode, raw} when QR detected but not confirmed
 
+  const capturingRef = useRef(false);
+
   // ── Detect number of cameras ──────────────────────────────────────────────
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
@@ -99,10 +101,15 @@ export default function GateCameraScanner({
         const videoInputs = devices.filter((d) => d.kind === 'videoinput');
         setHasMultipleCameras(videoInputs.length > 1);
       })
-      .catch(() => {
-        // enumerateDevices can fail on insecure origins — ignore
-      });
+      .catch(() => {});
   }, []);
+
+  // Release local capture lock when parent finishes processing / preview clears
+  useEffect(() => {
+    if (!processing && !preview) {
+      capturingRef.current = false;
+    }
+  }, [processing, preview]);
 
   // ── Init BarcodeDetector ──────────────────────────────────────────────────
   useEffect(() => {
@@ -242,7 +249,8 @@ export default function GateCameraScanner({
   function captureFrame() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || processing || preview) return;
+    if (!video || !canvas || processing || preview || capturingRef.current) return;
+    capturingRef.current = true;
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -257,14 +265,22 @@ export default function GateCameraScanner({
 
     canvas.toBlob(
       async (blob) => {
-        if (!blob) return;
+        if (!blob) {
+          capturingRef.current = false;
+          return;
+        }
         if (rafRef.current) {
           cancelAnimationFrame(rafRef.current);
           rafRef.current = null;
         }
         setPreview(URL.createObjectURL(blob));
         setDetectedType('face');
-        await onFaceCapture?.(blob);
+        try {
+          await onFaceCapture?.(blob);
+        } finally {
+          // Parent `processing` usually takes over; keep lock until that clears.
+          if (!processing) capturingRef.current = false;
+        }
       },
       'image/jpeg',
       0.92
@@ -272,6 +288,7 @@ export default function GateCameraScanner({
   }
 
   function retake() {
+    capturingRef.current = false;
     setPreview(null);
     setDetectedType(null);
     onFaceCapture?.(null);

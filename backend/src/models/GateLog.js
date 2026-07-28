@@ -16,7 +16,7 @@ const gateLogSchema = new mongoose.Schema(
     eventType: { type: String, enum: Object.values(GATE_EVENT_TYPES), required: true },
     matchScore: { type: Number, required: true },
     matched: { type: Boolean, required: true },
-    accessGranted: { type: Boolean, default: true },
+    accessGranted: { type: Boolean, default: false },
     photoPath: { type: String },
     gateId: { type: String, default: 'main' },
     /** Optional note entered on department check-in only. */

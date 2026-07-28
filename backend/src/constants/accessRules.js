@@ -61,6 +61,8 @@ export function getRequiredSteps(reason, { hasActiveDepartment = false } = {}) {
       return ACCESS_FLOW_STEPS.DIVISION_EXIT;
     case 'too_soon_after_entry':
       return ['Wait at least 2 minutes after check-in before checking out'];
+    case 'duplicate_scan':
+      return ['This scan was ignored as a duplicate. Wait a moment, then try again if needed'];
     case 'no_gate_entry':
       return ['Complete division gate entry first', 'Then check in at the department'];
     default:

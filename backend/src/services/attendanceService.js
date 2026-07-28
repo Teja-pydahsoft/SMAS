@@ -7,6 +7,7 @@ import {
   GATE_EVENT_TYPES,
   SCAN_TYPES,
   MIN_CHECKOUT_INTERVAL_MS,
+  DUPLICATE_SCAN_WINDOW_MS,
   DAY_PASS_DURATION_MS,
   SHIFT_OVERSTAY_GRACE_MS,
 } from '../constants/index.js';
@@ -112,6 +113,7 @@ export const DEPARTMENT_DENIAL_REASONS = {
   NOT_IN_DEPARTMENT: 'not_in_department',
   NOT_CHECKED_IN: 'not_checked_in',
   TOO_SOON_AFTER_ENTRY: 'too_soon_after_entry',
+  DUPLICATE_SCAN: 'duplicate_scan',
 };
 
 export const GATE_DENIAL_REASONS = {
@@ -120,7 +122,61 @@ export const GATE_DENIAL_REASONS = {
   DEPARTMENT_STILL_ACTIVE: 'department_still_active',
   NOT_CHECKED_IN: 'not_checked_in',
   TOO_SOON_AFTER_ENTRY: 'too_soon_after_entry',
+  DUPLICATE_SCAN: 'duplicate_scan',
 };
+
+/**
+ * Reject a second granted punch for the same person at the same station
+ * in the same direction within DUPLICATE_SCAN_WINDOW_MS.
+ */
+export async function assertNotDuplicateScan({
+  registrationId,
+  scanType,
+  eventType,
+  divisionId,
+  departmentId = null,
+  gateRefId = null,
+  excludeLogId = null,
+  windowMs = DUPLICATE_SCAN_WINDOW_MS,
+} = {}) {
+  if (!registrationId || !scanType || !eventType || !divisionId) {
+    return { ok: true };
+  }
+  if (eventType === GATE_EVENT_TYPES.AUTO) {
+    return { ok: true };
+  }
+
+  const since = new Date(Date.now() - windowMs);
+  const filter = grantedGateLogFilter({
+    registrationId,
+    scanType,
+    eventType,
+    divisionId,
+    createdAt: { $gte: since },
+  });
+  if (departmentId) filter.departmentId = departmentId;
+  if (gateRefId) filter.gateRefId = gateRefId;
+  if (excludeLogId) filter._id = { $ne: excludeLogId };
+
+  const existing = await GateLog.findOne(filter).sort({ createdAt: -1 }).select('_id createdAt eventType');
+  if (!existing) return { ok: true };
+
+  const action =
+    eventType === GATE_EVENT_TYPES.EXIT
+      ? scanType === SCAN_TYPES.DEPARTMENT
+        ? 'checked out'
+        : 'exited'
+      : scanType === SCAN_TYPES.DEPARTMENT
+        ? 'checked in'
+        : 'entered';
+
+  return {
+    ok: false,
+    reason: GATE_DENIAL_REASONS.DUPLICATE_SCAN,
+    error: `Duplicate scan ignored. This person already ${action} moments ago.`,
+    duplicateLogId: existing._id,
+  };
+}
 
 function remainingCheckoutWaitMs(entryAt, now = new Date()) {
   if (!entryAt) return 0;
@@ -224,6 +280,10 @@ export async function buildDepartmentVisitsFromLogs(registrationId, divisionId, 
       typeof log.remark === 'string' && log.remark.trim() ? log.remark.trim() : '';
 
     if (log.eventType === GATE_EVENT_TYPES.ENTRY) {
+      // Ignore duplicate check-ins while already open in this department
+      // (race / double Capture). Session state keeps a single open visit.
+      if (openByDept.has(departmentId)) continue;
+
       const visit = {
         departmentId,
         departmentName,
@@ -239,6 +299,7 @@ export async function buildDepartmentVisitsFromLogs(registrationId, divisionId, 
         open.exitAt = at;
         openByDept.delete(departmentId);
       } else {
+        // Orphan exit (no matching open visit) — do not keep session "inside".
         visits.push({
           departmentId,
           departmentName,
@@ -755,21 +816,25 @@ export async function updateDayPassAfterDepartmentScan(pass, department, eventTy
   const departmentId = department._id.toString();
 
   if (eventType === GATE_EVENT_TYPES.ENTRY) {
-    visits.push({
-      departmentId,
-      departmentName: department.name,
-      entryAt: now.toISOString(),
-      exitAt: null,
-    });
+    const alreadyOpen = visits.some(
+      (v) => String(v.departmentId) === departmentId && !v.exitAt
+    );
+    if (!alreadyOpen) {
+      visits.push({
+        departmentId,
+        departmentName: department.name,
+        entryAt: now.toISOString(),
+        exitAt: null,
+      });
+    }
     payload.currentDepartmentId = departmentId;
     payload.currentDepartmentName = department.name;
   } else {
-    const openIdx = [...visits].reverse().findIndex(
-      (v) => String(v.departmentId) === departmentId && !v.exitAt
-    );
-    if (openIdx >= 0) {
-      const idx = visits.length - 1 - openIdx;
-      visits[idx] = { ...visits[idx], exitAt: now.toISOString() };
+    // Close every open visit for this department (handles prior race duplicates).
+    for (let i = 0; i < visits.length; i++) {
+      if (String(visits[i].departmentId) === departmentId && !visits[i].exitAt) {
+        visits[i] = { ...visits[i], exitAt: now.toISOString() };
+      }
     }
     payload.currentDepartmentId = null;
     payload.currentDepartmentName = null;

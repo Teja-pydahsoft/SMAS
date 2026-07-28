@@ -53,6 +53,12 @@ export const GATE_EVENT_TYPES = {
 /** Minimum time after check-in before check-out is allowed (gate and department). */
 export const MIN_CHECKOUT_INTERVAL_MS = 2 * 60 * 1000;
 
+/**
+ * Ignore a second granted punch for the same person / station / direction
+ * within this window (double Capture, parallel requests, retries).
+ */
+export const DUPLICATE_SCAN_WINDOW_MS = 60 * 1000;
+
 /** Fallback day-pass access window from gate check-in when no shift is assigned. */
 export const DAY_PASS_DURATION_MS = 24 * 60 * 60 * 1000;
 

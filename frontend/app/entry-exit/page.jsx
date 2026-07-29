@@ -13,7 +13,7 @@ import EntryExitSelector from '@/components/EntryExitSelector';
 import PageShell from '@/components/PageShell';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
-import { buildEntryExitUrl, isAutoGateEvent } from '@/lib/entryExit';
+import { buildEntryExitUrl, isAutoGateEvent, eventActionLabel } from '@/lib/entryExit';
 import {
   parseGateSessionFromSearchParams,
   setGateSession,
@@ -129,17 +129,26 @@ function EntryExitContent() {
     [departments, urlDepartmentId]
   );
 
-  const isBothGate = scanType === 'gate' && selectedGate?.gateType === 'both';
-
   const eventType = useMemo(() => {
     if (scanType === 'department') {
       // departments support auto just like "both" gates
       if (urlEventType === 'auto') return 'auto';
       return urlEventType === 'exit' ? 'exit' : 'entry';
     }
-    if (isBothGate || urlEventType === 'auto') return 'auto';
-    return urlEventType === 'exit' ? 'exit' : 'entry';
-  }, [scanType, urlEventType, isBothGate]);
+
+    // gate scan
+    // IMPORTANT: do NOT force "auto" just because the gate is combined (gateType === "both").
+    // The user’s Gate Access mode (entry-only / exit-only / both) is carried via urlEventType.
+    if (urlEventType === 'auto') return 'auto';
+    if (urlEventType === 'exit') return 'exit';
+    if (urlEventType === 'entry') return 'entry';
+
+    // Fallback (should be rare): pick from allowedEvents if urlEventType is missing/invalid.
+    const allowed = selectedGate?.allowedEvents || [];
+    if (allowed.includes('auto')) return 'auto';
+    if (allowed.includes('exit')) return 'exit';
+    return 'entry';
+  }, [scanType, urlEventType, selectedGate]);
 
   const accessPointValid =
     scanType === 'gate' ? Boolean(selectedGate) : Boolean(selectedDepartment);
@@ -247,17 +256,28 @@ function EntryExitContent() {
     const session = parseGateSessionFromSearchParams(searchParams);
     if (!session) return;
 
-    // Force auto event type for "both" gate types
-    if (
-      session.scanType === 'gate' &&
-      session.gateId &&
-      selectedGate?.gateType === 'both' &&
-      session.eventType !== 'auto'
-    ) {
-      const autoSession = { ...session, eventType: 'auto' };
-      setGateSession(autoSession);
-      router.replace(buildEntryExitUrl(autoSession));
-      return;
+    // Reconcile stored eventType (gate session) with the user's allowed events.
+    // For combined gates (gateType === "both") we only allow:
+    // - 'auto' when the user has full access (entry & exit)
+    // - otherwise 'entry' or 'exit' depending on user mode.
+    if (session.scanType === 'gate' && session.gateId && selectedGate) {
+      const allowed = selectedGate.allowedEvents || [];
+      const isAllowed = allowed.includes(session.eventType);
+
+      if (!isAllowed) {
+        const nextEventType = allowed.includes('auto')
+          ? 'auto'
+          : allowed.includes('exit')
+            ? 'exit'
+            : allowed.includes('entry')
+              ? 'entry'
+              : 'entry';
+
+        const adjustedSession = { ...session, eventType: nextEventType };
+        setGateSession(adjustedSession);
+        router.replace(buildEntryExitUrl(adjustedSession));
+        return;
+      }
     }
 
     // Force auto event type for department scans (always auto by default)
@@ -275,7 +295,7 @@ function EntryExitContent() {
     }
 
     setGateSession(session);
-  }, [isSuperAdmin, lockedMode, router, searchParams, selectedGate?.gateType]);
+  }, [isSuperAdmin, lockedMode, router, searchParams, selectedGate?._id, (selectedGate?.allowedEvents || []).join(',')]);
 
   // ── face scan ─────────────────────────────────────────────────────────────
 
@@ -365,6 +385,15 @@ function EntryExitContent() {
   const showSuccess = result?.matched && !showDenied && !showSecurityReview;
   const effectiveEventType = result?.resolvedEventType || (eventType === 'auto' ? 'entry' : eventType);
 
+  const accessPointTitle =
+    scanType === 'department'
+      ? selectedDepartment?.name || 'Department'
+      : selectedGate?.name || 'Gate';
+  const accessPointKind = scanType === 'department' ? 'Department' : 'Division gate';
+  const accessPointAction = eventActionLabel(scanType, eventType);
+  const operatorLabel = user?.displayName || user?.username || 'Operator';
+  const operatorUsername = user?.username ? `@${user.username}` : '';
+
   // ── unlocked states ───────────────────────────────────────────────────────
 
   if (!lockedMode && !isSuperAdmin) {
@@ -418,6 +447,39 @@ function EntryExitContent() {
           </Link>
         )}
       </div>
+
+      {accessPointValid && (
+        <div className="entry-exit-context" aria-live="polite">
+          <div className="entry-exit-context__item">
+            <div className="entry-exit-context__label">Logged in as</div>
+            <div className="entry-exit-context__title">{operatorLabel}</div>
+            {operatorUsername && (
+              <div className="entry-exit-context__meta">{operatorUsername}</div>
+            )}
+          </div>
+          <div className="entry-exit-context__item">
+            <div className="entry-exit-context__label">Division</div>
+            <div className="entry-exit-context__title">
+              {currentDivision?.name || '—'}
+            </div>
+          </div>
+          <div className="entry-exit-context__item">
+            <div className="entry-exit-context__label">Access point</div>
+            <div className="entry-exit-context__title">{accessPointTitle}</div>
+            <span
+              className={`entry-exit-context__badge entry-exit-context__badge--${
+                scanType === 'department' ? 'department' : 'gate'
+              }`}
+            >
+              {accessPointKind}
+            </span>
+          </div>
+          <div className="entry-exit-context__item">
+            <div className="entry-exit-context__label">Mode</div>
+            <div className="entry-exit-context__title">{accessPointAction}</div>
+          </div>
+        </div>
+      )}
 
       {isSuperAdmin && (
         <EntryExitSelector
@@ -522,6 +584,8 @@ function EntryExitContent() {
             showDayPass={showDayPass}
             onToggleDayPass={() => setShowDayPass((open) => !open)}
             gateName={selectedGate?.name}
+            departmentName={selectedDepartment?.name}
+            divisionName={currentDivision?.name}
             onDismissSecurityReview={resetScanState}
             showSuccess={showSuccess}
             showDenied={showDenied}

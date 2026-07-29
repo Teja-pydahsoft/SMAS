@@ -6,6 +6,7 @@ import { api } from '@/lib/api/client';
 import { formatDate } from '@/lib/formatDate';
 import { useAuth } from '@/components/AuthProvider';
 import SystemUserDetailsModal from '@/components/SystemUserDetailsModal';
+import GateAccessPicker, { gateModeBadgeLabel } from '@/components/GateAccessPicker';
 
 function PlusIcon() {
   return (
@@ -28,6 +29,7 @@ function NewUserModal({ onClose, onComplete }) {
   const [systemRoleId, setSystemRoleId] = useState('');
   const [divisionIds, setDivisionIds] = useState([]);
   const [gateIds, setGateIds] = useState([]);
+  const [gateAccessModes, setGateAccessModes] = useState({});
   const [departmentIds, setDepartmentIds] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -70,14 +72,17 @@ function NewUserModal({ onClose, onComplete }) {
       // Remove gates/depts that no longer belong to selected divisions
       const allowedGateIds = new Set(gates.filter((g) => next.includes(g.divisionId?._id || g.divisionId)).map((g) => g._id));
       setGateIds((p) => p.filter((gid) => allowedGateIds.has(gid)));
+      setGateAccessModes((prevModes) => {
+        const cleaned = {};
+        for (const [gid, mode] of Object.entries(prevModes)) {
+          if (allowedGateIds.has(gid)) cleaned[gid] = mode;
+        }
+        return cleaned;
+      });
       const allowedDeptIds = new Set(departments.filter((d) => (d.divisionIds || []).some((div) => next.includes(div._id))).map((d) => d._id));
       setDepartmentIds((p) => p.filter((did) => allowedDeptIds.has(did)));
       return next;
     });
-  }
-
-  function toggleGate(id) {
-    setGateIds((prev) => prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]);
   }
 
   function toggleDepartment(id) {
@@ -103,6 +108,7 @@ function NewUserModal({ onClose, onComplete }) {
         systemRoleId,
         divisionIds,
         gateIds,
+        gateAccessModes,
         departmentIds,
       });
       onComplete(user);
@@ -278,20 +284,18 @@ function NewUserModal({ onClose, onComplete }) {
                   </p>
                 ) : (
                   <div className="form-group">
-                    <p className="field-hint">Optional — assign gates for entry/exit. Not required for department-only operators.</p>
-                    <div className="checkbox-group">
-                      {scopedGates.map((gate) => (
-                        <label key={gate._id} className="checkbox-option">
-                          <input type="checkbox" checked={gateIds.includes(gate._id)} onChange={() => toggleGate(gate._id)} />
-                          <span>
-                            {gate.name}
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginLeft: '0.3rem' }}>
-                              ({gate.divisionId?.name || 'Division'})
-                            </span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
+                    <p className="field-hint">
+                      Optional — assign gates for entry/exit. For combined gates, choose entry only, exit only, or both.
+                    </p>
+                    <GateAccessPicker
+                      gates={scopedGates}
+                      selectedIds={gateIds}
+                      modes={gateAccessModes}
+                      onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
+                        setGateIds(nextIds);
+                        setGateAccessModes(nextModes);
+                      }}
+                    />
                   </div>
                 )}
               </div>
@@ -473,7 +477,9 @@ export default function ManageSystemUsersPage() {
                       ) : (user.gateIds || []).length > 0 ? (
                         <div className="scope-badges-col">
                           {user.gateIds.map((gate) => (
-                            <span key={gate._id} className="badge badge-success">{gate.name}</span>
+                            <span key={gate._id} className="badge badge-success">
+                              {gate.name} ({gateModeBadgeLabel(gate, user.gateAccessModes || {})})
+                            </span>
                           ))}
                         </div>
                       ) : (

@@ -282,6 +282,51 @@
   box-shadow: none;
 }
 
+/* Per-gate entry / exit mode picker (access scope) */
+.gate-access-picker__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: var(--radius-sm, 6px);
+  padding-bottom: 2px;
+}
+
+.gate-access-picker__item.is-selected {
+  background: var(--color-primary-subtle);
+}
+
+.gate-access-picker__gate {
+  margin: 0;
+}
+
+.gate-access-picker__meta {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-left: 0.3rem;
+}
+
+.gate-access-picker__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  padding: 0 0.35rem 0.4rem 1.85rem;
+}
+
+.gate-access-picker__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--text-12, 0.75rem);
+  color: var(--text-secondary, var(--text-muted));
+  cursor: pointer;
+  user-select: none;
+}
+
+.gate-access-picker__mode input {
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
 .system-user-panel-head {
   display: flex;
   align-items: center;

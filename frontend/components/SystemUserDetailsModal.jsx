@@ -5,6 +5,7 @@ import { api } from '@/lib/api/client';
 import { PERMISSION_MODULES, emptyPermissions } from '@/lib/auth/permissions';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
 import PermissionMatrix from '@/components/PermissionMatrix';
+import GateAccessPicker, { gateModeBadgeLabel } from '@/components/GateAccessPicker';
 
 function normalizePermissions(source) {
   const base = emptyPermissions();
@@ -17,14 +18,16 @@ function normalizePermissions(source) {
 }
 
 /* View-mode scope list — shows nothing when empty */
-function ScopeList({ title, items, badgeClass = 'badge-info' }) {
+function ScopeList({ title, items, badgeClass = 'badge-info', renderBadge }) {
   if (items.length === 0) return null;
   return (
     <div className="system-user-scope-block">
       <p className="system-user-scope-block__title">{title}</p>
       <div className="scope-badges">
         {items.map((item) => (
-          <span key={item._id} className={`badge ${badgeClass}`}>{item.name}</span>
+          <span key={item._id} className={`badge ${badgeClass}`}>
+            {renderBadge ? renderBadge(item) : item.name}
+          </span>
         ))}
       </div>
     </div>
@@ -85,6 +88,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
   const [isActive, setIsActive]     = useState(true);
   const [divisionIds, setDivisionIds]   = useState([]);
   const [gateIds, setGateIds]           = useState([]);
+  const [gateAccessModes, setGateAccessModes] = useState({});
   const [departmentIds, setDepartmentIds] = useState([]);
 
   const [rolePerms, setRolePerms]   = useState(emptyPermissions());
@@ -109,6 +113,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     setIsActive(Boolean(user.isActive));
     setDivisionIds((user.divisionIds || []).map((d) => d._id));
     setGateIds((user.gateIds || []).map((g) => g._id));
+    setGateAccessModes(user.gateAccessModes || {});
     setDepartmentIds((user.departmentIds || []).map((d) => d._id));
     setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
   }, [user]);
@@ -150,6 +155,13 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
       const next = prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id];
       const okGates = new Set(gates.filter((g) => next.includes(g.divisionId?._id || g.divisionId)).map((g) => g._id));
       setGateIds((p) => p.filter((gid) => okGates.has(gid)));
+      setGateAccessModes((prevModes) => {
+        const cleaned = {};
+        for (const [gid, mode] of Object.entries(prevModes)) {
+          if (okGates.has(gid)) cleaned[gid] = mode;
+        }
+        return cleaned;
+      });
       const okDepts = new Set(departments.filter((d) => (d.divisionIds || []).some((div) => next.includes(div._id))).map((d) => d._id));
       setDepartmentIds((p) => p.filter((did) => okDepts.has(did)));
       return next;
@@ -167,6 +179,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     setIsActive(Boolean(user.isActive));
     setDivisionIds((user.divisionIds || []).map((d) => d._id));
     setGateIds((user.gateIds || []).map((g) => g._id));
+    setGateAccessModes(user.gateAccessModes || {});
     setDepartmentIds((user.departmentIds || []).map((d) => d._id));
     setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
   }
@@ -178,7 +191,16 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     setError('');
     setSuccess('');
     try {
-      const payload = { displayName: displayName.trim(), email: email.trim(), isActive, systemRoleId, divisionIds, gateIds, departmentIds };
+      const payload = {
+        displayName: displayName.trim(),
+        email: email.trim(),
+        isActive,
+        systemRoleId,
+        divisionIds,
+        gateIds,
+        gateAccessModes,
+        departmentIds,
+      };
       if (password.trim()) payload.password = password.trim();
       await api.systemUsers.update(user._id, payload);
       if (canEditPrivileges && roleId) {
@@ -248,7 +270,18 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                   ) : (
                     <>
                       <ScopeList title="Divisions"   items={user.divisionIds   || []} badgeClass="badge-info"    />
-                      <ScopeList title="Gates"       items={user.gateIds       || []} badgeClass="badge-success" />
+                      <ScopeList
+                        title="Gates"
+                        items={user.gateIds || []}
+                        badgeClass="badge-success"
+                        renderBadge={(gate) => {
+                          const divName = gate.divisionId?.name;
+                          return `${gate.name}${divName ? ` · ${divName}` : ''} (${gateModeBadgeLabel(
+                            gate,
+                            user.gateAccessModes || {}
+                          )})`;
+                        }}
+                      />
                       <ScopeList title="Departments" items={user.departmentIds || []} badgeClass="badge-warning" />
                       {!(user.divisionIds?.length || user.gateIds?.length || user.departmentIds?.length) && (
                         <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>—</span>
@@ -335,13 +368,23 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
 
                         <div className="suedit-scope-col">
                           <p className="system-user-scope-block__title">Gates</p>
-                          <CheckboxList
-                            items={scopedGates}
-                            selected={gateIds}
-                            onToggle={(id) => setGateIds((p) => p.includes(id) ? p.filter((g) => g !== id) : [...p, id])}
-                            renderLabel={(g) => (
-                              <span>{g.name} <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>({g.gateType})</span></span>
-                            )}
+                          <p className="field-hint" style={{ marginTop: 0, marginBottom: '0.35rem' }}>
+                            For combined gates, choose entry only, exit only, or both.
+                          </p>
+                          <GateAccessPicker
+                            gates={scopedGates}
+                            selectedIds={gateIds}
+                            modes={gateAccessModes}
+                            showDivision={true}
+                            emptyMessage={
+                              divisionIds.length === 0
+                                ? 'Select divisions to filter gates, or leave empty.'
+                                : 'No gates in the selected divisions.'
+                            }
+                            onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
+                              setGateIds(nextIds);
+                              setGateAccessModes(nextModes);
+                            }}
                           />
                         </div>
 

@@ -149,15 +149,15 @@ export default function GateScopePicker({
                     <div className="gate-landing__gate-info">
                       <span className="gate-landing__gate-name">{gate.name}</span>
                       <span className="gate-landing__gate-type">
-                        {gate.gateType === 'entry'
+                        {gate.accessMode === 'entry' || gate.gateType === 'entry'
                           ? 'Entry gate'
-                          : gate.gateType === 'exit'
+                          : gate.accessMode === 'exit' || gate.gateType === 'exit'
                             ? 'Exit gate'
                             : 'Entry & exit'}
                       </span>
                     </div>
                     <div className="gate-landing__gate-actions">
-                      {gate.gateType === 'both' ? (
+                      {(gate.allowedEvents || []).includes('auto') ? (
                         <button
                           type="button"
                           className="btn-primary"

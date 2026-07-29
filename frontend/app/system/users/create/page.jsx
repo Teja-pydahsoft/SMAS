@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import useRequireWrite from '@/hooks/useRequireWrite';
+import GateAccessPicker from '@/components/GateAccessPicker';
 
 export default function CreateSystemUserPage() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function CreateSystemUserPage() {
   const [systemRoleId, setSystemRoleId] = useState('');
   const [divisionIds, setDivisionIds] = useState([]);
   const [gateIds, setGateIds] = useState([]);
+  const [gateAccessModes, setGateAccessModes] = useState({});
   const [departmentIds, setDepartmentIds] = useState([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -66,6 +68,13 @@ export default function CreateSystemUserPage() {
             .map((gate) => gate._id)
         );
         setGateIds((gatePrev) => gatePrev.filter((gateId) => allowedGateIds.has(gateId)));
+        setGateAccessModes((prevModes) => {
+          const cleaned = {};
+          for (const [gid, mode] of Object.entries(prevModes)) {
+            if (allowedGateIds.has(gid)) cleaned[gid] = mode;
+          }
+          return cleaned;
+        });
         const allowedDeptIds = new Set(
           departments
             .filter((dept) => (dept.divisionIds || []).some((div) => next.includes(div._id)))
@@ -75,12 +84,6 @@ export default function CreateSystemUserPage() {
       }
       return next;
     });
-  }
-
-  function toggleGate(id) {
-    setGateIds((prev) =>
-      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]
-    );
   }
 
   function toggleDepartment(id) {
@@ -109,6 +112,7 @@ export default function CreateSystemUserPage() {
         systemRoleId,
         divisionIds,
         gateIds,
+        gateAccessModes,
         departmentIds,
       });
       setSuccess(`User "${user.displayName}" created successfully.`);
@@ -118,6 +122,7 @@ export default function CreateSystemUserPage() {
       setPassword('');
       setDivisionIds([]);
       setGateIds([]);
+      setGateAccessModes({});
       setDepartmentIds([]);
       setTimeout(() => router.push('/system/users/manage'), 1500);
     } catch (err) {
@@ -216,33 +221,23 @@ export default function CreateSystemUserPage() {
         <div className="form-group">
           <label>Access Scope — Gates</label>
           <p className="field-hint">
-            Select division gates for gate entry/exit. Optional if this user only needs department check-in/check-out.
+            Select division gates for gate entry/exit. For combined gates, choose entry only, exit only, or both.
+            Optional if this user only needs department check-in/check-out.
           </p>
-          {scopedGates.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-              {divisionIds.length === 0
+          <GateAccessPicker
+            gates={scopedGates}
+            selectedIds={gateIds}
+            modes={gateAccessModes}
+            emptyMessage={
+              divisionIds.length === 0
                 ? 'Select divisions first to filter gates.'
-                : 'No gates in the selected divisions.'}
-            </p>
-          ) : (
-            <div className="checkbox-group">
-              {scopedGates.map((gate) => (
-                <label key={gate._id} className="checkbox-option">
-                  <input
-                    type="checkbox"
-                    checked={gateIds.includes(gate._id)}
-                    onChange={() => toggleGate(gate._id)}
-                  />
-                  <span>
-                    {gate.name}
-                    <span style={{ color: 'var(--text-muted)', marginLeft: '0.35rem' }}>
-                      ({gate.divisionId?.name || 'Division'})
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
+                : 'No gates in the selected divisions.'
+            }
+            onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
+              setGateIds(nextIds);
+              setGateAccessModes(nextModes);
+            }}
+          />
         </div>
 
         <div className="form-group">

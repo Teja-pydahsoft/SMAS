@@ -68,7 +68,11 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
 
       if (patch.gateId !== undefined && patch.gateId !== prev.gateId) {
         const gate = gateOptions.find((g) => g._id === patch.gateId);
-        next.eventType = gate?.gateType === 'both' ? 'auto' : 'entry';
+        const events = gate?.allowedEvents || [];
+        if (events.includes('auto')) next.eventType = 'auto';
+        else if (events.includes('entry')) next.eventType = 'entry';
+        else if (events.includes('exit')) next.eventType = 'exit';
+        else next.eventType = gate?.gateType === 'both' ? 'auto' : 'entry';
       }
 
       if (patch.departmentId !== undefined && patch.departmentId !== prev.departmentId) {
@@ -173,16 +177,21 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
               onChange={(e) => updateDraft({ gateId: e.target.value })}
             >
               <option value="">Select gate</option>
-              {gateOptions.map((gate) => (
-                <option key={gate._id} value={gate._id}>
-                  {gate.name}
-                  {gate.gateType === 'entry'
+              {gateOptions.map((gate) => {
+                const mode = gate.accessMode || gate.gateType;
+                const suffix =
+                  mode === 'entry'
                     ? ' (Entry)'
-                    : gate.gateType === 'exit'
+                    : mode === 'exit'
                       ? ' (Exit)'
-                      : ' (Entry & exit)'}
-                </option>
-              ))}
+                      : ' (Entry & exit)';
+                return (
+                  <option key={gate._id} value={gate._id}>
+                    {gate.name}
+                    {suffix}
+                  </option>
+                );
+              })}
             </select>
           </div>
         ) : (

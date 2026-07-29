@@ -1,6 +1,10 @@
 import jwt from 'jsonwebtoken';
 import SystemUser from '../models/SystemUser.js';
 import { PERMISSION_MODULE_LIST } from '../constants/index.js';
+import {
+  gateAccessModesToObject,
+  isEventAllowedForGateMode,
+} from '../utils/gateAccessModes.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sams-dev-jwt-secret-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -179,6 +183,19 @@ export function hasGateScope(user, gateId) {
   if (!gateId) return true;
   const target = toIdString(gateId);
   return (user.gateIds || []).some((id) => toIdString(id) === target);
+}
+
+/**
+ * Check whether the user may perform eventType at gateId.
+ * eventType: 'entry' | 'exit' | 'auto'
+ * Uses gateAccessModes when present; missing mode = full access for the gate type.
+ */
+export function hasGateEventScope(user, gateId, eventType, gateType) {
+  if (user.isSuperAdmin) return true;
+  if (!hasGateScope(user, gateId)) return false;
+  const target = toIdString(gateId);
+  const modes = gateAccessModesToObject(user.gateAccessModes);
+  return isEventAllowedForGateMode(gateType, modes[target], eventType);
 }
 
 export function applyDivisionScopeFilter(user, filter = {}) {

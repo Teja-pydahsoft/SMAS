@@ -48,7 +48,7 @@ import {
   isObjectStorageEnabled,
   uploadPhoto,
 } from '../services/objectStorage.js';
-import { hasDivisionScope, hasDepartmentScope, hasGateScope, requirePermission } from '../middleware/auth.js';
+import { hasDivisionScope, hasDepartmentScope, hasGateScope, hasGateEventScope, requirePermission } from '../middleware/auth.js';
 import { getScopedDivisionIds, resolveDivisionFilterIds } from '../services/accessScopeService.js';
 
 const router = Router();
@@ -602,6 +602,14 @@ router.post(
       if (effectiveScanType === SCAN_TYPES.GATE && !hasGateScope(req.user, gateRecord._id)) {
         return res.status(403).json({ error: 'You do not have access to this gate' });
       }
+      if (
+        effectiveScanType === SCAN_TYPES.GATE &&
+        !hasGateEventScope(req.user, gateRecord._id, eventType, gateRecord.gateType)
+      ) {
+        return res.status(403).json({
+          error: 'You do not have access to this gate mode (entry/exit)',
+        });
+      }
       if (effectiveScanType === SCAN_TYPES.DEPARTMENT && !hasDepartmentScope(req.user, department._id)) {
         return res.status(403).json({ error: 'You do not have access to this department' });
       }
@@ -969,6 +977,14 @@ router.post(
       }
       if (scanType === SCAN_TYPES.GATE && !hasGateScope(req.user, gateRecord._id)) {
         return res.status(403).json({ error: 'You do not have access to this gate' });
+      }
+      if (
+        scanType === SCAN_TYPES.GATE &&
+        !hasGateEventScope(req.user, gateRecord._id, eventType, gateRecord.gateType)
+      ) {
+        return res.status(403).json({
+          error: 'You do not have access to this gate mode (entry/exit)',
+        });
       }
       if (scanType === SCAN_TYPES.DEPARTMENT && !hasDepartmentScope(req.user, department._id)) {
         return res.status(403).json({ error: 'You do not have access to this department' });

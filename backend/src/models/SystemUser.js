@@ -10,6 +10,15 @@ const systemUserSchema = new mongoose.Schema(
     isSuperAdmin: { type: Boolean, default: false },
     divisionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Division' }],
     gateIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Gate' }],
+    /**
+     * Per-gate scan mode for assigned gates.
+     * Keys are gate ObjectId strings; values are 'entry' | 'exit' | 'both'.
+     * For entry/exit-only gates the mode matches the gate type.
+     * For combined (both) gates, admins may restrict operators to entry-only,
+     * exit-only, or full entry & exit (both / auto).
+     * Missing keys default to full access for that gate's type.
+     */
+    gateAccessModes: { type: Map, of: String, default: () => new Map() },
     departmentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Department' }],
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },

@@ -53,6 +53,8 @@ export default function GateScanDetailsPanel({
   showDayPass,
   onToggleDayPass,
   gateName,
+  departmentName,
+  divisionName,
   onDismissSecurityReview,
   showSuccess,
   showDenied,
@@ -68,11 +70,25 @@ export default function GateScanDetailsPanel({
           departmentName: activeSession.currentDepartmentName,
         }
       : null);
+  const stationLabel =
+    scanType === 'department'
+      ? departmentName || 'Department'
+      : gateName || 'Gate';
+  const stationKind = scanType === 'department' ? 'Department' : 'Division gate';
 
   return (
     <div className="gate-layout__details">
       <div className="gate-details-panel">
         <h3 className="gate-details-panel__title">Scan details</h3>
+
+        {(divisionName || stationLabel) && (
+          <div className="gate-details-panel__station">
+            <span className="gate-details-panel__station-kind">{stationKind}</span>
+            <strong>
+              {divisionName ? `${divisionName} · ${stationLabel}` : stationLabel}
+            </strong>
+          </div>
+        )}
 
         {!hasScanResult && (
           <div className="gate-details-panel__empty">

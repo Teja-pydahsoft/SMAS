@@ -7,7 +7,13 @@ import Division from '../models/Division.js';
 import Department from '../models/Department.js';
 import Gate from '../models/Gate.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { requirePermission } from '../middleware/auth.js';
+import { invalidateUserCache, requirePermission } from '../middleware/auth.js';
+import {
+  GATE_ACCESS_MODES,
+  gateAccessModesToObject,
+  normalizeGateAccessModes,
+  resolveGateAccessMode,
+} from '../utils/gateAccessModes.js';
 
 const router = Router();
 
@@ -16,15 +22,17 @@ function normalizeIdList(values) {
   return [...new Set(values.map(String).filter((id) => mongoose.Types.ObjectId.isValid(id)))];
 }
 
-async function validateAccessScope(divisionIds, gateIds, departmentIds) {
+async function validateAccessScope(divisionIds, gateIds, departmentIds, gateModesInput) {
   if (divisionIds.length > 0) {
     const found = await Division.countDocuments({ _id: { $in: divisionIds } });
     if (found !== divisionIds.length) {
       return { error: 'One or more divisions were not found' };
     }
   }
+
+  let gates = [];
   if (gateIds.length > 0) {
-    const gates = await Gate.find({ _id: { $in: gateIds } });
+    gates = await Gate.find({ _id: { $in: gateIds } });
     if (gates.length !== gateIds.length) {
       return { error: 'One or more gates were not found' };
     }
@@ -38,6 +46,17 @@ async function validateAccessScope(divisionIds, gateIds, departmentIds) {
       }
     }
   }
+
+  if (gateModesInput !== undefined && gateModesInput !== null) {
+    const modesObj = gateAccessModesToObject(gateModesInput);
+    for (const [gateId, mode] of Object.entries(modesObj)) {
+      if (!gateIds.includes(gateId)) continue;
+      if (![GATE_ACCESS_MODES.ENTRY, GATE_ACCESS_MODES.EXIT, GATE_ACCESS_MODES.BOTH].includes(mode)) {
+        return { error: 'Gate access mode must be entry, exit, or both' };
+      }
+    }
+  }
+
   if (departmentIds.length > 0) {
     const departments = await Department.find({ _id: { $in: departmentIds } });
     if (departments.length !== departmentIds.length) {
@@ -53,7 +72,19 @@ async function validateAccessScope(divisionIds, gateIds, departmentIds) {
       }
     }
   }
-  return { ok: true };
+
+  return { ok: true, gates };
+}
+
+function serializeGateAccessModes(user) {
+  const stored = gateAccessModesToObject(user.gateAccessModes);
+  const modes = {};
+  for (const gate of user.gateIds || []) {
+    const id = (gate?._id || gate)?.toString?.() || String(gate);
+    const gateType = gate?.gateType;
+    modes[id] = resolveGateAccessMode(gateType || 'both', stored[id]);
+  }
+  return modes;
 }
 
 function serializeUser(user) {
@@ -72,6 +103,7 @@ function serializeUser(user) {
     isActive: user.isActive,
     divisionIds: user.divisionIds,
     gateIds: user.gateIds,
+    gateAccessModes: serializeGateAccessModes(user),
     departmentIds: user.departmentIds,
     systemRoleId: role
       ? {
@@ -137,8 +169,19 @@ router.post(
     const divisionIds = normalizeIdList(req.body.divisionIds);
     const gateIds = normalizeIdList(req.body.gateIds);
     const departmentIds = normalizeIdList(req.body.departmentIds);
-    const scopeCheck = await validateAccessScope(divisionIds, gateIds, departmentIds);
+    const scopeCheck = await validateAccessScope(
+      divisionIds,
+      gateIds,
+      departmentIds,
+      req.body.gateAccessModes
+    );
     if (scopeCheck.error) return res.status(400).json({ error: scopeCheck.error });
+
+    const gateAccessModes = normalizeGateAccessModes(
+      gateIds,
+      scopeCheck.gates || [],
+      req.body.gateAccessModes
+    );
 
     const existing = await SystemUser.findOne({ username: username.toLowerCase().trim() });
     if (existing) return res.status(409).json({ error: 'Username already exists' });
@@ -153,6 +196,7 @@ router.post(
       isSuperAdmin: false,
       divisionIds,
       gateIds,
+      gateAccessModes,
       departmentIds,
     });
 
@@ -189,7 +233,12 @@ router.put(
       updates.systemRoleId = req.body.systemRoleId;
     }
 
-    if (req.body.divisionIds !== undefined || req.body.gateIds !== undefined || req.body.departmentIds !== undefined) {
+    if (
+      req.body.divisionIds !== undefined ||
+      req.body.gateIds !== undefined ||
+      req.body.departmentIds !== undefined ||
+      req.body.gateAccessModes !== undefined
+    ) {
       const divisionIds = normalizeIdList(
         req.body.divisionIds !== undefined ? req.body.divisionIds : user.divisionIds
       );
@@ -199,10 +248,24 @@ router.put(
       const departmentIds = normalizeIdList(
         req.body.departmentIds !== undefined ? req.body.departmentIds : user.departmentIds
       );
-      const scopeCheck = await validateAccessScope(divisionIds, gateIds, departmentIds);
+      const modesInput =
+        req.body.gateAccessModes !== undefined
+          ? req.body.gateAccessModes
+          : gateAccessModesToObject(user.gateAccessModes);
+      const scopeCheck = await validateAccessScope(
+        divisionIds,
+        gateIds,
+        departmentIds,
+        modesInput
+      );
       if (scopeCheck.error) return res.status(400).json({ error: scopeCheck.error });
       updates.divisionIds = divisionIds;
       updates.gateIds = gateIds;
+      updates.gateAccessModes = normalizeGateAccessModes(
+        gateIds,
+        scopeCheck.gates || [],
+        modesInput
+      );
       updates.departmentIds = departmentIds;
     }
 
@@ -222,6 +285,7 @@ router.put(
       .populate('gateIds', 'name slug gateType')
       .populate('departmentIds', 'name slug');
 
+    invalidateUserCache(user._id);
     res.json(serializeUser(updated));
   })
 );

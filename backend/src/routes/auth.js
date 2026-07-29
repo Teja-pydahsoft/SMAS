@@ -27,6 +27,10 @@ function serializeUser(user) {
     isActive: user.isActive,
     divisionIds: user.divisionIds,
     gateIds: user.gateIds,
+    gateAccessModes:
+      user.gateAccessModes instanceof Map
+        ? Object.fromEntries(user.gateAccessModes.entries())
+        : user.gateAccessModes || {},
     departmentIds: user.departmentIds,
     systemRoleId: role
       ? {
@@ -64,7 +68,7 @@ router.post(
 
     // Minimal projection for users that will end up on standard flow
     const user = await SystemUser.findOne({ username: username.toLowerCase().trim() })
-      .select('displayName isActive isSuperAdmin systemRoleId gateIds departmentIds divisionIds')
+      .select('displayName isActive isSuperAdmin systemRoleId gateIds gateAccessModes departmentIds divisionIds')
       .populate('systemRoleId', 'name slug permissions isActive')
       .populate('gateIds', '_id')          // only need IDs to check length
       .populate('departmentIds', '_id');   // only need IDs to check length
@@ -116,7 +120,7 @@ router.post(
 
     // Fetch user with passwordHash — run concurrently with nothing else yet
     const user = await SystemUser.findOne({ username: username.toLowerCase().trim() })
-      .select('+passwordHash displayName email isActive isSuperAdmin divisionIds gateIds departmentIds lastLoginAt createdAt updatedAt')
+      .select('+passwordHash displayName email isActive isSuperAdmin divisionIds gateIds gateAccessModes departmentIds lastLoginAt createdAt updatedAt')
       .populate('systemRoleId', 'name slug permissions isActive')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType divisionId')

@@ -5,6 +5,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { PERMISSION_MODULES } from '@/lib/auth/permissions';
 import { getAccessibleModules } from '@/lib/auth/routing';
 import { formatDate } from '@/lib/formatDate';
+import { gateModeBadgeLabel } from '@/components/GateAccessPicker';
 
 export default function UserDashboardProfile() {
   const { user, can } = useAuth();
@@ -86,7 +87,9 @@ export default function UserDashboardProfile() {
               {(user.gateIds || []).length > 0
                 ? user.gateIds.map((gate) => (
                     <span key={gate._id || gate} className="badge badge-success">
-                      {gate.name || gate}
+                      {gate.name
+                        ? `${gate.name} (${gateModeBadgeLabel(gate, user.gateAccessModes || {})})`
+                        : gate}
                     </span>
                   ))
                 : <span className="scope-empty">No gate scope assigned</span>}

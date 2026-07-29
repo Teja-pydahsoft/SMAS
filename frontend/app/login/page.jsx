@@ -458,7 +458,7 @@ function LoginForm() {
           wide
           submitting={false}
           title={`Hello, ${displayName || username}`}
-          subtitle="Select your gate or department, then enter your password to continue."
+          subtitle="Select your division and department (or gate), then enter your password to continue."
           step={step}
           flow={flow}
           onStepClick={handleStepClick}

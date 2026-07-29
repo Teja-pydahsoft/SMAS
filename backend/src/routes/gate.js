@@ -113,6 +113,16 @@ function discardGatePhotoUpload(uploadPromise) {
     .catch(() => {});
 }
 
+/** Attach the logged-in operator to every gate/department scan attempt. */
+function operatorFields(user) {
+  if (!user?._id) return {};
+  return {
+    scannedBy: user._id,
+    scannedByName: user.displayName || user.username || '',
+    scannedByUsername: user.username || '',
+  };
+}
+
 async function finalizeGateLog(log) {
   if (!log) return log;
   log.accessGranted = true;
@@ -188,6 +198,7 @@ router.get(
       .populate('divisionId', 'name slug')
       .populate('departmentId', 'name slug')
       .populate('gateRefId', 'name gateType slug')
+      .populate('scannedBy', 'username displayName')
       .sort({ createdAt: -1 })
       .limit(parseInt(req.query.limit || '100', 10));
 
@@ -197,12 +208,21 @@ router.get(
       const display = reg
         ? buildDisplayInfo(reg.formData, reg.formId?.fields || [])
         : null;
+      const operatorName =
+        obj.scannedByName ||
+        obj.scannedBy?.displayName ||
+        obj.scannedBy?.username ||
+        null;
+      const operatorUsername =
+        obj.scannedByUsername || obj.scannedBy?.username || null;
       return {
         ...obj,
         holderName: display?.displayName || null,
         holderPhotoUrl: reg?.photoPath ? photoUrlFromPath(reg.photoPath) : null,
         denialReason: obj.metadata?.denialReason || null,
         denialError: obj.metadata?.denialError || null,
+        operatorName,
+        operatorUsername,
       };
     });
 
@@ -613,6 +633,7 @@ router.post(
       matched: true,
       accessGranted: false,
       ...logFields,
+      ...operatorFields(req.user),
       eventType, // will be updated if auto-resolved
       metadata: { qrScan: true, passCode: pass.passCode, scanType: effectiveScanType },
     });
@@ -981,6 +1002,7 @@ router.post(
       // Photo uploads to S3 in the background so face-match latency stays low.
       photoPath: undefined,
       ...logFields,
+      ...operatorFields(req.user),
       metadata: {
         threshold: MATCH_THRESHOLD,
         minMargin: MIN_MATCH_MARGIN,

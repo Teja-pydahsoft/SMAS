@@ -397,6 +397,83 @@
 
 .gate-landing__empty { padding: 1.5rem; text-align: center; }
 
+.gate-landing__picker-hint {
+  margin: 0 0 0.75rem;
+  font-size: var(--text-13);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.gate-landing__division-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.gate-landing__division-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  text-align: left;
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--surface-base);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  font-family: var(--font-family);
+}
+
+.gate-landing__division-card:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.08));
+  transform: translateY(-1px);
+}
+
+.gate-landing__division-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.gate-landing__division-card-name {
+  font-size: var(--text-16);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.gate-landing__division-card-meta {
+  font-size: var(--text-12);
+  color: var(--text-secondary);
+}
+
+.gate-landing__division-card-action {
+  margin-top: 0.35rem;
+  font-size: var(--text-13);
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.gate-landing__dept-modal {
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: min(90vh, 640px);
+}
+
+.gate-landing__dept-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-top: 0.75rem;
+}
+
+.gate-landing__dept-overlay {
+  /* Sit above login card / backdrop-filter stacking contexts */
+  z-index: 10050;
+}
+
 .gate-landing__footer {
   margin-top: 2rem;
   padding-top: 1.25rem;

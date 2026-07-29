@@ -21,10 +21,18 @@ const gateLogSchema = new mongoose.Schema(
     gateId: { type: String, default: 'main' },
     /** Optional note entered on department check-in only. */
     remark: { type: String, default: '' },
+    /** System user who performed the scan (gate/dept operator login). */
+    scannedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'SystemUser', default: null },
+    /** Denormalized operator display name at scan time (survives user renames/deletes). */
+    scannedByName: { type: String, default: '' },
+    /** Denormalized operator username at scan time. */
+    scannedByUsername: { type: String, default: '' },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
+
+gateLogSchema.index({ scannedBy: 1, createdAt: -1 });
 
 gateLogSchema.index({ registrationId: 1, createdAt: -1 });
 gateLogSchema.index({ eventType: 1, createdAt: -1 });

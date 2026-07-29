@@ -79,7 +79,9 @@ export default function AuditLogsPage() {
     return logs.filter((log) => {
       const name = (log.holderName || '').toLowerCase();
       const code = (log.registrationId?.registrationCode || '').toLowerCase();
-      return name.includes(q) || code.includes(q);
+      const by =
+        `${log.operatorName || log.scannedByName || ''} ${log.operatorUsername || log.scannedByUsername || ''}`.toLowerCase();
+      return name.includes(q) || code.includes(q) || by.includes(q);
     });
   }, [logs, search]);
 
@@ -99,7 +101,7 @@ export default function AuditLogsPage() {
   return (
     <PageShell
       title="Audit Logs"
-      description="Every gate and department scan attempt — successful and rejected — per person"
+      description="Every gate and department scan attempt — successful and rejected — with who scanned and when"
     >
       <div className="card" style={{ marginBottom: '1rem' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
@@ -108,7 +110,7 @@ export default function AuditLogsPage() {
             <input
               id="audit-search"
               type="text"
-              placeholder="Name or code (e.g. WF0089)"
+              placeholder="Name, code, or operator"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -174,6 +176,7 @@ export default function AuditLogsPage() {
                   <th>Division</th>
                   <th>Event</th>
                   <th>Result</th>
+                  <th>By</th>
                   <th>Reason / Details</th>
                   <th>Match</th>
                 </tr>
@@ -209,6 +212,20 @@ export default function AuditLogsPage() {
                         <span className={`badge ${denied ? 'badge-danger' : 'badge-success'}`}>
                           {denied ? 'Rejected' : 'Granted'}
                         </span>
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {log.operatorName || log.scannedByName ? (
+                          <div>
+                            <div>{log.operatorName || log.scannedByName}</div>
+                            {(log.operatorUsername || log.scannedByUsername) && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                @{log.operatorUsername || log.scannedByUsername}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
                       </td>
                       <td style={{ maxWidth: '280px' }}>
                         {denied ? (

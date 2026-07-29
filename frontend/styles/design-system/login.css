@@ -657,6 +657,8 @@
 /* Gate picker inside card */
 .login-gate-picker {
   margin-bottom: 0.5rem;
+  /* Keep overflow on the card only — avoid a second scrollbar inside the picker */
+  overflow: visible;
 }
 
 .login-gate-picker .gate-landing__list {
@@ -667,6 +669,17 @@
   padding: 0.875rem 1rem;
   border-radius: 12px;
   box-shadow: none;
+}
+
+.login-gate-picker .gate-landing__division-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.65rem;
+}
+
+.login-gate-picker .gate-landing__division-card {
+  border-radius: 12px;
+  box-shadow: none;
+  padding: 0.875rem 1rem;
 }
 
 .login-gate-picker .gate-landing__gate {

@@ -5,7 +5,7 @@ import { api } from '@/lib/api/client';
 import CameraCapture from '@/components/CameraCapture';
 import PageShell from '@/components/PageShell';
 import { useAuth } from '@/components/AuthProvider';
-import { getShiftStatus, formatShiftWindow } from '@/lib/shiftTiming';
+import { getShiftStatus, formatShiftHoursLabel } from '@/lib/shiftTiming';
 import { enrichPeopleWithFaceCrops, enrichUnmatchedWithFaceCrops } from '@/lib/activityFaceCrop';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 
@@ -36,7 +36,7 @@ function ActivityPerson({ person }) {
     [inActivity, person.shift]
   );
   const window = inActivity && person.shift
-    ? formatShiftWindow(person.shift.shiftStartTime, person.shift.shiftEndTime)
+    ? formatShiftHoursLabel(person.shift)
     : null;
   const thumb = faceThumb(person);
 

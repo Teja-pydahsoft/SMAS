@@ -137,7 +137,20 @@ function DetailsTab({ details, valid, expired, inactive, sessionState, showPassF
           {details.shiftName && (
             <div className="pass-meta-row">
               <span className="pass-meta-label">Shift</span>
-              <span className="pass-meta-value" style={{ fontWeight: 600 }}>{details.shiftName}</span>
+              <span className="pass-meta-value" style={{ fontWeight: 600 }}>
+                {details.shiftName}
+                {details.totalHours != null || sessionState?.totalHours != null
+                  ? ` · ${details.totalHours ?? sessionState.totalHours}h`
+                  : ''}
+              </span>
+            </div>
+          )}
+          {!details.shiftName && (details.totalHours != null || sessionState?.totalHours != null) && (
+            <div className="pass-meta-row">
+              <span className="pass-meta-label">Working Hours</span>
+              <span className="pass-meta-value" style={{ fontWeight: 600 }}>
+                {details.totalHours ?? sessionState.totalHours}h
+              </span>
             </div>
           )}
           {/* Day pass: show In-Time / Out-Time instead of division inside/outside */}
@@ -195,7 +208,7 @@ function DetailsTab({ details, valid, expired, inactive, sessionState, showPassF
   );
 }
 
-function TodayActiveTab({ todayActive, todayEntries, sessionState, shiftName }) {
+function TodayActiveTab({ todayActive, todayEntries, sessionState, shiftName, totalHours }) {
   // Merge and sort all today's entries by time for the timeline
   const allEntries = [...todayEntries].sort((a, b) => {
     const ta = new Date(a.at || a.entryAt || 0).getTime();
@@ -235,10 +248,15 @@ function TodayActiveTab({ todayActive, todayEntries, sessionState, shiftName }) 
             {todayActive.length > 0 ? `${todayActive.length} entry` : 'None'}
           </span>
         </div>
-        {shiftName && (
+        {(shiftName || totalHours != null || sessionState?.totalHours != null) && (
           <div className="today-summary-strip__item">
             <span className="today-summary-strip__label">Shift</span>
-            <span className="today-summary-strip__value" style={{ fontWeight: 600 }}>{shiftName}</span>
+            <span className="today-summary-strip__value" style={{ fontWeight: 600 }}>
+              {shiftName || 'Assigned'}
+              {(totalHours ?? sessionState?.totalHours) != null
+                ? ` · ${totalHours ?? sessionState.totalHours}h`
+                : ''}
+            </span>
           </div>
         )}
       </div>
@@ -417,6 +435,7 @@ export default function PassVerifyView({
             todayEntries={todayEntries}
             sessionState={sessionState}
             shiftName={details?.shiftName || null}
+            totalHours={details?.totalHours ?? null}
           />
         )}
         {tab === 'history' && <HistoryTab entriesByDate={entriesByDate} />}

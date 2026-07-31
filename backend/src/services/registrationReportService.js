@@ -62,8 +62,8 @@ function nextDateIst(dateStr) {
 }
 
 /**
- * True when a pass belongs to an overnight shift (shift end crosses midnight).
- * Uses the shift snapshot stored in qrPayload so no extra DB lookup is needed.
+ * True when a pass belongs to an overnight shift (legacy clock-window only).
+ * Total-hours shifts are calendar-day scoped and never overnight.
  */
 function isOvernightPass(pass) {
   const start = pass?.qrPayload?.shiftStartTime;
@@ -95,13 +95,28 @@ function overnightRebucketCutoff(wallDate, endTime) {
 }
 
 /**
- * Assigned working window for one work-date: shift start through shift end
- * plus the configured four-hour overstay grace.
+ * Assigned working window for one work-date.
+ * Prefer entry + totalHours + grace; legacy falls back to start/end clock window.
  */
 function assignedShiftWindow(workDate, pass) {
-  const startTime = pass?.qrPayload?.shiftStartTime;
-  const endTime = pass?.qrPayload?.shiftEndTime;
-  if (!workDate || !startTime || !endTime) return null;
+  if (!workDate || !pass) return null;
+  const payload = pass.qrPayload || {};
+  const totalHours = Number(payload.totalHours);
+  const entryRaw = payload.gateEntryAt || pass.validFrom || pass.createdAt || null;
+
+  if (Number.isFinite(totalHours) && totalHours > 0 && entryRaw) {
+    const start = new Date(entryRaw);
+    if (!Number.isNaN(start.getTime())) {
+      return {
+        start,
+        end: new Date(start.getTime() + totalHours * 60 * 60 * 1000 + SHIFT_OVERSTAY_GRACE_MS),
+      };
+    }
+  }
+
+  const startTime = payload.shiftStartTime;
+  const endTime = payload.shiftEndTime;
+  if (!startTime || !endTime) return null;
 
   const start = new Date(`${workDate}T${startTime}:00+05:30`);
   const endDate = isOvernightPass(pass) ? nextDateIst(workDate) : workDate;
@@ -423,6 +438,7 @@ function slimPassForAttendance(pass) {
     qrPayload: {
       shiftId: payload.shiftId || null,
       shiftName: payload.shiftName || null,
+      totalHours: payload.totalHours ?? null,
       shiftStartTime: payload.shiftStartTime || null,
       shiftEndTime: payload.shiftEndTime || null,
       halfDayMinHours: payload.halfDayMinHours ?? null,
@@ -496,24 +512,29 @@ function resolveDayAttendance({
   });
   const activityHours = activityWindow.hours;
   const divisionBreaks = computeDivisionBreaks(grantedLogs);
-  const shiftStartTime = shift?.startTime || session?.shiftStartTime || null;
-  const shiftEndTime = shift?.endTime || session?.shiftEndTime || null;
+  const shiftTotalHours =
+    getShiftDurationHours(shift) ??
+    (session?.totalHours != null ? Number(session.totalHours) : null) ??
+    getShiftDurationHours({
+      startTime: shift?.startTime || session?.shiftStartTime || null,
+      endTime: shift?.endTime || session?.shiftEndTime || null,
+    });
   const shiftMeta = {
     activityHours,
     breakHours: divisionBreaks.breakHours,
     ...(divisionBreaks.breaks.length > 0 ? { breaks: divisionBreaks.breaks } : {}),
     shiftId: shift?._id?.toString?.() || shift?.id || session?.shiftId || null,
     shiftName: shift?.name || session?.shiftName || null,
-    shiftStartTime,
-    shiftEndTime,
-    shiftTotalHours: getShiftDurationHours(shiftStartTime, shiftEndTime),
+    shiftTotalHours,
     halfDayMinHours: shift?.halfDayMinHours ?? session?.halfDayMinHours ?? null,
     fullDayMinHours: shift?.fullDayMinHours ?? session?.fullDayMinHours ?? null,
   };
 
-  const shiftStatus = resolveShiftDayStatus(activityHours, shift, {
-    checkIn: activityWindow.start || timings.checkIn,
-    checkOut: activityWindow.end || timings.lastActivityAt,
+  const shiftStatus = resolveShiftDayStatus(activityHours, {
+    ...(shift || {}),
+    totalHours: shiftTotalHours,
+    halfDayMinHours: shiftMeta.halfDayMinHours,
+    fullDayMinHours: shiftMeta.fullDayMinHours,
   });
   if (shiftStatus) {
     return {
@@ -522,13 +543,6 @@ function resolveDayAttendance({
       label: shiftStatus.label,
       payFactor: shiftStatus.payFactor,
       halfSide: shiftStatus.halfSide ?? null,
-      ...(shiftStatus.firstOverlapHours != null
-        ? { firstOverlapHours: shiftStatus.firstOverlapHours }
-        : {}),
-      ...(shiftStatus.secondOverlapHours != null
-        ? { secondOverlapHours: shiftStatus.secondOverlapHours }
-        : {}),
-      ...(shiftStatus.inShiftHours != null ? { inShiftHours: shiftStatus.inShiftHours } : {}),
       checkInTime: formatTimeFromDate(timings.checkIn),
       ...timings,
       ...shiftMeta,
@@ -730,6 +744,7 @@ function shiftFromSession(session, shiftMap) {
   // Pass still has shift snapshot even if the Shift document was removed
   if (
     !session?.shiftName &&
+    session?.totalHours == null &&
     !session?.shiftStartTime &&
     !session?.shiftEndTime &&
     session?.halfDayMinHours == null &&
@@ -741,6 +756,7 @@ function shiftFromSession(session, shiftMap) {
   return {
     _id: shiftId,
     name: session.shiftName || null,
+    totalHours: session.totalHours ?? null,
     startTime: session.shiftStartTime || null,
     endTime: session.shiftEndTime || null,
     halfDayMinHours: session.halfDayMinHours ?? null,
@@ -1060,15 +1076,11 @@ export async function getRegistrationReport(
       }
     }
 
-    // Prefer the first pass carrying the assigned shift snapshot. Fall back to
-    // the latest pass only when it also has shift timings.
+    // Prefer the first pass carrying the assigned shift snapshot.
     shiftPassByDateForRange = new Map();
     for (const date of dates) {
       const shiftPass = initialShiftPassByDate.get(date) || passByDate.get(date);
-      if (
-        shiftPass?.qrPayload?.shiftStartTime &&
-        shiftPass?.qrPayload?.shiftEndTime
-      ) {
+      if (shiftPass?.qrPayload?.shiftId) {
         shiftPassByDateForRange.set(date, shiftPass);
       }
     }
@@ -1231,13 +1243,11 @@ export async function getRegistrationReport(
   const rangeShiftDay = (attendanceRange?.days || [])
     .slice()
     .reverse()
-    .find((day) => day.shiftName || day.shiftStartTime || day.shiftEndTime);
+    .find((day) => day.shiftName || day.shiftTotalHours != null || day.shiftId);
   const assignedShiftName =
     rangeShiftDay?.shiftName || sessionState.shiftName || null;
-  const assignedShiftStartTime =
-    rangeShiftDay?.shiftStartTime || sessionState.shiftStartTime || null;
-  const assignedShiftEndTime =
-    rangeShiftDay?.shiftEndTime || sessionState.shiftEndTime || null;
+  const assignedShiftTotalHours =
+    rangeShiftDay?.shiftTotalHours ?? sessionState.totalHours ?? null;
 
   return {
     valid: Boolean(activeSession?.sessionState?.divisionInside),
@@ -1264,8 +1274,7 @@ export async function getRegistrationReport(
       divisionsVisited: divisionNames,
       lastScanAt: reportLogs[0]?.createdAt || null,
       shiftName: assignedShiftName,
-      shiftStartTime: assignedShiftStartTime,
-      shiftEndTime: assignedShiftEndTime,
+      shiftTotalHours: assignedShiftTotalHours,
       payFrequency: registration.payFrequency || null,
       customPayDays: registration.customPayDays || null,
       payAmount: registration.payAmount ?? null,
@@ -1564,6 +1573,7 @@ export async function getAttendanceHistoryGrid({
           qrPayload: {
             shiftId: '$qrPayload.shiftId',
             shiftName: '$qrPayload.shiftName',
+            totalHours: '$qrPayload.totalHours',
             shiftStartTime: '$qrPayload.shiftStartTime',
             shiftEndTime: '$qrPayload.shiftEndTime',
             halfDayMinHours: '$qrPayload.halfDayMinHours',
@@ -1631,8 +1641,7 @@ export async function getAttendanceHistoryGrid({
     const shiftPass =
       initialShiftPassByRegDate.get(key) || passByRegDate.get(key);
     if (
-      shiftPass?.qrPayload?.shiftStartTime &&
-      shiftPass?.qrPayload?.shiftEndTime &&
+      shiftPass?.qrPayload?.shiftId &&
       !isWithinAssignedShiftWindow(log.createdAt, date, shiftPass)
     ) {
       continue;
@@ -1808,23 +1817,22 @@ export async function recalculateAttendanceHistory({
     if (!shift) continue;
 
     const nextName = shift.name || payload.shiftName || '';
-    const nextStart = shift.startTime || '';
-    const nextEnd = shift.endTime || '';
+    const nextTotalHours = getShiftDurationHours(shift);
     const nextHalf = shift.halfDayMinHours ?? null;
     const nextFull = shift.fullDayMinHours ?? null;
     const nextValidUntil = resolveDayPassValidUntil({
       entryAt: payload.gateEntryAt || pass.validFrom || pass.createdAt,
       fallbackDate: pass.validFrom || new Date(),
       validDate: pass.validDate || payload.validDate || null,
-      startTime: nextStart,
-      endTime: nextEnd,
+      totalHours: nextTotalHours,
+      startTime: shift.startTime || payload.shiftStartTime || null,
+      endTime: shift.endTime || payload.shiftEndTime || null,
     });
     const hasExited = Boolean(payload.gateExitAt);
 
     const changed =
       payload.shiftName !== nextName ||
-      payload.shiftStartTime !== nextStart ||
-      payload.shiftEndTime !== nextEnd ||
+      payload.totalHours !== nextTotalHours ||
       payload.halfDayMinHours !== nextHalf ||
       payload.fullDayMinHours !== nextFull ||
       (!hasExited &&
@@ -1837,8 +1845,7 @@ export async function recalculateAttendanceHistory({
       ...payload,
       shiftId,
       shiftName: nextName,
-      shiftStartTime: nextStart,
-      shiftEndTime: nextEnd,
+      totalHours: nextTotalHours,
       halfDayMinHours: nextHalf,
       fullDayMinHours: nextFull,
       ...(!hasExited && nextValidUntil

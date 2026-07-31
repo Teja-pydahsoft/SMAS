@@ -1,5 +1,6 @@
 /**
  * Parse HH:mm (or HH:mm:ss) to minutes from midnight.
+ * Kept for legacy shift documents that still have start/end.
  * @returns {number|null}
  */
 export function timeToMinutes(value) {
@@ -14,19 +15,45 @@ export function timeToMinutes(value) {
 }
 
 /**
- * Total shift duration in hours from start/end (HH:mm).
- * Overnight windows (end <= start) wrap past midnight.
+ * Duration from legacy start/end (HH:mm). Overnight windows wrap past midnight.
  * @returns {number|null}
  */
-export function getShiftDurationHours(startTime, endTime) {
+export function durationFromStartEnd(startTime, endTime) {
   const start = timeToMinutes(startTime);
   const end = timeToMinutes(endTime);
   if (start === null || end === null) return null;
 
   let durationMinutes = end - start;
   if (durationMinutes <= 0) durationMinutes += 24 * 60;
-  // Keep one decimal place max for display/compare (e.g. 6.5)
   return Math.round((durationMinutes / 60) * 100) / 100;
+}
+
+/**
+ * Resolve shift total hours from `totalHours`, with legacy start/end fallback.
+ * Accepts either (shiftOrTotal, endTime?) for backward compatibility.
+ * @returns {number|null}
+ */
+export function getShiftDurationHours(shiftOrTotal, endTime) {
+  if (shiftOrTotal != null && typeof shiftOrTotal === 'object') {
+    const direct = Number(shiftOrTotal.totalHours);
+    if (Number.isFinite(direct) && direct > 0) {
+      return Math.round(direct * 100) / 100;
+    }
+    return durationFromStartEnd(
+      shiftOrTotal.startTime || shiftOrTotal.shiftStartTime,
+      shiftOrTotal.endTime || shiftOrTotal.shiftEndTime
+    );
+  }
+
+  if (typeof shiftOrTotal === 'number' || (typeof shiftOrTotal === 'string' && endTime === undefined)) {
+    const direct = Number(shiftOrTotal);
+    if (Number.isFinite(direct) && direct > 0) {
+      return Math.round(direct * 100) / 100;
+    }
+    return null;
+  }
+
+  return durationFromStartEnd(shiftOrTotal, endTime);
 }
 
 export function formatDurationHours(hours) {
@@ -49,11 +76,19 @@ export function formatShiftTime(value) {
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
-const IST_TIMEZONE = 'Asia/Kolkata';
-const MINUTES_PER_DAY = 24 * 60;
+/**
+ * Format shift for display: "8h" or legacy "9:00 AM – 6:00 PM".
+ */
+export function formatShiftHoursLabel(shift) {
+  const total = getShiftDurationHours(shift);
+  if (total != null) return `${formatDurationHours(total)}h`;
+  const start = formatShiftTime(shift?.startTime);
+  const end = formatShiftTime(shift?.endTime);
+  if (start && end) return `${start} – ${end}`;
+  return null;
+}
 
-/** Gate-entry shift picker: only offer shifts starting within ±4h of now (IST). */
-export const SHIFT_PICKER_WINDOW_MINUTES = 4 * 60;
+const IST_TIMEZONE = 'Asia/Kolkata';
 
 /**
  * Current time-of-day in IST as minutes from midnight,
@@ -72,90 +107,49 @@ export function currentIstMinutes(date = new Date()) {
 }
 
 /**
- * Shortest distance between two times-of-day on a 24h clock, in minutes.
- * Wraps midnight: distance(23:00, 01:00) = 120.
- */
-export function clockDistanceMinutes(a, b) {
-  const diff = Math.abs(a - b) % MINUTES_PER_DAY;
-  return Math.min(diff, MINUTES_PER_DAY - diff);
-}
-
-/**
- * Whether a shift's start time falls within ±windowMinutes of nowMinutes.
- * Shifts without a valid start time are kept (can't be compared).
- */
-export function isShiftNearTime(shift, nowMinutes, windowMinutes = SHIFT_PICKER_WINDOW_MINUTES) {
-  if (nowMinutes === null || nowMinutes === undefined) return true;
-  const start = timeToMinutes(shift?.startTime);
-  if (start === null) return true;
-  return clockDistanceMinutes(start, nowMinutes) <= windowMinutes;
-}
-
-/**
- * Filter shifts to those starting within ±windowMinutes of the current IST time.
- */
-export function filterShiftsNearCurrentTime(
-  shifts,
-  { now = new Date(), windowMinutes = SHIFT_PICKER_WINDOW_MINUTES } = {}
-) {
-  const nowMinutes = currentIstMinutes(now);
-  return (shifts || []).filter((shift) => isShiftNearTime(shift, nowMinutes, windowMinutes));
-}
-
-/**
- * Whether `nowMinutes` falls inside the shift window [start, end) on a 24h clock.
- * Overnight windows (end <= start) wrap past midnight. Equal start/end is treated
- * as a 24h shift (always inside).
- * @returns {boolean|null} null when either time is unparseable.
- */
-export function isWithinShiftWindow(startTime, endTime, nowMinutes = currentIstMinutes()) {
-  const start = timeToMinutes(startTime);
-  const end = timeToMinutes(endTime);
-  if (start === null || end === null || nowMinutes === null || nowMinutes === undefined) {
-    return null;
-  }
-  if (start === end) return true; // full-day / 24h window
-  if (end > start) return nowMinutes >= start && nowMinutes < end;
-  // overnight window, e.g. 22:00 → 06:00
-  return nowMinutes >= start || nowMinutes < end;
-}
-
-/**
  * Classify an assigned shift for the Activity monitor.
- * @param {{shiftId?: string, shiftStartTime?: string, shiftEndTime?: string}|null} shift
+ * Without a clock window, assigned shifts show as "Shift assigned".
+ * @param {{shiftId?: string, totalHours?: number, shiftStartTime?: string, shiftEndTime?: string}|null} shift
  * @returns {{status: 'on'|'off'|'unknown'|'none', label: string}}
  */
-export function getShiftStatus(shift, now = new Date()) {
+export function getShiftStatus(shift) {
   if (!shift || !shift.shiftId) return { status: 'none', label: 'No shift' };
-  const within = isWithinShiftWindow(shift.shiftStartTime, shift.shiftEndTime, currentIstMinutes(now));
-  if (within === null) return { status: 'unknown', label: 'Shift assigned' };
-  return within ? { status: 'on', label: 'On shift' } : { status: 'off', label: 'Off shift' };
+  const total = getShiftDurationHours(shift);
+  if (total != null) {
+    return { status: 'on', label: `Shift · ${formatDurationHours(total)}h` };
+  }
+  return { status: 'unknown', label: 'Shift assigned' };
 }
 
 /**
- * Format assigned shift window, e.g. "9:00 AM – 6:00 PM".
+ * Format assigned shift window (legacy) or total hours.
  */
-export function formatShiftWindow(startTime, endTime) {
-  const start = formatShiftTime(startTime);
+export function formatShiftWindow(startTimeOrShift, endTime) {
+  if (startTimeOrShift != null && typeof startTimeOrShift === 'object') {
+    return formatShiftHoursLabel(startTimeOrShift);
+  }
+  const start = formatShiftTime(startTimeOrShift);
   const end = formatShiftTime(endTime);
   if (start && end) return `${start} – ${end}`;
   return start || end || null;
 }
 
 /**
- * Validate half/full day mins against shift window.
+ * Validate total / half / full day hours.
  * @returns {string|null} error message or null if ok
  */
-export function validateShiftMinHours({ startTime, endTime, halfDayMinHours, fullDayMinHours }) {
-  const totalHours = getShiftDurationHours(startTime, endTime);
-  if (totalHours === null) return 'Enter valid shift start and end times';
+export function validateShiftMinHours({ totalHours, halfDayMinHours, fullDayMinHours }) {
+  const total = Number(totalHours);
+  if (!Number.isFinite(total) || total <= 0) {
+    return 'Total hours must be a positive number';
+  }
 
   if (halfDayMinHours !== null && halfDayMinHours !== undefined) {
     if (Number.isNaN(halfDayMinHours) || halfDayMinHours < 0) {
       return 'Half day minimum hours must be a non-negative number';
     }
-    if (halfDayMinHours > totalHours) {
-      return `Half day minimum hours (${halfDayMinHours}) cannot exceed shift total hours (${formatDurationHours(totalHours)})`;
+    if (halfDayMinHours > total) {
+      return `Half day minimum hours (${halfDayMinHours}) cannot exceed shift total hours (${formatDurationHours(total)})`;
     }
   }
 
@@ -163,8 +157,8 @@ export function validateShiftMinHours({ startTime, endTime, halfDayMinHours, ful
     if (Number.isNaN(fullDayMinHours) || fullDayMinHours < 0) {
       return 'Full day minimum hours must be a non-negative number';
     }
-    if (fullDayMinHours > totalHours) {
-      return `Full day minimum hours (${fullDayMinHours}) cannot exceed shift total hours (${formatDurationHours(totalHours)})`;
+    if (fullDayMinHours > total) {
+      return `Full day minimum hours (${fullDayMinHours}) cannot exceed shift total hours (${formatDurationHours(total)})`;
     }
   }
 

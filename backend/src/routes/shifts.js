@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import Shift from '../models/Shift.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { getShiftDurationHours } from '../utils/shiftAttendance.js';
 
 const router = Router();
 
@@ -11,27 +12,6 @@ function slugify(name) {
     .replace(/[^\w\s-]/g, '')
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
-}
-
-function timeToMinutes(value) {
-  if (!value || typeof value !== 'string') return null;
-  const parts = value.trim().split(':');
-  if (parts.length < 2) return null;
-  const hours = Number(parts[0]);
-  const minutes = Number(parts[1]);
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-  return hours * 60 + minutes;
-}
-
-function getShiftDurationHours(startTime, endTime) {
-  const start = timeToMinutes(startTime);
-  const end = timeToMinutes(endTime);
-  if (start === null || end === null) return null;
-
-  let durationMinutes = end - start;
-  if (durationMinutes <= 0) durationMinutes += 24 * 60;
-  return Math.round((durationMinutes / 60) * 100) / 100;
 }
 
 function formatDurationHours(hours) {
@@ -47,11 +27,41 @@ function parseOptionalHours(value) {
   return n;
 }
 
+function parseRequiredTotalHours(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = Number(value);
+  if (Number.isNaN(n) || n <= 0) return undefined;
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Backfill totalHours from legacy start/end when missing.
+ */
+async function ensureTotalHours(shiftDoc) {
+  if (!shiftDoc) return shiftDoc;
+  const existing = Number(shiftDoc.totalHours);
+  if (Number.isFinite(existing) && existing > 0) return shiftDoc;
+
+  const derived = getShiftDurationHours(shiftDoc);
+  if (derived == null || derived <= 0) return shiftDoc;
+
+  shiftDoc.totalHours = derived;
+  try {
+    await Shift.updateOne({ _id: shiftDoc._id }, { $set: { totalHours: derived } });
+  } catch {
+    // non-fatal — still return enriched doc
+  }
+  return shiftDoc;
+}
+
 function normalizeShiftTiming(body, existing = {}) {
-  const startTime =
-    body.startTime !== undefined ? String(body.startTime || '').trim() : existing.startTime;
-  const endTime =
-    body.endTime !== undefined ? String(body.endTime || '').trim() : existing.endTime;
+  const totalHours =
+    body.totalHours !== undefined
+      ? parseRequiredTotalHours(body.totalHours)
+      : existing.totalHours != null
+        ? Number(existing.totalHours)
+        : getShiftDurationHours(existing);
+
   const halfDayMinHours =
     body.halfDayMinHours !== undefined
       ? parseOptionalHours(body.halfDayMinHours)
@@ -61,6 +71,9 @@ function normalizeShiftTiming(body, existing = {}) {
       ? parseOptionalHours(body.fullDayMinHours)
       : existing.fullDayMinHours;
 
+  if (body.totalHours !== undefined && totalHours === undefined) {
+    return { error: 'Total hours must be a positive number' };
+  }
   if (body.halfDayMinHours !== undefined && halfDayMinHours === undefined) {
     return { error: 'Half day minimum hours must be a non-negative number' };
   }
@@ -68,30 +81,26 @@ function normalizeShiftTiming(body, existing = {}) {
     return { error: 'Full day minimum hours must be a non-negative number' };
   }
 
-  if (startTime && endTime) {
-    const totalHours = getShiftDurationHours(startTime, endTime);
-    if (totalHours === null) {
-      return { error: 'Enter valid shift start and end times' };
-    }
+  if (totalHours == null || !Number.isFinite(totalHours) || totalHours <= 0) {
+    return { error: 'Total hours is required' };
+  }
 
-    if (halfDayMinHours != null && halfDayMinHours > totalHours) {
-      return {
-        error: `Half day minimum hours (${halfDayMinHours}) cannot exceed shift total hours (${formatDurationHours(totalHours)})`,
-      };
-    }
-    if (fullDayMinHours != null && fullDayMinHours > totalHours) {
-      return {
-        error: `Full day minimum hours (${fullDayMinHours}) cannot exceed shift total hours (${formatDurationHours(totalHours)})`,
-      };
-    }
-    if (halfDayMinHours != null && fullDayMinHours != null && halfDayMinHours > fullDayMinHours) {
-      return { error: 'Half day minimum hours cannot exceed full day minimum hours' };
-    }
+  if (halfDayMinHours != null && halfDayMinHours > totalHours) {
+    return {
+      error: `Half day minimum hours (${halfDayMinHours}) cannot exceed shift total hours (${formatDurationHours(totalHours)})`,
+    };
+  }
+  if (fullDayMinHours != null && fullDayMinHours > totalHours) {
+    return {
+      error: `Full day minimum hours (${fullDayMinHours}) cannot exceed shift total hours (${formatDurationHours(totalHours)})`,
+    };
+  }
+  if (halfDayMinHours != null && fullDayMinHours != null && halfDayMinHours > fullDayMinHours) {
+    return { error: 'Half day minimum hours cannot exceed full day minimum hours' };
   }
 
   return {
-    startTime: body.startTime !== undefined ? startTime : undefined,
-    endTime: body.endTime !== undefined ? endTime : undefined,
+    totalHours: body.totalHours !== undefined ? totalHours : undefined,
     halfDayMinHours: body.halfDayMinHours !== undefined ? halfDayMinHours : undefined,
     fullDayMinHours: body.fullDayMinHours !== undefined ? fullDayMinHours : undefined,
   };
@@ -105,6 +114,7 @@ router.get(
       filter.isActive = req.query.isActive === 'true';
     }
     const shifts = await Shift.find(filter).sort({ createdAt: -1 });
+    await Promise.all(shifts.map((s) => ensureTotalHours(s)));
     res.json(shifts);
   })
 );
@@ -114,6 +124,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const shift = await Shift.findById(req.params.id);
     if (!shift) return res.status(404).json({ error: 'Shift not found' });
+    await ensureTotalHours(shift);
     res.json(shift);
   })
 );
@@ -132,8 +143,9 @@ router.post(
       name,
       slug,
       description,
-      startTime: timing.startTime ?? '',
-      endTime: timing.endTime ?? '',
+      totalHours: timing.totalHours,
+      startTime: '',
+      endTime: '',
       halfDayMinHours: timing.halfDayMinHours ?? null,
       fullDayMinHours: timing.fullDayMinHours ?? null,
       metadata,
@@ -147,6 +159,7 @@ router.put(
   asyncHandler(async (req, res) => {
     const existing = await Shift.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Shift not found' });
+    await ensureTotalHours(existing);
 
     const { name, description, isActive, metadata } = req.body;
     const update = {};
@@ -160,8 +173,11 @@ router.put(
 
     const timing = normalizeShiftTiming(req.body, existing);
     if (timing.error) return res.status(400).json({ error: timing.error });
-    if (timing.startTime !== undefined) update.startTime = timing.startTime;
-    if (timing.endTime !== undefined) update.endTime = timing.endTime;
+    if (timing.totalHours !== undefined) {
+      update.totalHours = timing.totalHours;
+      update.startTime = '';
+      update.endTime = '';
+    }
     if (timing.halfDayMinHours !== undefined) update.halfDayMinHours = timing.halfDayMinHours;
     if (timing.fullDayMinHours !== undefined) update.fullDayMinHours = timing.fullDayMinHours;
 

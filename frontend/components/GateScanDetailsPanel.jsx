@@ -129,9 +129,15 @@ export default function GateScanDetailsPanel({
                 ? 'QR Code Verified'
                 : `Match score: ${(result.matchScore * 100).toFixed(1)}%`}
             </p>
-            {result.shiftName && (
+            {(result.shiftName || dayPass?.qrPayload?.shiftName) && (
               <p className="gate-details-panel__shift">
-                Shift: <strong>{result.shiftName}</strong>
+                Shift:{' '}
+                <strong>
+                  {result.shiftName || dayPass.qrPayload.shiftName}
+                  {(result.totalHours ?? dayPass?.qrPayload?.totalHours) != null
+                    ? ` · ${result.totalHours ?? dayPass.qrPayload.totalHours}h`
+                    : ''}
+                </strong>
               </p>
             )}
             {result.registration && (

@@ -6,7 +6,6 @@ import GateLog from '../models/GateLog.js';
 import Gate from '../models/Gate.js';
 import Department from '../models/Department.js';
 import Pass from '../models/Pass.js';
-import Shift from '../models/Shift.js';
 import ActivitySighting from '../models/ActivitySighting.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { REGISTRATION_STATUS, GATE_EVENT_TYPES, GATE_TYPES, SCAN_TYPES, PASS_TYPES } from '../constants/index.js';
@@ -39,7 +38,7 @@ import {
   GATE_DENIAL_REASONS,
   todayDateString,
 } from '../services/attendanceService.js';
-import { resolveDayPassValidUntil, startOfDayIst, endOfDayIst } from '../utils/istTime.js';
+import { startOfDayIst, endOfDayIst } from '../utils/istTime.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { rebuildFaceIndexFromDb } from '../services/faceIndexService.js';
 import { createMulter, uploadDir } from '../utils/storage.js';
@@ -270,75 +269,13 @@ router.post(
   })
 );
 
-// ─── Attach shift to an existing gate log after entry ────────────────────────
+// ─── Attach shift (deprecated — shifts are assigned at registration) ─────────
 router.patch(
   '/logs/:id/shift',
   asyncHandler(async (req, res) => {
-    const { shiftId, shiftName } = req.body;
-    if (!shiftId || !shiftName) {
-      return res.status(400).json({ error: 'shiftId and shiftName are required' });
-    }
-
-    const log = await GateLog.findById(req.params.id);
-    if (!log) return res.status(404).json({ error: 'Gate log not found' });
-
-    const shift = await Shift.findById(shiftId).select('name startTime endTime');
-    if (!shift) return res.status(404).json({ error: 'Shift not found' });
-
-    const resolvedShiftName = shiftName || shift.name || '';
-    const shiftStartTime = shift.startTime || '';
-    const shiftEndTime = shift.endTime || '';
-
-    log.metadata = {
-      ...(log.metadata || {}),
-      shiftId,
-      shiftName: resolvedShiftName,
-      shiftStartTime,
-      shiftEndTime,
-    };
-    log.markModified('metadata');
-    await log.save();
-
-    // Also patch the day pass with shift details. The working window becomes
-    // shift end + 4h grace once the shift is known.
-    const workDate = todayDateString(log.createdAt || new Date());
-    const dayPass = log.registrationId
-      ? await Pass.findOne({
-          registrationId: log.registrationId,
-          passType: 'day_pass',
-          isActive: true,
-          validDate: workDate,
-        })
-      : null;
-
-    if (dayPass) {
-      const entryAt =
-        dayPass.qrPayload?.gateEntryAt ||
-        dayPass.validFrom ||
-        log.createdAt ||
-        new Date();
-      const validUntil = resolveDayPassValidUntil({
-        entryAt,
-        fallbackDate: log.createdAt || new Date(),
-        validDate: dayPass.validDate || workDate,
-        startTime: shiftStartTime,
-        endTime: shiftEndTime,
-      });
-
-      dayPass.validUntil = validUntil;
-      dayPass.qrPayload = {
-        ...(dayPass.qrPayload || {}),
-        shiftId,
-        shiftName: resolvedShiftName,
-        shiftStartTime,
-        shiftEndTime,
-        validUntil: validUntil.toISOString(),
-      };
-      dayPass.markModified('qrPayload');
-      await dayPass.save();
-    }
-
-    res.json({ ok: true, log });
+    res.status(410).json({
+      error: 'Shift assignment at gate is no longer supported. Assign the shift on the registration.',
+    });
   })
 );
 
@@ -1302,6 +1239,7 @@ async function resolveActivityShift(registrationId, sessionState = null) {
     return {
       shiftId: String(sessionState.shiftId),
       shiftName: sessionState.shiftName || '',
+      totalHours: sessionState.totalHours ?? null,
       shiftStartTime: sessionState.shiftStartTime || '',
       shiftEndTime: sessionState.shiftEndTime || '',
       assignedAt: sessionState.gateEntryAt || null,
@@ -1322,6 +1260,7 @@ async function resolveActivityShift(registrationId, sessionState = null) {
   return {
     shiftId: String(log.metadata.shiftId),
     shiftName: log.metadata.shiftName || '',
+    totalHours: log.metadata.totalHours ?? null,
     shiftStartTime: log.metadata.shiftStartTime || '',
     shiftEndTime: log.metadata.shiftEndTime || '',
     assignedAt: log.createdAt,

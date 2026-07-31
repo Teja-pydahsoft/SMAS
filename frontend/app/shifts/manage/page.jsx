@@ -5,6 +5,7 @@ import { api } from '@/lib/api/client';
 import { formatDate } from '@/lib/formatDate';
 import {
   formatDurationHours,
+  formatShiftHoursLabel,
   getShiftDurationHours,
   validateShiftMinHours,
 } from '@/lib/shiftTiming';
@@ -19,17 +20,6 @@ function PlusIcon() {
   );
 }
 
-function formatShiftTime(value) {
-  if (!value) return '—';
-  const [hStr, mStr] = String(value).split(':');
-  const h = Number(hStr);
-  const m = Number(mStr);
-  if (Number.isNaN(h) || Number.isNaN(m)) return value;
-  const period = h >= 12 ? 'PM' : 'AM';
-  const hour12 = h % 12 || 12;
-  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
-}
-
 function formatMinHours(value) {
   if (value === null || value === undefined || value === '') return '—';
   return `${value}h`;
@@ -38,15 +28,17 @@ function formatMinHours(value) {
 function NewShiftModal({ onClose, onComplete }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
+  const [totalHours, setTotalHours] = useState('');
   const [halfDayMinHours, setHalfDayMinHours] = useState('');
   const [fullDayMinHours, setFullDayMinHours] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const totalHours = getShiftDurationHours(startTime, endTime);
-  const totalHoursLabel = totalHours !== null ? formatDurationHours(totalHours) : null;
+  const parsedTotal = totalHours === '' ? null : Number(totalHours);
+  const totalHoursLabel =
+    parsedTotal != null && Number.isFinite(parsedTotal)
+      ? formatDurationHours(parsedTotal)
+      : null;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -54,20 +46,15 @@ function NewShiftModal({ onClose, onComplete }) {
       setError('Shift name is required');
       return;
     }
-    if (!startTime) {
-      setError('Shift start time is required');
-      return;
-    }
-    if (!endTime) {
-      setError('Shift end time is required');
+    if (totalHours === '' || parsedTotal == null || !Number.isFinite(parsedTotal) || parsedTotal <= 0) {
+      setError('Total hours is required');
       return;
     }
 
     const halfDay = halfDayMinHours === '' ? null : Number(halfDayMinHours);
     const fullDay = fullDayMinHours === '' ? null : Number(fullDayMinHours);
     const timingError = validateShiftMinHours({
-      startTime,
-      endTime,
+      totalHours: parsedTotal,
       halfDayMinHours: halfDayMinHours === '' ? null : halfDay,
       fullDayMinHours: fullDayMinHours === '' ? null : fullDay,
     });
@@ -83,8 +70,7 @@ function NewShiftModal({ onClose, onComplete }) {
       const shift = await api.shifts.create({
         name: name.trim(),
         description: description.trim(),
-        startTime,
-        endTime,
+        totalHours: parsedTotal,
         halfDayMinHours: halfDay,
         fullDayMinHours: fullDay,
       });
@@ -113,7 +99,7 @@ function NewShiftModal({ onClose, onComplete }) {
           <div className="reg-details-modal__title-wrap">
             <div>
               <h3 className="reg-details-modal__title">New Shift</h3>
-              <p className="reg-details-modal__sub">Create a shift with start/end times and minimum hours</p>
+              <p className="reg-details-modal__sub">Create a shift with total hours and minimum hours</p>
             </div>
           </div>
           <button
@@ -155,31 +141,20 @@ function NewShiftModal({ onClose, onComplete }) {
               />
             </div>
 
-            <div className="form-two-col-grid">
-              <div className="form-group">
-                <label htmlFor="shift-start">
-                  Start Time <span style={{ color: 'var(--danger)' }}>*</span>
-                </label>
-                <input
-                  id="shift-start"
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="shift-end">
-                  End Time <span style={{ color: 'var(--danger)' }}>*</span>
-                </label>
-                <input
-                  id="shift-end"
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  required
-                />
-              </div>
+            <div className="form-group">
+              <label htmlFor="shift-total">
+                Total Hours <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+              <input
+                id="shift-total"
+                type="number"
+                min="0.5"
+                step="0.5"
+                value={totalHours}
+                onChange={(e) => setTotalHours(e.target.value)}
+                placeholder="e.g. 8"
+                required
+              />
             </div>
 
             {totalHoursLabel && (
@@ -196,7 +171,7 @@ function NewShiftModal({ onClose, onComplete }) {
                   id="shift-half-day"
                   type="number"
                   min="0"
-                  max={totalHours ?? undefined}
+                  max={parsedTotal ?? undefined}
                   step="0.5"
                   value={halfDayMinHours}
                   onChange={(e) => setHalfDayMinHours(e.target.value)}
@@ -209,7 +184,7 @@ function NewShiftModal({ onClose, onComplete }) {
                   id="shift-full-day"
                   type="number"
                   min="0"
-                  max={totalHours ?? undefined}
+                  max={parsedTotal ?? undefined}
                   step="0.5"
                   value={fullDayMinHours}
                   onChange={(e) => setFullDayMinHours(e.target.value)}
@@ -338,7 +313,7 @@ export default function ManageShiftsPage() {
               <thead>
                 <tr>
                   <th>Shift Name</th>
-                  <th>Timing</th>
+                  <th>Total Hours</th>
                   <th>Half Day</th>
                   <th>Full Day</th>
                   <th>Status</th>
@@ -357,11 +332,7 @@ export default function ManageShiftsPage() {
                         </div>
                       ) : null}
                     </td>
-                    <td>
-                      {shift.startTime || shift.endTime
-                        ? `${formatShiftTime(shift.startTime)} – ${formatShiftTime(shift.endTime)}`
-                        : '—'}
-                    </td>
+                    <td>{formatShiftHoursLabel(shift) || formatMinHours(getShiftDurationHours(shift))}</td>
                     <td>{formatMinHours(shift.halfDayMinHours)}</td>
                     <td>{formatMinHours(shift.fullDayMinHours)}</td>
                     <td>

@@ -6,6 +6,7 @@ import PassCard from '@/components/PassCard';
 import MediaDocumentModal from '@/components/MediaDocumentModal';
 import { formatDateTime } from '@/lib/formatDate';
 import { resolveMediaUrl } from '@/lib/mediaUtils';
+import { formatShiftHoursLabel } from '@/lib/shiftTiming';
 
 const STATUS_BADGE = {
   draft: 'badge-info',
@@ -147,6 +148,14 @@ export default function RegistrationDetailsModal({ registration, onClose }) {
                 </span>
               </div>
               <p className="reg-details-summary__role">{registration.roleId?.name || '—'}</p>
+              {registration.shiftId && (
+                <p className="reg-details-summary__role" style={{ marginTop: '0.15rem' }}>
+                  Shift: {registration.shiftId?.name || '—'}
+                  {formatShiftHoursLabel(registration.shiftId)
+                    ? ` · ${formatShiftHoursLabel(registration.shiftId)}`
+                    : ''}
+                </p>
+              )}
               <div className="reg-details-summary__chips">
                 {registration.registrationCode && (
                   <span className="reg-details-summary__chip">{registration.registrationCode}</span>

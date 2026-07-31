@@ -57,7 +57,7 @@ function addCalendarDaysIst(dateStr, daysToAdd) {
 }
 
 /**
- * Instant for shift end on an IST work date.
+ * Instant for shift end on an IST work date (legacy clock-window shifts).
  * Overnight shifts (endTime <= startTime) land on the next IST calendar day.
  *
  * @param {string} validDate YYYY-MM-DD (IST work date on the pass)
@@ -81,8 +81,9 @@ export function shiftEndAtIst(validDate, startTime, endTime) {
 
 /**
  * Day-pass access expiry (working window).
- * With an assigned shift: shift end + 4h grace (overnight shifts wrap to the
- * next IST day via shiftEndAtIst). Without a shift: gate check-in + 24h.
+ * Prefer: gate entry + totalHours + 4h grace.
+ * Legacy: shift end + 4h grace when start/end times exist.
+ * Fallback: gate check-in + 24h.
  */
 export function resolveDayPassValidUntil({
   entryAt = null,
@@ -90,9 +91,16 @@ export function resolveDayPassValidUntil({
   validDate = null,
   startTime = null,
   endTime = null,
+  totalHours = null,
 } = {}) {
   const base = entryAt ? new Date(entryAt) : new Date(fallbackDate);
   const baseTime = Number.isNaN(base.getTime()) ? Date.now() : base.getTime();
+
+  const hours = Number(totalHours);
+  if (Number.isFinite(hours) && hours > 0) {
+    const windowEnd = baseTime + hours * 60 * 60 * 1000 + SHIFT_OVERSTAY_GRACE_MS;
+    return new Date(windowEnd);
+  }
 
   const shiftEnd = shiftEndAtIst(validDate, startTime, endTime);
   if (shiftEnd) {

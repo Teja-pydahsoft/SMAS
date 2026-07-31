@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import {
   formatDurationHours,
-  getShiftDurationHours,
   validateShiftMinHours,
 } from '@/lib/shiftTiming';
 import useRequireWrite from '@/hooks/useRequireWrite';
@@ -16,16 +15,18 @@ export default function CreateShiftPage() {
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
+  const [totalHours, setTotalHours] = useState('');
   const [halfDayMinHours, setHalfDayMinHours] = useState('');
   const [fullDayMinHours, setFullDayMinHours] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const totalHours = getShiftDurationHours(startTime, endTime);
-  const totalHoursLabel = totalHours !== null ? formatDurationHours(totalHours) : null;
+  const parsedTotal = totalHours === '' ? null : Number(totalHours);
+  const totalHoursLabel =
+    parsedTotal != null && Number.isFinite(parsedTotal)
+      ? formatDurationHours(parsedTotal)
+      : null;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -34,20 +35,15 @@ export default function CreateShiftPage() {
       setError('Shift name is required');
       return;
     }
-    if (!startTime) {
-      setError('Shift start time is required');
-      return;
-    }
-    if (!endTime) {
-      setError('Shift end time is required');
+    if (totalHours === '' || parsedTotal == null || !Number.isFinite(parsedTotal) || parsedTotal <= 0) {
+      setError('Total hours is required');
       return;
     }
 
     const halfDay = halfDayMinHours === '' ? null : Number(halfDayMinHours);
     const fullDay = fullDayMinHours === '' ? null : Number(fullDayMinHours);
     const timingError = validateShiftMinHours({
-      startTime,
-      endTime,
+      totalHours: parsedTotal,
       halfDayMinHours: halfDayMinHours === '' ? null : halfDay,
       fullDayMinHours: fullDayMinHours === '' ? null : fullDay,
     });
@@ -64,16 +60,14 @@ export default function CreateShiftPage() {
       const shift = await api.shifts.create({
         name: name.trim(),
         description: description.trim(),
-        startTime,
-        endTime,
+        totalHours: parsedTotal,
         halfDayMinHours: halfDay,
         fullDayMinHours: fullDay,
       });
       setSuccess(`Shift "${shift.name}" created successfully.`);
       setName('');
       setDescription('');
-      setStartTime('');
-      setEndTime('');
+      setTotalHours('');
       setHalfDayMinHours('');
       setFullDayMinHours('');
       setTimeout(() => router.push('/shifts/manage'), 1500);
@@ -93,7 +87,7 @@ export default function CreateShiftPage() {
       <div className="card">
         <h3 className="section-title">Shift Details</h3>
         <p className="section-desc">
-          Set the shift name, working window, and minimum hours for half/full day
+          Set the shift name, total working hours, and minimum hours for half/full day
         </p>
 
         <div className="form-group">
@@ -116,29 +110,19 @@ export default function CreateShiftPage() {
           />
         </div>
 
-        <div className="form-two-col-grid">
-          <div className="form-group">
-            <label>
-              Start Time <span style={{ color: 'var(--danger)' }}>*</span>
-            </label>
-            <input
-              type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label>
-              End Time <span style={{ color: 'var(--danger)' }}>*</span>
-            </label>
-            <input
-              type="time"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              required
-            />
-          </div>
+        <div className="form-group">
+          <label>
+            Total Hours <span style={{ color: 'var(--danger)' }}>*</span>
+          </label>
+          <input
+            type="number"
+            min="0.5"
+            step="0.5"
+            value={totalHours}
+            onChange={(e) => setTotalHours(e.target.value)}
+            placeholder="e.g. 8"
+            required
+          />
         </div>
 
         {totalHoursLabel && (
@@ -154,7 +138,7 @@ export default function CreateShiftPage() {
             <input
               type="number"
               min="0"
-              max={totalHours ?? undefined}
+              max={parsedTotal ?? undefined}
               step="0.5"
               value={halfDayMinHours}
               onChange={(e) => setHalfDayMinHours(e.target.value)}
@@ -166,7 +150,7 @@ export default function CreateShiftPage() {
             <input
               type="number"
               min="0"
-              max={totalHours ?? undefined}
+              max={parsedTotal ?? undefined}
               step="0.5"
               value={fullDayMinHours}
               onChange={(e) => setFullDayMinHours(e.target.value)}

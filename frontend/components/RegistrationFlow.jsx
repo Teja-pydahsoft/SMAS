@@ -16,6 +16,7 @@ import {
   parsePayFrequencySelection,
   serializePayFrequencySelection,
 } from '@/lib/payFrequency';
+import { formatShiftHoursLabel, getShiftDurationHours } from '@/lib/shiftTiming';
 
 const STAGES = [
   { key: 'form', label: '1. Details & Photo' },
@@ -131,6 +132,8 @@ export default function RegistrationFlow({
   const [payFrequencySelection, setPayFrequencySelection] = useState('');
   const [payAmount, setPayAmount] = useState('');
   const [gender, setGender] = useState('');
+  const [shiftId, setShiftId] = useState('');
+  const [shifts, setShifts] = useState([]);
   const [pendingMediaFiles, setPendingMediaFiles] = useState({});
   const [photoBlob, setPhotoBlob] = useState(null);
   const [gatePhotoLoaded, setGatePhotoLoaded] = useState(false);
@@ -164,6 +167,7 @@ export default function RegistrationFlow({
       setPayFrequencySelection('');
       setPayAmount('');
       setGender('');
+      setShiftId('');
       setPendingMediaFiles({});
       setStage('form');
       loadNew(selectedRoleId);
@@ -229,6 +233,13 @@ export default function RegistrationFlow({
       setRole(r);
       const f = await api.forms.getByRole(id);
       setForm(f);
+      if (r?.isShiftBased) {
+        const list = await api.shifts.list({ isActive: true });
+        setShifts(Array.isArray(list) ? list : []);
+      } else {
+        setShifts([]);
+        setShiftId('');
+      }
     } catch (e) {
       setError(e.message);
       setRole(null);
@@ -248,6 +259,7 @@ export default function RegistrationFlow({
       );
       setPayAmount(reg.payAmount != null ? String(reg.payAmount) : '');
       setGender(reg.gender || '');
+      setShiftId(reg.shiftId?._id || reg.shiftId || '');
       setPendingMediaFiles({});
       setStage(resolveStage(reg));
 
@@ -256,6 +268,12 @@ export default function RegistrationFlow({
       setRole(r);
       const f = await api.forms.getByRole(roleRef);
       setForm(f);
+      if (r?.isShiftBased || reg.roleId?.isShiftBased) {
+        const list = await api.shifts.list({ isActive: true });
+        setShifts(Array.isArray(list) ? list : []);
+      } else {
+        setShifts([]);
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -323,6 +341,10 @@ export default function RegistrationFlow({
         return;
       }
     }
+    if (role?.isShiftBased && !shiftId) {
+      setError('Please select a shift');
+      return;
+    }
     setLoading(true);
     setError('');
     setSuccess('');
@@ -338,6 +360,7 @@ export default function RegistrationFlow({
             : undefined,
         payAmount: role?.payFrequencies?.length ? Number(payAmount) : undefined,
         gender: role?.payFrequencies?.length ? gender : undefined,
+        shiftId: role?.isShiftBased ? shiftId : null,
       };
       let reg = registration;
       if (reg) {
@@ -596,6 +619,7 @@ export default function RegistrationFlow({
                       setPayFrequencySelection('');
                       setPayAmount('');
                       setGender('');
+                      setShiftId('');
                       setPendingMediaFiles({});
                       setError('');
                     }}
@@ -605,6 +629,35 @@ export default function RegistrationFlow({
                       <option key={r._id} value={r._id}>{r.name}</option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {form && role?.isShiftBased && (
+                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                  <label htmlFor="reg-flow-shift">
+                    Shift <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <select
+                    id="reg-flow-shift"
+                    value={shiftId}
+                    onChange={(e) => setShiftId(e.target.value)}
+                  >
+                    <option value="">Choose shift…</option>
+                    {shifts.map((s) => {
+                      const hours = formatShiftHoursLabel(s) || `${getShiftDurationHours(s) ?? '—'}h`;
+                      return (
+                        <option key={s._id} value={s._id}>
+                          {s.name} · {hours}
+                          {s.halfDayMinHours != null || s.fullDayMinHours != null
+                            ? ` (half ${s.halfDayMinHours ?? '—'} / full ${s.fullDayMinHours ?? '—'})`
+                            : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <p className="field-hint" style={{ marginTop: '0.35rem', marginBottom: 0 }}>
+                    Working hours for this employee — used on day passes and attendance.
+                  </p>
                 </div>
               )}
 
@@ -735,6 +788,23 @@ export default function RegistrationFlow({
 
       {stage === 'review' && registration && (
         <div>
+          {(role?.isShiftBased || registration.shiftId) && (
+            <div className="form-group" style={{ marginBottom: '1rem' }}>
+              <label>Shift</label>
+              <p style={{ margin: 0 }}>
+                {registration.shiftId?.name
+                  || shifts.find((s) => s._id === (registration.shiftId?._id || registration.shiftId))?.name
+                  || '—'}
+                {(() => {
+                  const s = registration.shiftId?.name
+                    ? registration.shiftId
+                    : shifts.find((x) => x._id === (registration.shiftId?._id || registration.shiftId));
+                  const label = s ? formatShiftHoursLabel(s) : null;
+                  return label ? ` · ${label}` : '';
+                })()}
+              </p>
+            </div>
+          )}
           {showPayFrequency && (
             <>
               <div className="form-group" style={{ marginBottom: '1rem' }}>

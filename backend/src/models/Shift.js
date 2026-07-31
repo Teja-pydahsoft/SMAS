@@ -5,6 +5,9 @@ const shiftSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     description: { type: String, default: '' },
+    /** Expected working hours for this shift (replaces start/end clock window). */
+    totalHours: { type: Number, default: null, min: 0 },
+    /** Legacy clock window — kept for old documents only; not written by new UI/API. */
     startTime: { type: String, default: '' }, // HH:mm
     endTime: { type: String, default: '' }, // HH:mm
     halfDayMinHours: { type: Number, default: null, min: 0 },

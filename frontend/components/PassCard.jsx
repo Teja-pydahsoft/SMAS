@@ -237,7 +237,18 @@ export default function PassCard({ pass, onPrint }) {
             {isDayPass && pass.qrPayload?.shiftName && (
               <div className="pass-card__field">
                 <dt className="pass-card__field-label">Shift</dt>
-                <dd className="pass-card__field-value">{pass.qrPayload.shiftName}</dd>
+                <dd className="pass-card__field-value">
+                  {pass.qrPayload.shiftName}
+                  {pass.qrPayload.totalHours != null
+                    ? ` · ${pass.qrPayload.totalHours}h`
+                    : ''}
+                </dd>
+              </div>
+            )}
+            {isDayPass && pass.qrPayload?.totalHours != null && !pass.qrPayload?.shiftName && (
+              <div className="pass-card__field">
+                <dt className="pass-card__field-label">Working Hours</dt>
+                <dd className="pass-card__field-value">{pass.qrPayload.totalHours}h</dd>
               </div>
             )}
             {isDayPass && pass.qrPayload?.gateEntryAt && (

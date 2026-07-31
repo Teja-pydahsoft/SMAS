@@ -22,6 +22,8 @@ import {
   resolveDayPassValidUntil,
   shiftEndAtIst,
 } from '../utils/istTime.js';
+import { getShiftDurationHours } from '../utils/shiftAttendance.js';
+import Shift from '../models/Shift.js';
 
 export function todayDateString(date = new Date()) {
   return todayDateStringIst(date);
@@ -37,7 +39,8 @@ export function endOfDay(date = new Date()) {
 
 /**
  * Working-window end for a session:
- * assigned shift end + 4h grace when the pass has shift timings,
+ * gate entry + totalHours + 4h grace when the pass has shift total hours,
+ * legacy shift end + 4h grace when clock times exist,
  * otherwise stored validUntil, otherwise gateEntryAt + 24h.
  */
 export function resolvePassSessionEnd(pass) {
@@ -48,6 +51,11 @@ export function resolvePassSessionEnd(pass) {
   const entryAt = entryRaw ? new Date(entryRaw) : null;
   const entryTime =
     entryAt && !Number.isNaN(entryAt.getTime()) ? entryAt.getTime() : null;
+
+  const totalHours = Number(payload.totalHours);
+  if (Number.isFinite(totalHours) && totalHours > 0 && entryTime) {
+    return new Date(entryTime + totalHours * 60 * 60 * 1000 + SHIFT_OVERSTAY_GRACE_MS);
+  }
 
   const validDate = pass.validDate || payload.validDate || null;
   const shiftEnd = shiftEndAtIst(validDate, payload.shiftStartTime, payload.shiftEndTime);
@@ -215,6 +223,7 @@ export function getPassSessionState(pass) {
       departmentVisits: [],
       shiftId: null,
       shiftName: null,
+      totalHours: null,
       shiftStartTime: null,
       shiftEndTime: null,
       halfDayMinHours: null,
@@ -231,6 +240,7 @@ export function getPassSessionState(pass) {
     gateExitAt: payload.gateExitAt || null,
     shiftId: payload.shiftId || null,
     shiftName: payload.shiftName || null,
+    totalHours: payload.totalHours ?? null,
     shiftStartTime: payload.shiftStartTime || null,
     shiftEndTime: payload.shiftEndTime || null,
     halfDayMinHours: payload.halfDayMinHours ?? null,
@@ -711,7 +721,43 @@ export async function createOrRefreshDayPass({
 }) {
   const now = new Date();
   const validDate = todayDateString(now);
-  const validUntil = resolveDayPassValidUntil({ entryAt: now, fallbackDate: now });
+
+  // Resolve shift from registration (assigned at registration time)
+  let shiftSnapshot = null;
+  const regShiftId = registration.shiftId?._id || registration.shiftId || null;
+  if (regShiftId) {
+    try {
+      let shiftDoc = registration.shiftId;
+      const populatedHours = getShiftDurationHours(shiftDoc);
+      // Prefer populated doc when hours resolve; otherwise load live Shift
+      // (covers legacy docs that still only have start/end).
+      if (!shiftDoc?.name || !(populatedHours > 0)) {
+        shiftDoc = await Shift.findById(regShiftId).lean();
+      } else if (shiftDoc.toObject) {
+        shiftDoc = shiftDoc.toObject();
+      }
+      if (shiftDoc) {
+        const totalHours = getShiftDurationHours(shiftDoc);
+        if (totalHours > 0) {
+          shiftSnapshot = {
+            shiftId: String(shiftDoc._id || regShiftId),
+            shiftName: shiftDoc.name || '',
+            totalHours,
+            halfDayMinHours: shiftDoc.halfDayMinHours ?? null,
+            fullDayMinHours: shiftDoc.fullDayMinHours ?? null,
+          };
+        }
+      }
+    } catch {
+      // continue without shift snapshot
+    }
+  }
+
+  const validUntil = resolveDayPassValidUntil({
+    entryAt: now,
+    fallbackDate: now,
+    totalHours: shiftSnapshot?.totalHours ?? null,
+  });
 
   const existing = await getActiveDayPass(registration._id, divisionId);
   if (existing) {
@@ -738,8 +784,8 @@ export async function createOrRefreshDayPass({
 
   // Also close any stale passes from OTHER divisions whose session window has
   // already expired. These accumulate when a person entered a different division
-  // days ago and never exited — the session window (shiftEnd+4h or entry+24h)
-  // has long passed so they are genuinely no longer active.
+  // days ago and never exited — the session window has long passed so they are
+  // genuinely no longer active.
   const now2 = new Date();
   const staleOtherDivision = await Pass.find({
     registrationId: registration._id,
@@ -785,7 +831,33 @@ export async function createOrRefreshDayPass({
     currentDepartmentId: null,
     currentDepartmentName: null,
     departmentVisits: [],
+    ...(shiftSnapshot
+      ? {
+          shiftId: shiftSnapshot.shiftId,
+          shiftName: shiftSnapshot.shiftName,
+          totalHours: shiftSnapshot.totalHours,
+          halfDayMinHours: shiftSnapshot.halfDayMinHours,
+          fullDayMinHours: shiftSnapshot.fullDayMinHours,
+        }
+      : {}),
   };
+
+  // Stamp shift onto the gate entry log when available
+  if (shiftSnapshot && gateLogId) {
+    try {
+      await GateLog.findByIdAndUpdate(gateLogId, {
+        $set: {
+          'metadata.shiftId': shiftSnapshot.shiftId,
+          'metadata.shiftName': shiftSnapshot.shiftName,
+          'metadata.totalHours': shiftSnapshot.totalHours,
+          'metadata.halfDayMinHours': shiftSnapshot.halfDayMinHours,
+          'metadata.fullDayMinHours': shiftSnapshot.fullDayMinHours,
+        },
+      });
+    } catch {
+      // non-fatal
+    }
+  }
 
   const pass = await Pass.create({
     passCode,

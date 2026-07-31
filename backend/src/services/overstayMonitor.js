@@ -8,10 +8,10 @@ import { resolvePassSessionEnd } from './attendanceService.js';
 import { isPushConfigured, notifyDivisionAdmins } from './pushService.js';
 
 /**
- * Find open SHIFT gate sessions whose working window (shift end + 4h grace)
- * has expired and push ONE aggregated alert per division to its admins —
- * a count with a per-shift breakdown, never individual worker names, so a
- * busy gate doesn't flood admins with dozens of notifications.
+ * Find open SHIFT gate sessions whose working window (entry + totalHours + 4h grace,
+ * or legacy shift end + 4h grace) has expired and push ONE aggregated alert per
+ * division to its admins — a count with a per-shift breakdown, never individual
+ * worker names, so a busy gate doesn't flood admins with dozens of notifications.
  *
  * Sessions without an assigned shift are ignored on purpose: only shift
  * workers have a defined working window worth alerting on.
@@ -26,8 +26,11 @@ export async function checkOverstayedSessions() {
     passType: PASS_TYPES.DAY_PASS,
     isActive: true,
     'qrPayload.divisionInside': true,
-    // Shift sessions only — a shift end time is what defines the working window
-    'qrPayload.shiftEndTime': { $exists: true, $nin: [null, ''] },
+    // Shift sessions only — totalHours or legacy end time defines the window
+    $or: [
+      { 'qrPayload.totalHours': { $exists: true, $ne: null, $gt: 0 } },
+      { 'qrPayload.shiftEndTime': { $exists: true, $nin: [null, ''] } },
+    ],
   });
 
   // Group the expired sessions per division

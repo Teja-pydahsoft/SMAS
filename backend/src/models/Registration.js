@@ -5,6 +5,8 @@ const registrationSchema = new mongoose.Schema(
   {
     roleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Role', required: true },
     formId: { type: mongoose.Schema.Types.ObjectId, ref: 'RegistrationForm', required: true },
+    /** Assigned when role.isShiftBased — used for day-pass working hours & attendance. */
+    shiftId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shift', default: null },
     formData: { type: mongoose.Schema.Types.Mixed, default: {} },
     currentStage: {
       type: String,

@@ -6,6 +6,7 @@ import Registration from '../models/Registration.js';
 import Pass from '../models/Pass.js';
 import RegistrationForm from '../models/RegistrationForm.js';
 import Role from '../models/Role.js';
+import Shift from '../models/Shift.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { REGISTRATION_STAGES, REGISTRATION_STATUS, GENDERS, GENDER_LABELS } from '../constants/index.js';
 import { extractFaceEmbedding, searchFaceEmbeddings } from '../services/aiClient.js';
@@ -25,6 +26,8 @@ import {
   deleteStoredMedia,
 } from '../services/objectStorage.js';
 import { generateRegistrationCode, shouldAssignRegistrationCode, syncPassRegistrationCode, isLegacySamsCode, buildRegistrationCodePrefix } from '../utils/registrationCode.js';
+import { getShiftDurationHours } from '../utils/shiftAttendance.js';
+import mongoose from 'mongoose';
 
 const router = Router();
 
@@ -164,6 +167,33 @@ function applyGender(registration, role, gender) {
   return null;
 }
 
+async function validateShiftAssignment(role, shiftId) {
+  if (!role?.isShiftBased) return null;
+  if (!shiftId || !mongoose.Types.ObjectId.isValid(shiftId)) {
+    return 'Shift is required for this role';
+  }
+  const shift = await Shift.findById(shiftId);
+  if (!shift || !shift.isActive) {
+    return 'Selected shift is not available';
+  }
+  const total = getShiftDurationHours(shift);
+  if (total == null || total <= 0) {
+    return 'Selected shift has no total hours configured';
+  }
+  return null;
+}
+
+async function applyShiftAssignment(registration, role, shiftId) {
+  if (!role?.isShiftBased) {
+    registration.shiftId = null;
+    return null;
+  }
+  const error = await validateShiftAssignment(role, shiftId);
+  if (error) return error;
+  registration.shiftId = shiftId;
+  return null;
+}
+
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -226,7 +256,8 @@ router.get(
 
     const query = Registration.find(filter)
       .select('-faceEmbedding')
-      .populate('roleId', 'name slug payFrequencies customPayDaysOptions')
+      .populate('roleId', 'name slug payFrequencies customPayDaysOptions isShiftBased')
+      .populate('shiftId', 'name totalHours halfDayMinHours fullDayMinHours startTime endTime isActive')
       .populate('formId', 'fields')
       .sort({ createdAt: -1 });
 
@@ -310,7 +341,8 @@ router.get(
   asyncHandler(async (req, res) => {
     const registration = await Registration.findById(req.params.id)
       .select('-faceEmbedding')
-      .populate('roleId', 'name slug payFrequencies customPayDaysOptions')
+      .populate('roleId', 'name slug payFrequencies customPayDaysOptions isShiftBased')
+      .populate('shiftId', 'name totalHours halfDayMinHours fullDayMinHours startTime endTime isActive')
       .populate('formId', 'fields');
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
     const obj = registration.toObject();
@@ -509,7 +541,7 @@ router.get(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { roleId, formData, payFrequency, customPayDays, payAmount, gender } = req.body;
+    const { roleId, formData, payFrequency, customPayDays, payAmount, gender, shiftId } = req.body;
 
     const role = await Role.findById(roleId);
     if (!role) return res.status(404).json({ error: 'Role not found' });
@@ -529,10 +561,14 @@ router.post(
     const genderError = validateGender(role, gender);
     if (genderError) return res.status(400).json({ error: genderError });
 
+    const shiftError = await validateShiftAssignment(role, shiftId);
+    if (shiftError) return res.status(400).json({ error: shiftError });
+
     const registration = await Registration.create({
       roleId,
       formId: form._id,
       formData: formData || {},
+      shiftId: role.isShiftBased ? shiftId : null,
       payFrequency: role.payFrequencies?.length ? payFrequency : null,
       customPayDays:
         role.payFrequencies?.length && payFrequency === 'custom_days' ? Number(customPayDays) : null,
@@ -571,6 +607,9 @@ router.put(
 
     const genderError = applyGender(registration, role, req.body.gender);
     if (genderError) return res.status(400).json({ error: genderError });
+
+    const shiftError = await applyShiftAssignment(registration, role, req.body.shiftId);
+    if (shiftError) return res.status(400).json({ error: shiftError });
 
     registration.formData = req.body.formData;
 
@@ -791,7 +830,8 @@ router.post(
     await registration.save();
 
     const updated = await Registration.findById(registration._id)
-      .populate('roleId', 'name slug payFrequencies customPayDaysOptions')
+      .populate('roleId', 'name slug payFrequencies customPayDaysOptions isShiftBased')
+      .populate('shiftId', 'name totalHours halfDayMinHours fullDayMinHours startTime endTime isActive')
       .populate('formId', 'fields');
     const obj = updated.toObject();
     const enriched = enrichRegistrationResponse(obj, obj.formId?.fields || []);

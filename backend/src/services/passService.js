@@ -87,7 +87,8 @@ export async function buildQrDataUrl(passCode) {
 async function loadRegistrationContext(registrationId) {
   const registration = await Registration.findById(registrationId)
     .select('-faceEmbedding')
-    .populate('roleId', 'name slug')
+    .populate('roleId', 'name slug isShiftBased')
+    .populate('shiftId', 'name totalHours halfDayMinHours fullDayMinHours startTime endTime isActive')
     .populate('formId', 'fields');
 
   if (!registration) throw new Error('Registration not found');
@@ -110,8 +111,8 @@ async function loadRegistrationContext(registrationId) {
 export { loadRegistrationContext };
 
 /**
- * Expected out for display: shift end in IST when known,
- * otherwise the 24h access window from gate check-in.
+ * Expected out for display: entry + totalHours when known,
+ * legacy shift end in IST, otherwise the 24h access window from gate check-in.
  * Actual checkout keeps stored validUntil.
  */
 async function resolveDisplayValidUntil(pass) {
@@ -122,14 +123,21 @@ async function resolveDisplayValidUntil(pass) {
     return pass.validUntil || null;
   }
 
+  let totalHours = pass.qrPayload?.totalHours ?? null;
   let startTime = pass.qrPayload?.shiftStartTime || '';
   let endTime = pass.qrPayload?.shiftEndTime || '';
   const shiftId = pass.qrPayload?.shiftId;
 
-  if ((!endTime || !startTime) && shiftId) {
+  if ((totalHours == null || !startTime || !endTime) && shiftId) {
     try {
-      const shift = await Shift.findById(shiftId).select('startTime endTime').lean();
+      const shift = await Shift.findById(shiftId)
+        .select('totalHours startTime endTime')
+        .lean();
       if (shift) {
+        if (totalHours == null) {
+          const direct = Number(shift.totalHours);
+          totalHours = Number.isFinite(direct) && direct > 0 ? direct : null;
+        }
         startTime = startTime || shift.startTime || '';
         endTime = endTime || shift.endTime || '';
       }
@@ -138,12 +146,22 @@ async function resolveDisplayValidUntil(pass) {
     }
   }
 
+  const entryAt =
+    pass.qrPayload?.gateEntryAt || pass.validFrom || pass.createdAt || null;
+
+  const fromTotal = resolveDayPassValidUntil({
+    entryAt,
+    fallbackDate: new Date(),
+    totalHours,
+  });
+  if (Number.isFinite(Number(totalHours)) && Number(totalHours) > 0) {
+    return fromTotal;
+  }
+
   const validDate = pass.validDate || pass.qrPayload?.validDate || todayDateString();
   const fromShift = shiftEndAtIst(validDate, startTime, endTime);
   if (fromShift) return fromShift;
 
-  const entryAt =
-    pass.qrPayload?.gateEntryAt || pass.validFrom || pass.createdAt || null;
   return resolveDayPassValidUntil({
     entryAt,
     fallbackDate: new Date(),

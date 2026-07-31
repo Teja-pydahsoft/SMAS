@@ -143,18 +143,10 @@ function timeToMinutes(value) {
   return hours * 60 + minutes;
 }
 
-function dateToDayMinutes(value) {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
-}
-
 /**
- * Total shift duration in hours from start/end (HH:mm).
- * Overnight windows (end <= start) wrap past midnight.
+ * Duration from legacy start/end (HH:mm). Overnight windows wrap past midnight.
  */
-export function getShiftDurationHours(startTime, endTime) {
+export function durationFromStartEnd(startTime, endTime) {
   const start = timeToMinutes(startTime);
   const end = timeToMinutes(endTime);
   if (start === null || end === null) return null;
@@ -164,80 +156,36 @@ export function getShiftDurationHours(startTime, endTime) {
   return roundHours(durationMinutes / 60);
 }
 
-function roundHours(hours) {
-  return Math.round(Number(hours) * 100) / 100;
-}
-
-function intervalOverlapMinutes(aStart, aEnd, bStart, bEnd) {
-  const start = Math.max(aStart, bStart);
-  const end = Math.min(aEnd, bEnd);
-  return Math.max(0, end - start);
-}
-
 /**
- * Split shift into first/second half and measure overlap with login→logout activity.
- * Late login and early logout reduce overlap with the missed half automatically.
- *
- * @returns {{ half: 'first'|'second', firstOverlapHours: number, secondOverlapHours: number, inShiftHours: number }|null}
+ * Resolve shift total hours from `totalHours`, with legacy start/end fallback.
+ * Accepts a shift-like object, or legacy (startTime, endTime) args.
  */
-export function resolveNearestHalf({
-  checkIn,
-  checkOut,
-  startTime,
-  endTime,
-} = {}) {
-  const shiftStart = timeToMinutes(startTime);
-  const shiftEnd = timeToMinutes(endTime);
-  let actStart = dateToDayMinutes(checkIn);
-  let actEnd = dateToDayMinutes(checkOut);
+export function getShiftDurationHours(shiftOrStart, endTime) {
+  if (shiftOrStart != null && typeof shiftOrStart === 'object') {
+    const direct = Number(shiftOrStart.totalHours);
+    if (Number.isFinite(direct) && direct > 0) return roundHours(direct);
+    return durationFromStartEnd(
+      shiftOrStart.startTime || shiftOrStart.shiftStartTime,
+      shiftOrStart.endTime || shiftOrStart.shiftEndTime
+    );
+  }
 
-  if (shiftStart === null || shiftEnd === null || actStart === null || actEnd === null) {
+  if (
+    typeof shiftOrStart === 'number' ||
+    (typeof shiftOrStart === 'string' &&
+      endTime === undefined &&
+      !String(shiftOrStart).includes(':'))
+  ) {
+    const direct = Number(shiftOrStart);
+    if (Number.isFinite(direct) && direct > 0) return roundHours(direct);
     return null;
   }
 
-  let shiftEndAbs = shiftEnd;
-  if (shiftEndAbs <= shiftStart) shiftEndAbs += 24 * 60;
+  return durationFromStartEnd(shiftOrStart, endTime);
+}
 
-  // Activity that crosses midnight
-  if (actEnd < actStart) actEnd += 24 * 60;
-
-  // Late login / early logout: clip presence to the shift window
-  const clipStart = Math.max(actStart, shiftStart);
-  const clipEnd = Math.min(actEnd, shiftEndAbs);
-  if (clipEnd <= clipStart) {
-    // Completely outside shift — fall back to login proximity to midpoint
-    const duration = shiftEndAbs - shiftStart;
-    const mid = shiftStart + duration / 2;
-    const login = actStart < shiftStart ? shiftStart : actStart > shiftEndAbs ? shiftEndAbs : actStart;
-    return {
-      half: login < mid ? 'first' : 'second',
-      firstOverlapHours: 0,
-      secondOverlapHours: 0,
-      inShiftHours: 0,
-    };
-  }
-
-  const duration = shiftEndAbs - shiftStart;
-  const mid = shiftStart + duration / 2;
-
-  const firstOverlap = intervalOverlapMinutes(clipStart, clipEnd, shiftStart, mid);
-  const secondOverlap = intervalOverlapMinutes(clipStart, clipEnd, mid, shiftEndAbs);
-
-  let half;
-  if (firstOverlap > secondOverlap) half = 'first';
-  else if (secondOverlap > firstOverlap) half = 'second';
-  else {
-    // Tie (or both zero after clip weirdness): use activity mid-point / login side
-    const activityMid = (clipStart + clipEnd) / 2;
-    half = activityMid < mid ? 'first' : 'second';
-  }
-
-  return {
-    half,
-    firstOverlapHours: roundHours(firstOverlap / 60),
-    secondOverlapHours: roundHours(secondOverlap / 60),
-    inShiftHours: roundHours((clipEnd - clipStart) / 60),
-  };
+function roundHours(hours) {
+  return Math.round(Number(hours) * 100) / 100;
 }
 
 /**
@@ -252,16 +200,14 @@ export function computeHourlyPayFactor(activityHours, shiftTotalHours) {
 }
 
 /**
- * Resolve attendance against shift thresholds with first/second half logic.
- * Late login + early logout are evaluated via login→logout overlap with each half;
- * nearest half wins for FH/SH labeling.
+ * Resolve attendance against shift thresholds using sum of gate in→out segments.
  *
  * Pay rules:
  * - Full-day threshold met → full day pay (1)
- * - Half-day threshold met → half day pay (0.5)
- * - Below half-day but on site → hourly proration only
+ * - Half-day threshold met → half day pay (0.5) as HD
+ * - Below half-day but on site → hourly proration vs totalHours
  */
-export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, checkOut = null } = {}) {
+export function resolveShiftDayStatus(activityHours, shift) {
   if (!shift) return null;
 
   const half =
@@ -289,21 +235,10 @@ export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, ch
     };
   }
 
-  const shiftTotalHours = getShiftDurationHours(shift.startTime, shift.endTime);
+  const shiftTotalHours = getShiftDurationHours(shift);
   const payDenominator =
     shiftTotalHours ?? (hasFull ? full : hasHalf ? roundHours(half * 2) : null);
   const hoursLabel = formatActivityHours(hours);
-
-  const nearest = resolveNearestHalf({
-    checkIn,
-    checkOut,
-    startTime: shift.startTime,
-    endTime: shift.endTime,
-  });
-  const halfSide = nearest?.half || null;
-  const halfLabel =
-    halfSide === 'first' ? 'First Half' : halfSide === 'second' ? 'Second Half' : 'Partial Day';
-  const halfCode = halfSide === 'first' ? 'FH' : halfSide === 'second' ? 'SH' : 'HD';
 
   if (hasFull && hours >= full) {
     return {
@@ -312,22 +247,16 @@ export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, ch
       label: 'Present (Full Day)',
       payFactor: 1,
       halfSide: null,
-      firstOverlapHours: nearest?.firstOverlapHours ?? null,
-      secondOverlapHours: nearest?.secondOverlapHours ?? null,
-      inShiftHours: nearest?.inShiftHours ?? null,
     };
   }
 
   if (hasHalf && hours >= half) {
     return {
-      status: halfCode,
-      code: halfCode,
-      label: `${halfLabel} (${hoursLabel}h)`,
+      status: 'HD',
+      code: 'HD',
+      label: `Half Day (${hoursLabel}h)`,
       payFactor: 0.5,
-      halfSide,
-      firstOverlapHours: nearest?.firstOverlapHours ?? null,
-      secondOverlapHours: nearest?.secondOverlapHours ?? null,
-      inShiftHours: nearest?.inShiftHours ?? null,
+      halfSide: null,
     };
   }
 
@@ -336,14 +265,9 @@ export function resolveShiftDayStatus(activityHours, shift, { checkIn = null, ch
   return {
     status: 'PT',
     code: 'PT',
-    label: halfSide
-      ? `Hours Worked · ${halfLabel} (${hoursLabel}h)`
-      : `Hours Worked (${hoursLabel}h)`,
+    label: `Hours Worked (${hoursLabel}h)`,
     payFactor: hourlyPayFactor,
-    halfSide,
-    firstOverlapHours: nearest?.firstOverlapHours ?? null,
-    secondOverlapHours: nearest?.secondOverlapHours ?? null,
-    inShiftHours: nearest?.inShiftHours ?? null,
+    halfSide: null,
   };
 }
 

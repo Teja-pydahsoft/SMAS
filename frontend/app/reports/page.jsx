@@ -6,7 +6,7 @@ import { api } from '@/lib/api/client';
 import { formatDate, formatDateTime, todayDateStringIst } from '@/lib/formatDate';
 import { formatCurrency, PAY_FREQUENCY_LABELS, PAY_FREQUENCIES } from '@/lib/payFrequency';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
-import { formatShiftWindow } from '@/lib/shiftTiming';
+import { formatShiftWindow, formatDurationHours } from '@/lib/shiftTiming';
 import PassCard from '@/components/PassCard';
 import { useAuth } from '@/components/AuthProvider';
 
@@ -826,7 +826,10 @@ function PeriodDaySessionsTable({
             const hoursLabel = formatCellHours(day.activityHours) || '—';
             const breakLabel = formatCellHours(day.breakHours) || '—';
             const earned = dayEarnedAmount(day, rate);
-            const shiftWindow = formatShiftWindow(day.shiftStartTime, day.shiftEndTime);
+            const shiftWindow =
+              day.shiftTotalHours != null
+                ? `${formatDurationHours(day.shiftTotalHours)}h`
+                : formatShiftWindow(day.shiftStartTime, day.shiftEndTime);
             const breakSegments = Array.isArray(day.breaks) ? day.breaks : [];
             const overnight = isOvernightDay(day);
 
@@ -1179,7 +1182,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                         <span className="rc-person-profile__stat-label">Last Activity</span>
                         <span className="rc-person-profile__stat-value">{formatDateTime(details.lastScanAt)}</span>
                       </div>
-                      {(details.shiftName || details.shiftStartTime || details.shiftEndTime) && (
+                      {(details.shiftName || details.shiftTotalHours != null || details.shiftStartTime || details.shiftEndTime) && (
                         <>
                           {details.shiftName && (
                             <div className="rc-person-profile__stat">
@@ -1187,11 +1190,13 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                               <span className="rc-person-profile__stat-value">{details.shiftName}</span>
                             </div>
                           )}
-                          {(details.shiftStartTime || details.shiftEndTime) && (
+                          {(details.shiftTotalHours != null || details.shiftStartTime || details.shiftEndTime) && (
                             <div className="rc-person-profile__stat">
-                              <span className="rc-person-profile__stat-label">Shift Timing</span>
+                              <span className="rc-person-profile__stat-label">Working Hours</span>
                               <span className="rc-person-profile__stat-value">
-                                {formatShiftWindow(details.shiftStartTime, details.shiftEndTime) || '—'}
+                                {details.shiftTotalHours != null
+                                  ? `${formatDurationHours(details.shiftTotalHours)}h`
+                                  : formatShiftWindow(details.shiftStartTime, details.shiftEndTime) || '—'}
                               </span>
                             </div>
                           )}
@@ -1251,14 +1256,16 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                           <span className="rc-person-profile__stat-value">{details.shiftName}</span>
                         </div>
                       )}
-                      {(details.shiftStartTime || details.shiftEndTime || session?.shiftStartTime || session?.shiftEndTime) && (
+                      {(details.shiftTotalHours != null || details.shiftStartTime || details.shiftEndTime || session?.totalHours != null || session?.shiftStartTime || session?.shiftEndTime) && (
                         <div className="rc-person-profile__stat">
-                          <span className="rc-person-profile__stat-label">Shift Timing</span>
+                          <span className="rc-person-profile__stat-label">Working Hours</span>
                           <span className="rc-person-profile__stat-value">
-                            {formatShiftWindow(
-                              details.shiftStartTime || session?.shiftStartTime,
-                              details.shiftEndTime || session?.shiftEndTime
-                            ) || '—'}
+                            {(details.shiftTotalHours ?? session?.totalHours) != null
+                              ? `${formatDurationHours(details.shiftTotalHours ?? session.totalHours)}h`
+                              : formatShiftWindow(
+                                  details.shiftStartTime || session?.shiftStartTime,
+                                  details.shiftEndTime || session?.shiftEndTime
+                                ) || '—'}
                           </span>
                         </div>
                       )}
@@ -1367,8 +1374,11 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                     { label: 'Divisions Visited', value: (details.divisionsVisited || []).join(', ') || '—' },
                     { label: 'Shift', value: details.shiftName || '—' },
                     {
-                      label: 'Shift Timing',
-                      value: formatShiftWindow(details.shiftStartTime, details.shiftEndTime) || '—',
+                      label: 'Working Hours',
+                      value:
+                        details.shiftTotalHours != null
+                          ? `${formatDurationHours(details.shiftTotalHours)}h`
+                          : formatShiftWindow(details.shiftStartTime, details.shiftEndTime) || '—',
                     },
                     { label: 'Pay Frequency', value: details.payFrequencyLabel || '—' },
                     { label: 'Gender', value: details.genderLabel || '—' },
@@ -2457,7 +2467,7 @@ function AttendanceCell({ day, onSelect }) {
 
   if (day.status === 'HD' || day.status === 'FH' || day.status === 'SH') {
     const halfLabel =
-      day.status === 'FH' ? 'First Half' : day.status === 'SH' ? 'Second Half' : 'Partial Day';
+      day.status === 'FH' ? 'First Half' : day.status === 'SH' ? 'Second Half' : 'Half Day';
     return (
       <td className={cls} aria-label={`${halfLabel}${hoursLabel ? `, ${hoursLabel}` : ''}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
@@ -2606,18 +2616,18 @@ function AttendanceDayDialog({ employee, day, onClose }) {
                     <span className="rc-att-day-detail__value">{day.shiftName}</span>
                   </div>
                 )}
-                {(day.shiftStartTime || day.shiftEndTime) && (
+                {day.shiftTotalHours != null && (
+                  <div className="rc-att-day-detail__item">
+                    <span className="rc-att-day-detail__label">Working Hours</span>
+                    <span className="rc-att-day-detail__value">{day.shiftTotalHours}h</span>
+                  </div>
+                )}
+                {(day.shiftStartTime || day.shiftEndTime) && day.shiftTotalHours == null && (
                   <div className="rc-att-day-detail__item">
                     <span className="rc-att-day-detail__label">Shift Timing</span>
                     <span className="rc-att-day-detail__value">
                       {formatShiftWindow(day.shiftStartTime, day.shiftEndTime) || '—'}
                     </span>
-                  </div>
-                )}
-                {day.shiftTotalHours != null && (
-                  <div className="rc-att-day-detail__item">
-                    <span className="rc-att-day-detail__label">Shift Total Hours</span>
-                    <span className="rc-att-day-detail__value">{day.shiftTotalHours}h</span>
                   </div>
                 )}
                 {(day.halfDayMinHours != null || day.fullDayMinHours != null) && (

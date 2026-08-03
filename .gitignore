@@ -1,4 +1,8 @@
-# Dependencies
+# =============================================================================
+# SAMS — .gitignore
+# =============================================================================
+
+# ─── Node ────────────────────────────────────────────────────────────────────
 node_modules/
 __pycache__/
 *.py[cod]
@@ -6,33 +10,60 @@ __pycache__/
 venv/
 env/
 
-# Environment
+# ─── Environment (NEVER commit real secrets) ──────────────────────────────────
 .env
 .env.local
 .env.*.local
 
-# Build
+# ─── Next.js / Vite build output ─────────────────────────────────────────────
+.next/
 dist/
 build/
+out/
 *.egg-info/
 
-# Uploads & temp
+# ─── .NET build artifacts ─────────────────────────────────────────────────────
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+*.cache
+
+# ─── Windows Agent publish and installer outputs ──────────────────────────────
+sams-agent/installer/publish/
+sams-agent/installer/output/
+sams-agent/installer/*.zip
+
+# ─── Binary artifacts (never commit compiled binaries) ────────────────────────
+*.exe
+*.dll
+*.pdb
+*.sha256
+
+# ─── Uploads, temp, logs ──────────────────────────────────────────────────────
 uploads/
 temp/
 *.log
 
-# IDE
+# ─── IDE ──────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS
+# ─── AI tool workspace (local only) ───────────────────────────────────────────
+.kiro/
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# MongoDB data (local)
+# ─── MongoDB local data ───────────────────────────────────────────────────────
 data/
 
-# Hugging Face Space push temp clone (never commit)
+# ─── Hugging Face Space push temp clone (never commit) ───────────────────────
 _hf-space-temp/
+
+# ─── Pydah SAMS (separate workspace, not part of this repo) ──────────────────
+pydah-sams/

@@ -58,6 +58,8 @@ export function resolvePhotoUrl(photoPath) {
     relativePath = `/uploads/gate/${filename}`;
   } else if (normalized.includes('/activity/') || normalized.startsWith('/uploads/activity/')) {
     relativePath = `/uploads/activity/${filename}`;
+  } else if (normalized.includes('/projects/') || normalized.startsWith('/uploads/projects/')) {
+    relativePath = `/uploads/projects/${filename}`;
   } else if (normalized.includes('/registrations-media/')) {
     relativePath = `/uploads/registrations-media/${filename}`;
   } else if (normalized.startsWith('/uploads/')) {

@@ -56,6 +56,15 @@ function addCalendarDaysIst(dateStr, daysToAdd) {
   return todayDateStringIst(base);
 }
 
+/** Public alias: add N calendar days to an IST YYYY-MM-DD date string. */
+export function addDaysIst(dateStr, daysToAdd) {
+  const normalized =
+    typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+      ? dateStr
+      : todayDateStringIst(dateStr);
+  return addCalendarDaysIst(normalized, daysToAdd);
+}
+
 /**
  * Instant for shift end on an IST work date (legacy clock-window shifts).
  * Overnight shifts (endTime <= startTime) land on the next IST calendar day.

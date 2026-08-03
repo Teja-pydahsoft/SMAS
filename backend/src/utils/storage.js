@@ -16,7 +16,7 @@ function useRemoteObjectStorage() {
 export function ensureUploadDirs() {
   // Only create local dirs if remote object storage is NOT configured (local fallback)
   if (useRemoteObjectStorage()) return;
-  const dirs = ['registrations', 'registrations-media', 'gate', 'activity'].map((sub) => path.join(uploadDir, sub));
+  const dirs = ['registrations', 'registrations-media', 'gate', 'activity', 'projects'].map((sub) => path.join(uploadDir, sub));
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });

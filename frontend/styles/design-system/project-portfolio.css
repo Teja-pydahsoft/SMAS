@@ -1,0 +1,585 @@
+/* ═══════════════════════════════════════════════════════════════
+   SAMS Design System — Project Portfolio Dashboard
+════════════════════════════════════════════════════════════════ */
+
+.pp-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+/* ── Summary KPIs ── */
+.pp-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.pp-kpi {
+  background: var(--surface-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 1rem 1.1rem 0.95rem;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow var(--transition-medium), transform var(--transition-medium);
+}
+
+.pp-kpi::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+.pp-kpi--primary::before { background: linear-gradient(90deg, var(--color-secondary), var(--color-primary)); }
+.pp-kpi--success::before { background: linear-gradient(90deg, #34D399, #10B981); }
+.pp-kpi--info::before { background: linear-gradient(90deg, #93C5FD, var(--color-primary)); }
+.pp-kpi--warning::before { background: linear-gradient(90deg, #FCD34D, #F59E0B); }
+.pp-kpi--accent::before { background: linear-gradient(90deg, #A78BFA, #6366F1); }
+.pp-kpi--teal::before { background: linear-gradient(90deg, #5EEAD4, #14B8A6); }
+
+.pp-kpi:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+.pp-kpi__label {
+  font-size: var(--text-12);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+  line-height: 1.3;
+}
+
+.pp-kpi__value {
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+/* ── Toolbar shell ── */
+.pp-toolbar-card {
+  background: var(--surface-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  padding: 0.95rem 1.1rem 1.05rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pp-toolbar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.pp-chip {
+  appearance: none;
+  border: 1px solid var(--border-color);
+  background: var(--surface-muted, var(--surface-base));
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: 600;
+  font-family: var(--font-family);
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.pp-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.pp-chip.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.pp-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-muted, #f8fafc);
+}
+
+.pp-view-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-12);
+  font-weight: 650;
+  font-family: var(--font-family);
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: background var(--transition), color var(--transition);
+}
+
+.pp-view-btn.is-active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.pp-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(5, minmax(120px, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.pp-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.pp-filter-field label {
+  font-size: var(--text-11);
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted, var(--text-secondary));
+}
+
+.pp-filter-field input,
+.pp-filter-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.pp-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.pp-results-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pp-results-meta h3 {
+  margin: 0;
+  font-size: var(--text-16);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.pp-results-meta p {
+  margin: 0;
+  font-size: var(--text-13);
+  color: var(--text-secondary);
+}
+
+/* ── Portfolio cards ── */
+.pp-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pp-card {
+  background: var(--surface-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  padding: 1.15rem 1.25rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.55fr) minmax(220px, 0.85fr);
+  gap: 1.15rem 1.35rem;
+  align-items: stretch;
+  transition: box-shadow var(--transition-medium), border-color var(--transition);
+}
+
+.pp-card:hover {
+  box-shadow: var(--shadow-lg);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--border-color));
+}
+
+.pp-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.pp-card__title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.pp-card__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.pp-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.pp-card__scope {
+  font-size: var(--text-12);
+  color: var(--text-secondary);
+}
+
+.pp-card__created {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: auto;
+  font-size: var(--text-12);
+  color: var(--text-secondary);
+}
+
+.pp-card__created strong {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.pp-card__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem 0.85rem;
+  align-content: start;
+}
+
+.pp-metric {
+  min-width: 0;
+}
+
+.pp-metric__label {
+  font-size: var(--text-11);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.2rem;
+}
+
+.pp-metric__value {
+  font-size: var(--text-15);
+  font-weight: 750;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-progress {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.pp-progress__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: var(--text-12);
+  color: var(--text-secondary);
+}
+
+.pp-progress__header strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-progress__track {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-muted, #eef2f7);
+  overflow: hidden;
+}
+
+.pp-progress__fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, var(--color-secondary), var(--color-primary));
+  transition: width 0.35s ease;
+}
+
+.pp-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  justify-content: space-between;
+  border-left: 1px solid var(--border-color);
+  padding-left: 1.1rem;
+}
+
+.pp-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.pp-action-row .btn-secondary,
+.pp-action-row .btn-primary,
+.pp-action-row .btn-danger,
+.pp-action-row a.btn-secondary {
+  font-size: var(--text-12);
+  padding: 0.4rem 0.7rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pp-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.pp-link-row a {
+  font-size: var(--text-12);
+  font-weight: 650;
+  color: var(--color-primary);
+  text-decoration: none;
+  padding: 0.35rem 0.55rem;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--border-color));
+  background: var(--color-primary-subtle);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.pp-link-row a:hover {
+  background: color-mix(in srgb, var(--color-primary) 12%, white);
+  border-color: var(--color-primary);
+}
+
+/* ── Table view ── */
+.pp-table-wrap {
+  background: var(--surface-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  overflow: auto;
+}
+
+.pp-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1100px;
+}
+
+.pp-table th,
+.pp-table td {
+  padding: 0.85rem 0.9rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  font-size: var(--text-13);
+}
+
+.pp-table th {
+  font-size: var(--text-11);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: var(--surface-muted, #f8fafc);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+.pp-table tbody tr:hover {
+  background: color-mix(in srgb, var(--color-primary) 4%, transparent);
+}
+
+.pp-table__name {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.pp-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 220px;
+}
+
+.pp-table__actions .btn-secondary,
+.pp-table__actions .btn-danger,
+.pp-table__actions a.btn-secondary {
+  font-size: var(--text-11);
+  padding: 0.3rem 0.55rem;
+  text-decoration: none;
+}
+
+.pp-table .pp-progress {
+  min-width: 120px;
+}
+
+/* ── Modal sections ── */
+.pp-modal {
+  max-width: 720px !important;
+  width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.pp-form-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.pp-form-section {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.05rem 0.35rem;
+  background: var(--surface-muted, #f8fafc);
+}
+
+.pp-form-section__title {
+  margin: 0 0 0.85rem;
+  font-size: var(--text-13);
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+
+.pp-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 0.85rem;
+}
+
+.pp-form-grid .form-group--full {
+  grid-column: 1 / -1;
+}
+
+.pp-view-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1.1rem;
+}
+
+.pp-view-item__label {
+  font-size: var(--text-11);
+  font-weight: 650;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.2rem;
+}
+
+.pp-view-item__value {
+  font-size: var(--text-14);
+  font-weight: 650;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* ── Empty / loading ── */
+.pp-empty {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  background: var(--surface-base);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-xl);
+  color: var(--text-secondary);
+}
+
+/* ── Responsive ── */
+@media (max-width: 1280px) {
+  .pp-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .pp-filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .pp-card {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pp-card__actions {
+    grid-column: 1 / -1;
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--border-color);
+    padding-top: 0.9rem;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 768px) {
+  .pp-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pp-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pp-card {
+    grid-template-columns: 1fr;
+    padding: 1rem;
+  }
+
+  .pp-card__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pp-form-grid,
+  .pp-view-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .pp-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pp-filters {
+    grid-template-columns: 1fr;
+  }
+}

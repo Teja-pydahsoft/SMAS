@@ -139,5 +139,8 @@ export function photoUrlFromPath(photoPath) {
   if (normalized.includes('/activity/')) {
     return `/uploads/activity/${name}`;
   }
+  if (normalized.includes('/projects/')) {
+    return `/uploads/projects/${name}`;
+  }
   return `/uploads/registrations/${name}`;
 }

@@ -19,6 +19,7 @@ import { loadRegistrationContext, formatPassResponse } from '../services/passSer
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import { grantedGateLogFilter } from '../utils/gateLogFilters.js';
 import { withRegistrationScanLock } from '../utils/scanLock.js';
+import { normalizeEmbedMultiFaces } from '../utils/normalizeEmbedMultiFaces.js';
 import {
   getActiveDayPass,
   getPassSessionState,
@@ -1316,7 +1317,7 @@ router.post(
       if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
 
-    const faces = Array.isArray(facesResult?.faces) ? facesResult.faces : [];
+    const faces = normalizeEmbedMultiFaces(facesResult);
     if (!faces.length) {
       return res.json({
         facesDetected: 0,
@@ -1486,7 +1487,7 @@ router.post(
     const unmatchedCount = people.filter((p) => !p.registered).length;
 
     res.json({
-      facesDetected: faces.length,
+      facesDetected: people.length,
       matchedCount,
       unmatchedCount,
       inActivityCount: people.filter((p) => p.registered && p.inActivity).length,

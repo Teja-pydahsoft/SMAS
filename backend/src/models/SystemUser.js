@@ -20,6 +20,12 @@ const systemUserSchema = new mongoose.Schema(
      */
     gateAccessModes: { type: Map, of: String, default: () => new Map() },
     departmentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Department' }],
+    /**
+     * Permitted geographic zones for this user.
+     * Empty array = no restriction (only relevant when geoLocationEnabled is ON).
+     * Super Admins always bypass geo checks regardless of this field.
+     */
+    allowedLocationIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'GeoLocation' }],
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
   },

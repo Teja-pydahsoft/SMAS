@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+
+    <!-- Single-file self-contained executable for deployment -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
+    <!-- Trim unused framework code to reduce binary size -->
+    <PublishTrimmed>false</PublishTrimmed>
+
+    <!-- Assembly metadata -->
+    <AssemblyName>SAMSAgent</AssemblyName>
+    <RootNamespace>SAMSAgent</RootNamespace>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Description>SAMS Device Agent — hardware fingerprint service for Windows</Description>
+    <Company>SAMS</Company>
+    <Product>SAMS Device Agent</Product>
+    <Copyright>Copyright © 2026 SAMS</Copyright>
+
+    <!-- Windows Service support -->
+    <UseWindowsService>true</UseWindowsService>
+  </PropertyGroup>
+
+  <!-- WMI / CIM managed access -->
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Windows Service hosting integration -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+  </ItemGroup>
+
+  <!-- Structured logging to Windows Event Log -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.EventLog" Version="8.0.1" />
+  </ItemGroup>
+
+</Project>

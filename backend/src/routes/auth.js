@@ -6,6 +6,11 @@ import { authenticate, signToken } from '../middleware/auth.js';
 import { getUserAccessScope } from '../services/accessScopeService.js';
 import { getLoginFlow } from '../services/loginFlowService.js';
 import { userHasPermission } from '../middleware/auth.js';
+import {
+  hasPrimaryAdminDevice,
+  bootstrapApproveDevice,
+  getOrCreateSettings,
+} from '../services/deviceService.js';
 
 const router = Router();
 
@@ -74,18 +79,18 @@ router.post(
       .populate('departmentIds', '_id');   // only need IDs to check length
 
     if (!user || !user.isActive) {
-      return res.json({ flow: 'standard' });
+      return res.json({ flow: 'standard', isSuperAdmin: false });
     }
 
     if (!user.isSuperAdmin && user.systemRoleId && !user.systemRoleId.isActive) {
-      return res.json({ flow: 'standard' });
+      return res.json({ flow: 'standard', isSuperAdmin: false });
     }
 
     const flow = getLoginFlow(user);
 
     if (flow !== 'gate') {
       // Standard flow — no scope fetch needed at all
-      return res.json({ flow: 'standard', displayName: user.displayName });
+      return res.json({ flow: 'standard', displayName: user.displayName, isSuperAdmin: user.isSuperAdmin });
     }
 
     // Gate flow — now fetch full scope (only reached for gate operators)
@@ -96,14 +101,59 @@ router.post(
     );
 
     if (!hasScopeItems) {
-      return res.json({ flow: 'standard', displayName: user.displayName });
+      return res.json({ flow: 'standard', displayName: user.displayName, isSuperAdmin: user.isSuperAdmin });
     }
 
     return res.json({
       flow: 'gate',
       displayName: user.displayName,
+      isSuperAdmin: user.isSuperAdmin,
       canGateWrite: userHasPermission(fullUser, 'gate', 'write'),
       accessScope: scope,
+    });
+  })
+);
+
+// ─── /verify-location ────────────────────────────────────────────────────────
+router.post(
+  '/verify-location',
+  asyncHandler(async (req, res) => {
+    const { username, latitude, longitude, accuracy, timestamp } = req.body;
+    if (!username?.trim()) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    if (latitude === undefined || longitude === undefined) {
+      return res.status(400).json({ error: 'Latitude and longitude are required' });
+    }
+
+    const user = await SystemUser.findOne({ username: username.toLowerCase().trim() })
+      .select('isSuperAdmin displayName username allowedLocationIds isActive')
+      .populate('allowedLocationIds', '_id name latitude longitude radius isActive')
+      .lean();
+
+    if (!user || !user.isActive) {
+      // We simulate access denied to avoid user enumeration if they somehow bypass the UI
+      return res.status(403).json({ error: 'Access denied. You are outside the permitted organization location.' });
+    }
+
+    // Dynamic import to avoid circular dependencies if any, though auth.js can import from geoLocationService
+    const { verifyGeoAccess } = await import('../services/geoLocationService.js');
+    const result = await verifyGeoAccess({ user, latitude, longitude, req });
+
+    if (!result.ok) {
+      return res.status(403).json({
+        error: result.message || 'Access denied. You are outside the permitted organization location.',
+        result: result.result,
+        nearestDistance: result.nearestDistance ?? null,
+        nearestLocationName: result.nearestLocationName ?? null,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      result: result.result,
+      locationName: result.locationName ?? null,
+      distance: result.distance ?? null,
     });
   })
 );
@@ -113,7 +163,7 @@ router.post(
 router.post(
   '/login',
   asyncHandler(async (req, res) => {
-    const { username, password } = req.body;
+    const { username, password, fingerprint } = req.body;
     if (!username?.trim() || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
@@ -139,6 +189,37 @@ router.post(
 
     if (!user.isSuperAdmin && user.systemRoleId && !user.systemRoleId.isActive) {
       return res.status(403).json({ error: 'Your assigned role is inactive. Contact an administrator.' });
+    }
+
+    // ── Bootstrap: auto-approve the very first Super Admin device ────────────
+    // Only runs when Device Maintenance Mode is enabled.
+    // Conditions (ALL must be true):
+    //   1. Device Maintenance Mode is ON.
+    //   2. Authenticating user is a Super Admin.
+    //   3. A device fingerprint was supplied in the login body.
+    //   4. No approved Super Admin device exists yet (fresh installation).
+    if (user.isSuperAdmin && fingerprint) {
+      try {
+        const settings = await getOrCreateSettings('default');
+        if (settings.deviceMaintenanceEnabled) {
+          const hasPrimary = await hasPrimaryAdminDevice('default');
+          if (!hasPrimary) {
+            const bootstrapResult = await bootstrapApproveDevice({
+              fingerprint,
+              req,
+              organizationId: 'default',
+            });
+            if (bootstrapResult.ok && bootstrapResult.bootstrapped) {
+              console.log(
+                `[Bootstrap] Super Admin "${user.username}" — device auto-approved on first login.`
+              );
+            }
+          }
+        }
+      } catch (err) {
+        // Bootstrap failure must never block login — log and continue
+        console.warn('[Bootstrap] device approval failed (non-fatal):', err.message);
+      }
     }
 
     // Fire-and-forget lastLoginAt update — do NOT await, never block the response

@@ -54,7 +54,10 @@ export function AuthProvider({ children }) {
   }, [refreshUser]);
 
   const login = useCallback(async (username, password, options = {}) => {
-    const result = await api.auth.login(username, password);
+    // options.fingerprint is passed by the login page for the bootstrap flow.
+    // It is forwarded to the backend so it can auto-approve the first Super Admin
+    // device without requiring a manual approval on a fresh installation.
+    const result = await api.auth.login(username, password, options.fingerprint || null);
     if (!options.keepGateSession) {
       clearGateFlowState();
     }

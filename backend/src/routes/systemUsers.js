@@ -105,6 +105,7 @@ function serializeUser(user) {
     gateIds: user.gateIds,
     gateAccessModes: serializeGateAccessModes(user),
     departmentIds: user.departmentIds,
+    allowedLocationIds: user.allowedLocationIds,
     systemRoleId: role
       ? {
           _id: role._id,
@@ -129,6 +130,7 @@ router.get(
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType')
       .populate('departmentIds', 'name slug')
+      .populate('allowedLocationIds', 'name radius')
       .sort({ createdAt: -1 });
     res.json(users.map(serializeUser));
   })
@@ -142,7 +144,8 @@ router.get(
       .populate('systemRoleId', 'name slug isActive permissions')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType')
-      .populate('departmentIds', 'name slug');
+      .populate('departmentIds', 'name slug')
+      .populate('allowedLocationIds', 'name radius');
     if (!user) return res.status(404).json({ error: 'System user not found' });
     res.json(serializeUser(user));
   })
@@ -204,7 +207,8 @@ router.post(
       .populate('systemRoleId', 'name slug')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType')
-      .populate('departmentIds', 'name slug');
+      .populate('departmentIds', 'name slug')
+      .populate('allowedLocationIds', 'name radius');
 
     res.status(201).json(serializeUser(populated));
   })
@@ -283,7 +287,8 @@ router.put(
       .populate('systemRoleId', 'name slug permissions')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType')
-      .populate('departmentIds', 'name slug');
+      .populate('departmentIds', 'name slug')
+      .populate('allowedLocationIds', 'name radius');
 
     invalidateUserCache(user._id);
     res.json(serializeUser(updated));

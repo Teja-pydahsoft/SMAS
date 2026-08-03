@@ -54,6 +54,13 @@ const PUBLIC_API_ROUTES = [
   { method: 'GET',  prefix: '/api/registrations/' },
   { method: 'PUT',  prefix: '/api/registrations/' },
   { method: 'POST', prefix: '/api/registrations/' },
+  // Device binding — called before login, no token available
+  { method: 'POST', path: '/api/devices/register' },
+  { method: 'POST', path: '/api/devices/validate' },
+  { method: 'GET',  path: '/api/devices/settings/public' },
+  // Geo Location
+  { method: 'GET',  path: '/api/geo-locations/settings/public' },
+  { method: 'POST', path: '/api/auth/verify-location' },
 ];
 
 function isPublicApiRoute(req) {

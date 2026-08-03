@@ -21,6 +21,19 @@ export const APP_NAV_ITEMS = [
     ],
   },
   {
+    path: '/projects/create',
+    label: 'Project Management',
+    icon: 'projects',
+    module: 'projects',
+    section: 'MANAGEMENT',
+    children: [
+      { path: '/projects/create', label: 'Project Portfolio', module: 'projects' },
+      { path: '/projects/maintenance', label: 'Project Maintenance', module: 'projects' },
+      { path: '/projects/photo-capture', label: 'Project Photo Capture', module: 'projects' },
+      { path: '/projects/reports', label: 'Project Reports', module: 'projects' },
+    ],
+  },
+  {
     path: '/reports',
     label: 'Reports',
     icon: 'reports',
@@ -46,6 +59,9 @@ export const APP_NAV_ITEMS = [
       { path: '/system/roles/manage', label: 'Manage Roles', module: 'system_roles' },
       { path: '/system/users/manage', label: 'Manage Users', module: 'system_users' },
       { path: '/system/audit-logs', label: 'Audit Logs', module: 'system_users' },
+      { path: '/system/geo-login-activity', label: 'Geo Login Activity', module: 'geo_login_activity' },
+      { path: '/system/devices/overview', label: 'Device Maintenance', module: 'devices' },
+      { path: '/system/geo-locations', label: 'Geo Locations', module: 'locations' },
     ],
   },
 ];

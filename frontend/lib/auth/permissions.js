@@ -6,9 +6,12 @@ export const PERMISSION_MODULES = [
   { key: 'registrations', label: 'Registrations' },
   { key: 'registration_roles', label: 'Registration Roles' },
   { key: 'shifts', label: 'Shifts' },
+  { key: 'projects', label: 'Project Management' },
   { key: 'reports', label: 'Reports' },
   { key: 'system_users', label: 'System Users' },
   { key: 'system_roles', label: 'System Roles' },
+  { key: 'devices', label: 'Device Maintenance' },
+  { key: 'locations', label: 'Geo Location Access' },
 ];
 
 export function emptyPermissions() {

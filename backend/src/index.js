@@ -27,11 +27,17 @@ import departmentsRouter from './routes/departments.js';
 import authRouter from './routes/auth.js';
 import systemRolesRouter from './routes/systemRoles.js';
 import systemUsersRouter from './routes/systemUsers.js';
+import geoLoginAuditRouter from './routes/geoLoginAudit.js';
 import reportsRouter from './routes/reports.js';
 import shiftsRouter from './routes/shifts.js';
+import projectsRouter from './routes/projects.js';
+import projectReportsRouter from './routes/projectReports.js';
 import dashboardRouter from './routes/dashboard.js';
 import pushRouter from './routes/push.js';
+import devicesRouter from './routes/devices.js';
+import geoLocationsRouter from './routes/geoLocations.js';
 import { startOverstayMonitor } from './services/overstayMonitor.js';
+import { migrateProjectsPermissionsFromDepartments } from './services/projectPermissionMigration.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -180,8 +186,13 @@ app.use('/api/system-roles', systemRolesRouter);
 app.use('/api/system-users', systemUsersRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/shifts', shiftsRouter);
+app.use('/api/projects', projectsRouter);
+app.use('/api/project-reports', projectReportsRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/push', pushRouter);
+app.use('/api/devices', devicesRouter);
+app.use('/api/geo-locations', geoLocationsRouter);
+app.use('/api/geo-login-audit', geoLoginAuditRouter);
 
 app.use(notFound);
 app.use(errorHandler);
@@ -226,6 +237,17 @@ async function runBackgroundBootstrap() {
     }
   } catch (err) {
     console.warn('Activity permission migration skipped:', err.message);
+  }
+
+  try {
+    const projectsPermMigration = await migrateProjectsPermissionsFromDepartments();
+    if (projectsPermMigration.migrated > 0) {
+      console.log(
+        `Granted Project Management permission on ${projectsPermMigration.migrated} role(s) that already had Department access`
+      );
+    }
+  } catch (err) {
+    console.warn('Project permission migration skipped:', err.message);
   }
 
   try {

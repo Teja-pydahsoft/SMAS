@@ -50,6 +50,19 @@ function isTransientFailure(err) {
   return TRANSIENT_STATUSES.has(err.status);
 }
 
+/** Build query string, omitting undefined / null / empty / literal "undefined". */
+function toQuery(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    const str = String(value);
+    if (str === 'undefined' || str === 'null') return;
+    qs.set(key, str);
+  });
+  const query = qs.toString();
+  return query ? `?${query}` : '';
+}
+
 async function requestOnce(path, options = {}, { timeoutMs = null } = {}) {
   const isFormData = options.body instanceof FormData;
   const timeout = timeoutMs ? withTimeout(timeoutMs) : null;
@@ -180,8 +193,10 @@ export const api = {
   auth: {
     precheck: (username) =>
       request('/auth/precheck', { method: 'POST', body: JSON.stringify({ username }) }),
-    login: (username, password) =>
-      request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+    login: (username, password, fingerprint = null) =>
+      request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password, ...(fingerprint ? { fingerprint } : {}) }) }),
+    verifyLocation: (username, latitude, longitude, accuracy, timestamp) =>
+      requestOnce('/auth/verify-location', { method: 'POST', body: JSON.stringify({ username, latitude, longitude, accuracy, timestamp }) }),
     verifyPassword: (password) =>
       request('/auth/verify-password', { method: 'POST', body: JSON.stringify({ password }) }),
     changePassword: (password, confirmPassword) =>
@@ -191,6 +206,14 @@ export const api = {
       }),
     me: () => request('/auth/me'),
     accessScope: () => request('/auth/access-scope'),
+  },
+
+  admin: {
+    geoLoginAudit: (limit = 100, params = {}) => request(`/geo-login-audit?limit=${limit}${toQuery(params).replace('?', '&')}`),
+  },
+
+  geoLocations: {
+    list: () => request('/geo-locations'),
   },
 
   systemRoles: {
@@ -431,5 +454,97 @@ export const api = {
     create: (data) => request('/shifts', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => request(`/shifts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id) => request(`/shifts/${id}`, { method: 'DELETE' }),
+  },
+
+  projects: {
+    list: (params = {}) => request(`/projects${toQuery(params)}`),
+    get: (id) => request(`/projects/${id}`),
+    create: (data) => request('/projects', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id) => request(`/projects/${id}`, { method: 'DELETE' }),
+    archive: (id) => request(`/projects/${id}/archive`, { method: 'POST' }),
+    portfolioSummary: () => request('/projects/portfolio-summary'),
+    eligibleLabourers: (id, params = {}) =>
+      request(`/projects/${id}/eligible-labourers${toQuery(params)}`),
+    assignments: (id) => request(`/projects/${id}/assignments`),
+    activity: (id) => request(`/projects/${id}/activity`),
+    photoDays: (id) => request(`/projects/${id}/photo-days`),
+    photos: (id, params = {}) => request(`/projects/${id}/photos${toQuery(params)}`),
+    uploadPhotos: (id, files, photoDate) => {
+      const form = new FormData();
+      const list = Array.isArray(files) ? files : [files];
+      list.forEach((file) => {
+        if (file) form.append('photos', file);
+      });
+      if (photoDate) form.append('photoDate', photoDate);
+      return request(`/projects/${id}/photos`, { method: 'POST', body: form });
+    },
+    deletePhoto: (id, photoId) =>
+      request(`/projects/${id}/photos/${photoId}`, { method: 'DELETE' }),
+    assign: (id, data) =>
+      request(`/projects/${id}/assignments`, { method: 'POST', body: JSON.stringify(data) }),
+    removeAssignment: (id, labourId) =>
+      request(`/projects/${id}/assignments/${labourId}`, { method: 'DELETE' }),
+    removeAssignments: (id, data) =>
+      request(`/projects/${id}/assignments/remove`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+  },
+
+  devices: {
+    // Public (called before login — no token)
+    register:  (data) => requestOnce('/devices/register',  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    validate:  (data) => requestOnce('/devices/validate',  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    // Public settings — used by login page to check deviceMaintenanceEnabled before auth
+    publicSettings: () => requestOnce('/devices/settings/public', {}, { timeoutMs: 15_000 }),
+    // Protected admin endpoints
+    stats:        ()       => request('/devices/stats'),
+    list:         (params = {}) => request(`/devices${toQuery(params)}`),
+    pending:      (params = {}) => request(`/devices/pending${toQuery(params)}`),
+    get:          (id)     => request(`/devices/${id}`),
+    approve:      (id)     => request(`/devices/${id}/approve`,  { method: 'PUT' }),
+    reject:       (id, note = '') => request(`/devices/${id}/reject`,  { method: 'PUT', body: JSON.stringify({ note }) }),
+    block:        (id, note = '') => request(`/devices/${id}/block`,   { method: 'PUT', body: JSON.stringify({ note }) }),
+    unblock:      (id)     => request(`/devices/${id}/unblock`, { method: 'PUT' }),
+    delete:       (id)     => request(`/devices/${id}`,          { method: 'DELETE' }),
+    auditLogs:    (params = {}) => request(`/devices/audit-logs${toQuery(params)}`),
+    settings:     ()       => request('/devices/settings'),
+    updateSettings: (data) => request('/devices/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  },
+
+  geoLocations: {
+    list: (params = {}) => request(`/geo-locations${toQuery(params)}`),
+    get: (id) => request(`/geo-locations/${id}`),
+    create: (data) => request('/geo-locations', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/geo-locations/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id) => request(`/geo-locations/${id}`, { method: 'DELETE' }),
+    settings: () => request('/geo-locations/settings'),
+    updateSettings: (data) => request('/geo-locations/settings', { method: 'PUT', body: JSON.stringify(data) }),
+    publicSettings: () => requestOnce('/geo-locations/settings/public', {}, { timeoutMs: 15_000 }),
+    assignUserLocations: (userId, locationIds) => 
+      request(`/geo-locations/users/${userId}/locations`, { method: 'PUT', body: JSON.stringify({ locationIds }) }),
+  },
+
+  projectReports: {
+    projects: (params = {}) => request(`/project-reports/projects${toQuery(params)}`),
+    overview: (params = {}) => request(`/project-reports/overview${toQuery(params)}`),
+    attendance: (params = {}) => request(`/project-reports/attendance${toQuery(params)}`),
+    history: (params = {}) => request(`/project-reports/history${toQuery(params)}`),
+    labourDetail: (labourId, params = {}) =>
+      request(`/project-reports/history/${labourId}${toQuery(params)}`),
+    labourByAssignment: (assignmentId, params = {}) =>
+      request(`/project-reports/labour/${assignmentId}${toQuery(params)}`),
+    labourExcel: (assignmentId, params = {}) =>
+      request(`/project-reports/labour/${assignmentId}/excel${toQuery(params)}`),
+    labourPdf: (assignmentId, params = {}) =>
+      request(`/project-reports/labour/${assignmentId}/pdf${toQuery(params)}`),
+    faces: (params = {}) => request(`/project-reports/faces${toQuery(params)}`),
+    analytics: (params = {}) => request(`/project-reports/analytics${toQuery(params)}`),
+    filters: (params = {}) => request(`/project-reports/filters${toQuery(params)}`),
+    export: (params = {}) => request(`/project-reports/export${toQuery(params)}`),
+  },
+  geoLoginAudit: {
+    list: (params) => request('/geo-login-audit', { params }),
   },
 };

@@ -95,6 +95,111 @@ export const PASS_TYPES = {
   DAY_PASS: 'day_pass',
 };
 
+export const PROJECT_TYPES = {
+  UNIVERSAL: 'universal',
+  DEPARTMENT_SPECIFIC: 'department_specific',
+  DIVISION_SPECIFIC: 'division_specific',
+};
+
+export const PROJECT_TYPE_LIST = Object.values(PROJECT_TYPES);
+
+export const PROJECT_TYPE_LABELS = {
+  universal: 'Universal',
+  department_specific: 'Department Specific',
+  division_specific: 'Division Specific',
+};
+
+export const PROJECT_STATUSES = {
+  ACTIVE: 'active',
+  COMPLETED: 'completed',
+  ON_HOLD: 'on_hold',
+  ARCHIVED: 'archived',
+};
+
+export const PROJECT_STATUS_LIST = Object.values(PROJECT_STATUSES);
+
+export const PROJECT_STATUS_LABELS = {
+  active: 'Active',
+  completed: 'Completed',
+  on_hold: 'On Hold',
+  archived: 'Archived',
+};
+
+export const PROJECT_ASSIGNMENT_STATUSES = {
+  ACTIVE: 'active',
+  COMPLETED: 'completed',
+  REMOVED: 'removed',
+};
+
+export const PROJECT_ASSIGNMENT_STATUS_LIST = Object.values(PROJECT_ASSIGNMENT_STATUSES);
+
+// ─── Device Maintenance ───────────────────────────────────────────────────────
+
+/** Approval lifecycle states for a registered device. */
+export const DEVICE_STATUSES = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  BLOCKED: 'blocked',
+};
+
+export const DEVICE_STATUS_LIST = Object.values(DEVICE_STATUSES);
+
+export const DEVICE_STATUS_LABELS = {
+  pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  blocked: 'Blocked',
+};
+
+/**
+ * Common operating-system strings used for UI dropdowns.
+ * Not an exhaustive enum — stored values may differ.
+ */
+export const DEVICE_OS_LIST = [
+  'Windows 11',
+  'Windows 10',
+  'Windows Server 2022',
+  'Windows Server 2019',
+  'macOS',
+  'Ubuntu',
+  'Debian',
+  'CentOS',
+  'Other Linux',
+  'Other',
+];
+
+/** All actions recorded in the DeviceAuditLog. */
+export const DEVICE_AUDIT_ACTIONS = {
+  REGISTERED: 'registered',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  BLOCKED: 'blocked',
+  UNBLOCKED: 'unblocked',
+  DELETED: 'deleted',
+  LOGIN_ATTEMPT: 'login_attempt',
+  VALIDATION_FAILED: 'validation_failed',
+  SETTINGS_UPDATED: 'settings_updated',
+  BOOTSTRAP_APPROVED: 'bootstrap_approved',
+};
+
+export const DEVICE_AUDIT_ACTION_LIST = Object.values(DEVICE_AUDIT_ACTIONS);
+
+export const DEVICE_AUDIT_ACTION_LABELS = {
+  registered: 'Device Registered',
+  approved: 'Device Approved',
+  rejected: 'Device Rejected',
+  blocked: 'Device Blocked',
+  unblocked: 'Device Unblocked',
+  deleted: 'Device Deleted',
+  login_attempt: 'Login Attempt',
+  validation_failed: 'Validation Failed',
+  settings_updated: 'Settings Updated',
+  bootstrap_approved: 'Bootstrap Approved (Initial Super Admin)',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const PERMISSION_MODULES = {
   GATE: 'gate',
   ACTIVITY: 'activity',
@@ -103,9 +208,13 @@ export const PERMISSION_MODULES = {
   REGISTRATIONS: 'registrations',
   REGISTRATION_ROLES: 'registration_roles',
   SHIFTS: 'shifts',
+  PROJECTS: 'projects',
   REPORTS: 'reports',
   SYSTEM_USERS: 'system_users',
   SYSTEM_ROLES: 'system_roles',
+  DEVICES: 'devices',
+  LOCATIONS: 'locations',
+  GEO_LOGIN_ACTIVITY: 'geo_login_activity',
 };
 
 export const PERMISSION_MODULE_LIST = Object.values(PERMISSION_MODULES);
@@ -118,9 +227,13 @@ export const PERMISSION_LABELS = {
   registrations: 'Registrations',
   registration_roles: 'Registration Roles',
   shifts: 'Shifts',
+  projects: 'Project Management',
   reports: 'Reports',
   system_users: 'System Users',
   system_roles: 'System Roles',
+  devices: 'Device Maintenance',
+  locations: 'Geo Location Access',
+  geo_login_activity: 'Geo Login Audit',
 };
 
 export function emptyPermissions() {
@@ -129,3 +242,22 @@ export function emptyPermissions() {
     return acc;
   }, {});
 }
+
+// ─── Geo Location Access Control ─────────────────────────────────────────────
+
+/** All audit result types for geo login checks. */
+export const GEO_AUDIT_RESULTS = {
+  ALLOWED: 'allowed',
+  DENIED: 'denied',
+  BYPASSED: 'bypassed',
+  ERROR: 'error',
+};
+
+export const GEO_AUDIT_RESULT_LIST = Object.values(GEO_AUDIT_RESULTS);
+
+export const GEO_AUDIT_RESULT_LABELS = {
+  allowed: 'Access Allowed',
+  denied: 'Access Denied — Outside Radius',
+  bypassed: 'Bypassed (Super Admin)',
+  error: 'Error / No Location Data',
+};

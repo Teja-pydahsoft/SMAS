@@ -236,9 +236,6 @@ export default function Sidebar() {
 
   function isActive(path) {
     if (path === '/') return pathname === '/';
-    if (path.startsWith('/system')) {
-      return pathname === path || pathname.startsWith('/system/');
-    }
     return pathname === path || pathname.startsWith(`${path}/`);
   }
 

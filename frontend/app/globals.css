@@ -35,6 +35,18 @@
 /* 8a. Report Center */
 @import '../styles/design-system/report-center.css';
 
+/* 8b. Project Maintenance Workspace */
+@import '../styles/design-system/project-maintenance.css';
+
+/* 8c. Project Reports Workspace */
+@import '../styles/design-system/project-reports.css';
+
+/* 8d. Project Photo Capture */
+@import '../styles/design-system/project-photo-capture.css';
+
+/* 8e. Project Portfolio Dashboard */
+@import '../styles/design-system/project-portfolio.css';
+
 /* 9. Utilities */
 @import '../styles/design-system/utilities.css';
 
@@ -47,5 +59,8 @@
 /* 11. Bot / session loader */
 @import '../styles/design-system/loader.css';
 
-/* 12. Responsive (must be last) */
+/* 12. Device Maintenance */
+@import '../styles/design-system/devices.css';
+
+/* 13. Responsive (must be last) */
 @import '../styles/design-system/responsive.css';

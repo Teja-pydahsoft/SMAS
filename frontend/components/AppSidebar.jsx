@@ -15,7 +15,6 @@ const STORAGE_COLLAPSED = 'sams-app-sidebar-collapsed';
 function isPathActive(pathname, searchParams, path) {
   const [basePath, query] = path.split('?');
   if (basePath === '/') return pathname === '/';
-  if (basePath.startsWith('/system')) return pathname === basePath || pathname.startsWith('/system/');
   const baseMatch = pathname === basePath || pathname.startsWith(`${basePath}/`);
   if (!baseMatch) return false;
   if (query && searchParams) {

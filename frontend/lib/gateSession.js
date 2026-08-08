@@ -52,7 +52,11 @@ export function setGateSession(session) {
   if (typeof window === 'undefined') return;
   const normalized = normalizeGateSession(session);
   if (!normalized) return;
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+  } catch {
+    // ignore
+  }
   notifySessionChange();
 }
 
@@ -68,7 +72,11 @@ export function getGateSession() {
 
 export function clearGateSession() {
   if (typeof window === 'undefined') return;
-  sessionStorage.removeItem(STORAGE_KEY);
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
   notifySessionChange();
 }
 

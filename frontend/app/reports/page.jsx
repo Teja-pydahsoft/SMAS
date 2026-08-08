@@ -451,7 +451,7 @@ function ScanDetailLightbox({ entry, workDate = '', onClose }) {
   );
 }
 
-function TimelineEvent({ entry, isLast, showPhoto = true }) {
+function TimelineEvent({ entry, isLast, showPhoto = true, onOpen }) {
   const isActivity = entry.scanType === 'activity';
   const isGate = !isActivity && entry.scanType !== 'department';
   const isEntry = isActivity
@@ -510,7 +510,7 @@ function TimelineEvent({ entry, isLast, showPhoto = true }) {
               </p>
             )}
           </div>
-          {showPhoto && <ScanPhoto url={entry.photoUrl} label={`${entry.eventType || 'Scan'} photo`} />}
+          {showPhoto && <ScanPhoto url={entry.photoUrl} label={`${entry.eventType || 'Scan'} photo`} onClick={() => onOpen?.(entry)} />}
         </div>
       </div>
     </div>
@@ -972,6 +972,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
   const [dayPassLoading, setDayPassLoading] = useState(false);
   const [dayPassError, setDayPassError] = useState('');
   const [showDayPass, setShowDayPass] = useState(false);
+  const [detailEntry, setDetailEntry] = useState(null);
 
   const reloadReport = useCallback(async () => {
     if (!registrationId) return;
@@ -1299,7 +1300,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                   ) : (
                     <div className="rc-timeline">
                       {todayEntries.map((e, i) => (
-                        <TimelineEvent key={e.id || i} entry={e} isLast={i === todayEntries.length - 1} />
+                        <TimelineEvent key={e.id || i} entry={e} isLast={i === todayEntries.length - 1} onOpen={setDetailEntry} />
                       ))}
                     </div>
                   )}
@@ -1485,6 +1486,14 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
             </div>
           </div>
         </div>
+      )}
+      
+      {detailEntry && (
+        <ScanDetailLightbox
+          entry={detailEntry}
+          workDate={singleDayDate || todayDateStringIst()}
+          onClose={() => setDetailEntry(null)}
+        />
       )}
     </div>
   );

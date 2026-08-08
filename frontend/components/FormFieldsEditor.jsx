@@ -19,6 +19,7 @@ export const emptyFormField = (order = 0) => ({
   label: '',
   type: 'text',
   required: false,
+  unique: false,
   placeholder: '',
   options: [],
   order: 0,
@@ -69,6 +70,7 @@ export default function FormFieldsEditor({ fields, onChange }) {
         <span>Field Label</span>
         <span>Type</span>
         <span>Required</span>
+        <span title="Must be unique across all registrations">Unique</span>
         <span>Placeholder</span>
         <span aria-hidden="true" />
       </div>
@@ -99,6 +101,16 @@ export default function FormFieldsEditor({ fields, onChange }) {
               <option value="false">No</option>
               <option value="true">Yes</option>
             </select>
+            <div className="form-field-checkbox" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <input
+                type="checkbox"
+                checked={field.unique || false}
+                onChange={(e) => updateField(index, 'unique', e.target.checked)}
+                aria-label="Unique"
+                title="Require this field to be unique across registrations"
+                style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer' }}
+              />
+            </div>
             <input
               value={field.placeholder}
               onChange={(e) => updateField(index, 'placeholder', e.target.value)}

@@ -112,14 +112,22 @@ function AdminSidebarInner({ can, user, logout }) {
   }, [pathname]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_COLLAPSED);
-    if (saved === 'true') setCollapsed(true);
+    try {
+      const saved = localStorage.getItem(STORAGE_COLLAPSED);
+      if (saved === 'true') setCollapsed(true);
+    } catch {
+      // ignore
+    }
   }, []);
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
       const next = !prev;
-      localStorage.setItem(STORAGE_COLLAPSED, String(next));
+      try {
+        localStorage.setItem(STORAGE_COLLAPSED, String(next));
+      } catch {
+        // ignore
+      }
       document.documentElement.style.setProperty('--admin-sidebar-width', next ? '84px' : '272px');
       return next;
     });

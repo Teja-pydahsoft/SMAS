@@ -247,7 +247,7 @@ input[type='radio']:focus {
 .form-fields-head,
 .form-field-inline {
   display: grid;
-  grid-template-columns: minmax(120px, 2fr) minmax(100px, 1fr) minmax(88px, 0.75fr) minmax(120px, 2fr) 36px;
+  grid-template-columns: minmax(120px, 2fr) minmax(100px, 1fr) minmax(88px, 0.75fr) minmax(60px, 0.5fr) minmax(120px, 2fr) 36px;
   gap: 8px;
   align-items: center;
 }

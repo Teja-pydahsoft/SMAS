@@ -210,7 +210,7 @@ router.get(
   '/portfolio-summary',
   requirePermission('projects', 'read'),
   asyncHandler(async (req, res) => {
-    const projects = await Project.find({ status: { $ne: PROJECT_STATUSES.ARCHIVED } })
+    const projects = await Project.find({})
       .select('status')
       .lean();
     const projectIds = projects.map((p) => p._id);
@@ -228,6 +228,7 @@ router.get(
       active: 0,
       completed: 0,
       on_hold: 0,
+      archived: 0,
     };
     for (const p of projects) {
       if (byStatus[p.status] != null) byStatus[p.status] += 1;
@@ -238,6 +239,7 @@ router.get(
       active: byStatus.active,
       completed: byStatus.completed,
       onHold: byStatus.on_hold,
+      archived: byStatus.archived,
       totalAssignedLabour,
       labourWorkingToday,
     });
@@ -332,6 +334,9 @@ router.delete(
   '/:id',
   requirePermission('projects', 'write'),
   asyncHandler(async (req, res) => {
+    if (!req.user?.isSuperAdmin) {
+      return res.status(403).json({ error: 'Only Super Admin can delete projects' });
+    }
     const project = await Project.findByIdAndDelete(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 

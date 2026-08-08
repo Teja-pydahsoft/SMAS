@@ -13,6 +13,7 @@ function normalizeFields(fields = []) {
     label: field.label,
     type: field.type,
     required: Boolean(field.required),
+    unique: Boolean(field.unique),
     placeholder: field.placeholder || '',
     options: field.options || [],
     order: field.order ?? index,

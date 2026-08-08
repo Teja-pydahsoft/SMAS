@@ -7,6 +7,7 @@ const formFieldSchema = new mongoose.Schema(
     label: { type: String, required: true },
     type: { type: String, enum: FIELD_TYPES, required: true },
     required: { type: Boolean, default: false },
+    unique: { type: Boolean, default: false },
     placeholder: { type: String, default: '' },
     options: [{ type: String }],
     order: { type: Number, default: 0 },

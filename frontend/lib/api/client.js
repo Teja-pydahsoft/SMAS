@@ -29,9 +29,13 @@ function apiUrl(path) {
 
 function getAuthHeaders(extra = {}) {
   if (typeof window === 'undefined') return extra;
-  const token = localStorage.getItem('smas_token');
-  if (!token) return extra;
-  return { ...extra, Authorization: `Bearer ${token}` };
+  try {
+    const token = localStorage.getItem('smas_token');
+    if (!token) return extra;
+    return { ...extra, Authorization: `Bearer ${token}` };
+  } catch {
+    return extra;
+  }
 }
 
 function withTimeout(ms) {
@@ -81,9 +85,17 @@ async function requestOnce(path, options = {}, { timeoutMs = null } = {}) {
       if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/login')) {
         const isPublicVerify = path.startsWith('/passes/verify/');
         if (!isPublicVerify) {
-          localStorage.removeItem('smas_token');
-          localStorage.removeItem('smas_user');
-          document.cookie = 'smas_token=; path=/; max-age=0';
+          try {
+            localStorage.removeItem('smas_token');
+            localStorage.removeItem('smas_user');
+          } catch {
+            // ignore
+          }
+          try {
+            document.cookie = 'smas_token=; path=/; max-age=0';
+          } catch {
+            // ignore
+          }
           if (!window.location.pathname.startsWith('/login')) {
             window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
           }

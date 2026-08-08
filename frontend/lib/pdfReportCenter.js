@@ -180,9 +180,41 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
     headerH,
   });
 
-  const body = (Array.isArray(people) ? people : []).map((p) => [
+  const selectionColumns = [];
+  const seenSelections = new Set();
+  const peopleArray = Array.isArray(people) ? people : [];
+  for (const p of peopleArray) {
+    for (const sel of p?.selections || []) {
+      if (sel?.label && !seenSelections.has(sel.label)) {
+        seenSelections.add(sel.label);
+        selectionColumns.push(sel.label);
+      }
+    }
+  }
+
+  function getSelVal(person, label) {
+    const sel = (person?.selections || []).find((s) => s.label === label);
+    return sel && sel.value ? sel.value : '—';
+  }
+
+  const headRow = [
+    'Person',
+    'Role',
+    ...selectionColumns,
+    'Pay Frequency',
+    'Code',
+    'Entry Time',
+    'Exit Time',
+    'Duration',
+    'Status',
+    'Shift'
+  ];
+
+  const body = peopleArray.map((p) => [
     p.displayName || 'Unnamed',
     p.roleName || '—',
+    ...selectionColumns.map((label) => getSelVal(p, label)),
+    p.payFrequencyLabel || formatPayFrequency(p.payFrequency, p.customPayDays) || '—',
     p.registrationCode || '—',
     formatPdfTimeOnDate(p.gateEntryAt, reportDateStr),
     exitTimeLabel(p, reportDateStr),
@@ -191,12 +223,15 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
     p.shiftName || '—',
   ]);
 
+  const emptyRow = Array(headRow.length).fill('');
+  emptyRow[0] = 'No attendance records for this day.';
+
   autoTable(doc, {
     startY: headerH + 14,
-    head: [['Person', 'Role', 'Code', 'Entry Time', 'Exit Time', 'Duration', 'Status', 'Shift']],
+    head: [headRow],
     body: body.length
       ? body
-      : [['No attendance records for this day.', '', '', '', '', '', '', '']],
+      : [emptyRow],
     theme: 'grid',
     styles: {
       fontSize: 8,
@@ -215,18 +250,9 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
       halign: 'left',
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles: {
-      0: { cellWidth: 110 },
-      1: { cellWidth: 80 },
-      2: { cellWidth: 90 },
-      3: { cellWidth: 90 },
-      4: { cellWidth: 90 },
-      5: { cellWidth: 60 },
-      6: { cellWidth: 75 },
-      7: { cellWidth: 80 },
-    },
     didParseCell(data) {
-      if (data.section !== 'body' || data.column.index !== 6) return;
+      const statusIdx = 7 + selectionColumns.length;
+      if (data.section !== 'body' || data.column.index !== statusIdx) return;
       const status = String(data.cell.raw || '');
       if (status === 'Inside') {
         data.cell.styles.textColor = [22, 163, 74];

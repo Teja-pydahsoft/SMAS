@@ -17,16 +17,31 @@ export function saveGatePhotoForRegistration(blob) {
 }
 
 export async function loadGatePhotoForRegistration() {
-  const data = sessionStorage.getItem(GATE_PHOTO_KEY);
-  if (!data) return null;
-  const res = await fetch(data);
-  return res.blob();
+  if (typeof window === 'undefined') return null;
+  try {
+    const data = sessionStorage.getItem(GATE_PHOTO_KEY);
+    if (!data) return null;
+    const res = await fetch(data);
+    return res.blob();
+  } catch {
+    return null;
+  }
 }
 
 export function clearGatePhotoForRegistration() {
-  sessionStorage.removeItem(GATE_PHOTO_KEY);
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem(GATE_PHOTO_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 export function hasGatePhotoForRegistration() {
-  return Boolean(sessionStorage.getItem(GATE_PHOTO_KEY));
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(sessionStorage.getItem(GATE_PHOTO_KEY));
+  } catch {
+    return false;
+  }
 }

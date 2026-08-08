@@ -4,7 +4,11 @@ const TOKEN_MAX_AGE = 7 * 24 * 60 * 60;
 
 export function getToken() {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY);
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
 export function getStoredUser() {
@@ -18,15 +22,35 @@ export function getStoredUser() {
 }
 
 export function setSession(token, user) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-  document.cookie = `smas_token=${encodeURIComponent(token)}; path=/; max-age=${TOKEN_MAX_AGE}; SameSite=Lax`;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+    } catch {
+      // ignore
+    }
+    try {
+      document.cookie = `smas_token=${encodeURIComponent(token)}; path=/; max-age=${TOKEN_MAX_AGE}; SameSite=Lax`;
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export function clearSession() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  document.cookie = 'smas_token=; path=/; max-age=0';
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    } catch {
+      // ignore
+    }
+    try {
+      document.cookie = 'smas_token=; path=/; max-age=0';
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export function hasPermission(user, module, action = 'read') {

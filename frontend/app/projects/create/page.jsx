@@ -17,6 +17,7 @@ const PROJECT_STATUSES = [
   { value: 'active', label: 'Active' },
   { value: 'completed', label: 'Completed' },
   { value: 'on_hold', label: 'On Hold' },
+  { value: 'archived', label: 'Archived' },
 ];
 
 const STATUS_CHIPS = [
@@ -24,6 +25,7 @@ const STATUS_CHIPS = [
   { value: 'active', label: 'Active' },
   { value: 'completed', label: 'Completed' },
   { value: 'on_hold', label: 'On Hold' },
+  { value: 'archived', label: 'Archived' },
 ];
 
 const EMPTY_SUMMARY = {
@@ -31,6 +33,7 @@ const EMPTY_SUMMARY = {
   active: 0,
   completed: 0,
   onHold: 0,
+  archived: 0,
   totalAssignedLabour: 0,
   labourWorkingToday: 0,
 };
@@ -436,7 +439,7 @@ function ProjectViewModal({ project, onClose, onEdit }) {
   );
 }
 
-function ProjectPortfolioCard({ project, canWrite, onView, onEdit, onArchive }) {
+function ProjectPortfolioCard({ project, canWrite, isSuperAdmin, onView, onEdit, onArchive, onDelete }) {
   const progress = progressOf(project);
   const id = project._id || project.id;
   const createdBy = project.createdBy?.displayName || project.createdBy?.username || '—';
@@ -494,6 +497,11 @@ function ProjectPortfolioCard({ project, canWrite, onView, onEdit, onArchive }) 
               <button type="button" className="btn-danger" onClick={() => onArchive(project)}>
                 Archive
               </button>
+              {isSuperAdmin && (
+                <button type="button" className="btn-danger" onClick={() => onDelete(project)}>
+                  Delete
+                </button>
+              )}
             </>
           )}
         </div>
@@ -507,8 +515,9 @@ function ProjectPortfolioCard({ project, canWrite, onView, onEdit, onArchive }) 
 }
 
 export default function ProjectPortfolioPage() {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const canWrite = can('projects', 'write');
+  const isSuperAdmin = user?.isSuperAdmin;
 
   const [projects, setProjects] = useState([]);
   const [summary, setSummary] = useState(EMPTY_SUMMARY);
@@ -586,6 +595,7 @@ export default function ProjectPortfolioPage() {
     { key: 'active', label: 'Active', value: summary.active, tone: 'success' },
     { key: 'completed', label: 'Completed', value: summary.completed, tone: 'info' },
     { key: 'onHold', label: 'On Hold', value: summary.onHold, tone: 'warning' },
+    { key: 'archived', label: 'Archived', value: summary.archived, tone: 'neutral' },
     { key: 'assigned', label: 'Total Assigned Labour', value: summary.totalAssignedLabour, tone: 'accent' },
     { key: 'today', label: 'Labour Working Today', value: summary.labourWorkingToday, tone: 'teal' },
   ]), [summary]);
@@ -597,6 +607,20 @@ export default function ProjectPortfolioPage() {
     try {
       await api.projects.archive(project._id || project.id);
       setSuccess(`Project "${project.projectName}" archived`);
+      setViewProject(null);
+      await loadData();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function handleDelete(project) {
+    if (!confirm(`Delete project "${project.projectName}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.projects.delete(project._id || project.id);
+      setSuccess(`Project "${project.projectName}" deleted`);
       setViewProject(null);
       await loadData();
     } catch (e) {
@@ -804,9 +828,11 @@ export default function ProjectPortfolioPage() {
                 key={project._id || project.id}
                 project={project}
                 canWrite={canWrite}
+                isSuperAdmin={isSuperAdmin}
                 onView={setViewProject}
                 onEdit={setModalProject}
                 onArchive={handleArchive}
+                onDelete={handleDelete}
               />
             ))}
           </div>
@@ -865,6 +891,11 @@ export default function ProjectPortfolioPage() {
                               <button type="button" className="btn-danger" onClick={() => handleArchive(project)}>
                                 Archive
                               </button>
+                              {isSuperAdmin && (
+                                <button type="button" className="btn-danger" onClick={() => handleDelete(project)}>
+                                  Delete
+                                </button>
+                              )}
                             </>
                           )}
                           <Link href={`/projects/maintenance?project=${id}&tab=assign`} className="btn-secondary">

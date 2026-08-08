@@ -399,32 +399,27 @@ async function findFaceDuplicates(embedding, excludeId) {
   return results;
 }
 
-/** Find registrations whose form data matches the same name or phone (excluding excludeId). */
-async function findFormDataMatches(formData, fields, excludeId) {
+/** Find registrations whose form data matches strictly on explicit unique fields (excluding excludeId). */
+async function findUniqueFieldMatches(formData, fields, excludeId) {
   if (!formData || !fields?.length) return [];
 
-  const nameFieldIds = fields
-    .filter((f) => f.label?.toLowerCase().includes('name') || f.type === 'text')
-    .map((f) => f.fieldId);
-  const phoneFieldIds = fields
-    .filter((f) => f.type === 'phone' || f.label?.toLowerCase().includes('phone') || f.label?.toLowerCase().includes('mobile'))
-    .map((f) => f.fieldId);
-
-  const submittedName = nameFieldIds.map((id) => formData[id]).find(Boolean);
-  const submittedPhone = phoneFieldIds.map((id) => formData[id]).find(Boolean);
-  if (!submittedName && !submittedPhone) return [];
+  const uniqueFields = fields.filter((f) => f.unique === true);
+  if (!uniqueFields.length) return [];
 
   const orClauses = [];
-  if (submittedName) {
-    nameFieldIds.forEach((id) => {
-      orClauses.push({ [`formData.${id}`]: { $regex: `^${escapeRegex(String(submittedName).trim())}$`, $options: 'i' } });
-    });
-  }
-  if (submittedPhone) {
-    phoneFieldIds.forEach((id) => {
-      orClauses.push({ [`formData.${id}`]: String(submittedPhone).trim() });
-    });
-  }
+  uniqueFields.forEach((field) => {
+    const value = formData[field.fieldId];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      const strVal = String(value).trim();
+      if (field.type === 'text' || field.type === 'email' || field.type === 'textarea') {
+        orClauses.push({ [`formData.${field.fieldId}`]: { $regex: `^${escapeRegex(strVal)}$`, $options: 'i' } });
+      } else {
+        // preserve numbers/other types, but also allow string matches for numbers sent as string
+        orClauses.push({ [`formData.${field.fieldId}`]: value });
+      }
+    }
+  });
+
   if (!orClauses.length) return [];
 
   const query = { $or: orClauses };
@@ -437,6 +432,31 @@ async function findFormDataMatches(formData, fields, excludeId) {
 
   return existing.map((reg) => {
     const display = buildDisplayInfo(reg.formData || {}, fields);
+    
+    // Figure out which unique field triggered the duplicate to construct an error message
+    let matchedFieldLabel = null;
+    for (const field of uniqueFields) {
+      const submittedValue = formData[field.fieldId];
+      if (submittedValue === undefined || submittedValue === null || String(submittedValue).trim() === '') continue;
+      const existingValue = (reg.formData || {})[field.fieldId];
+      if (existingValue === undefined || existingValue === null) continue;
+      
+      const sValStr = String(submittedValue).trim();
+      const eValStr = String(existingValue).trim();
+      
+      if (field.type === 'text' || field.type === 'email' || field.type === 'textarea') {
+        if (sValStr.toLowerCase() === eValStr.toLowerCase()) {
+          matchedFieldLabel = field.label;
+          break;
+        }
+      } else {
+        if (submittedValue === existingValue || sValStr === eValStr) {
+          matchedFieldLabel = field.label;
+          break;
+        }
+      }
+    }
+
     return {
       registrationId: reg._id,
       registrationCode: reg.registrationCode,
@@ -445,6 +465,7 @@ async function findFormDataMatches(formData, fields, excludeId) {
       role: reg.roleId?.name,
       status: reg.status,
       photoUrl: photoUrlFromPath(reg.photoPath),
+      matchedFieldLabel
     };
   });
 }
@@ -493,7 +514,7 @@ router.post(
       if (roleId) {
         form = await RegistrationForm.findOne({ roleId, isActive: true }).select('fields');
       }
-      formMatches = await findFormDataMatches(parsed, form?.fields || [], excludeId);
+      formMatches = await findUniqueFieldMatches(parsed, form?.fields || [], excludeId);
     }
 
     const faceMatch = faceMatches[0] || null;
@@ -522,7 +543,7 @@ router.get(
 
     let formMatches = [];
     try {
-      formMatches = await findFormDataMatches(
+      formMatches = await findUniqueFieldMatches(
         registration.formData || {},
         registration.formId?.fields || [],
         excludeId
@@ -564,6 +585,12 @@ router.post(
     const shiftError = await validateShiftAssignment(role, shiftId);
     if (shiftError) return res.status(400).json({ error: shiftError });
 
+    const uniqueMatches = await findUniqueFieldMatches(formData || {}, form.fields, null);
+    if (uniqueMatches.length > 0) {
+      const match = uniqueMatches[0];
+      return res.status(400).json({ error: `A registration already exists with this ${match.matchedFieldLabel || 'Unique Field'}.` });
+    }
+
     const registration = await Registration.create({
       roleId,
       formId: form._id,
@@ -595,6 +622,12 @@ router.put(
     const form = await RegistrationForm.findById(registration.formId);
     const validationError = validateFormData(form, req.body.formData, { skipMediaRequired: true });
     if (validationError) return res.status(400).json({ error: validationError });
+
+    const uniqueMatches = await findUniqueFieldMatches(req.body.formData || {}, form.fields, registration._id.toString());
+    if (uniqueMatches.length > 0) {
+      const match = uniqueMatches[0];
+      return res.status(400).json({ error: `A registration already exists with this ${match.matchedFieldLabel || 'Unique Field'}.` });
+    }
 
     const payFrequencyError = applyPayFrequency(
       registration,

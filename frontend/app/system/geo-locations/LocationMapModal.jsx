@@ -462,13 +462,15 @@ export default function LocationMapModal({ location, existingLocations = [], onC
                           url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
                           attribution="&copy; Google"
                           maxZoom={22}
+                          maxNativeZoom={21}
                         />
                       </LayersControl.BaseLayer>
                       <LayersControl.BaseLayer name="Street (OpenStreetMap)">
                         <TileLayer
                           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                          maxZoom={19}
+                          maxZoom={22}
+                          maxNativeZoom={19}
                         />
                       </LayersControl.BaseLayer>
                     </LayersControl>

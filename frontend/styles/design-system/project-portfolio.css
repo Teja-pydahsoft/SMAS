@@ -40,6 +40,7 @@
 .pp-kpi--success::before { background: linear-gradient(90deg, #34D399, #10B981); }
 .pp-kpi--info::before { background: linear-gradient(90deg, #93C5FD, var(--color-primary)); }
 .pp-kpi--warning::before { background: linear-gradient(90deg, #FCD34D, #F59E0B); }
+.pp-kpi--neutral::before { background: linear-gradient(90deg, #D1D5DB, #9CA3AF); }
 .pp-kpi--accent::before { background: linear-gradient(90deg, #A78BFA, #6366F1); }
 .pp-kpi--teal::before { background: linear-gradient(90deg, #5EEAD4, #14B8A6); }
 
@@ -576,10 +577,6 @@
 
 @media (max-width: 480px) {
   .pp-summary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .pp-filters {
     grid-template-columns: 1fr;
   }
 }

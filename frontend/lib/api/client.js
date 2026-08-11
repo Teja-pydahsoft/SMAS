@@ -202,6 +202,13 @@ export const api = {
     stats: () => request('/dashboard'),
   },
 
+  equipment: {
+    dashboard: () => request('/equipment/idle-monitoring/dashboard'),
+    reports: () => request('/equipment/idle-monitoring/reports'),
+    settings: () => request('/equipment/idle-monitoring/settings'),
+    updateSettings: (data) => request('/equipment/idle-monitoring/settings', { method: 'PUT', body: JSON.stringify(data) })
+  },
+
   auth: {
     precheck: (username) =>
       request('/auth/precheck', { method: 'POST', body: JSON.stringify({ username }) }),
@@ -559,4 +566,30 @@ export const api = {
   geoLoginAudit: {
     list: (params) => request('/geo-login-audit', { params }),
   },
+  vehicles: {
+    dashboardStats: () => request('/vehicles/dashboard'),
+    movements: (params = {}) => request(`/vehicles/movements${toQuery(params)}`),
+    list: () => request('/vehicles'),
+    delete: (id) => request(`/vehicles/${id}`, { method: 'DELETE' }),
+    types: {
+      list: () => request('/vehicles/types'),
+      create: (data) => request('/vehicles/types', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id, data) => request(`/vehicles/types/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+    },
+    categories: {
+      list: () => request('/vehicles/categories')
+    },
+    registrations: {
+      list: (params = {}) => request(`/vehicles/registrations${toQuery(params)}`),
+      get: (id) => request(`/vehicles/registrations/${id}`),
+      approve: (id, data) => request(`/vehicles/registrations/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+      reject: (id, data) => request(`/vehicles/registrations/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+      delete: (id) => request(`/vehicles/registrations/${id}`, { method: 'DELETE' }),
+      updatePhoto: (id, photoKey, file) => {
+        const form = new FormData();
+        form.append('photo', file);
+        return request(`/vehicles/registrations/${id}/photos/${photoKey}`, { method: 'PUT', body: form });
+      }
+    }
+  }
 };

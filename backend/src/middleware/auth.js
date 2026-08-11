@@ -61,6 +61,8 @@ const PUBLIC_API_ROUTES = [
   // Geo Location
   { method: 'GET',  path: '/api/geo-locations/settings/public' },
   { method: 'POST', path: '/api/auth/verify-location' },
+  // Internal AI Server integration
+  { method: 'POST', path: '/api/vehicles/check-batch' },
 ];
 
 function isPublicApiRoute(req) {

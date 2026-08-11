@@ -69,6 +69,14 @@ const icons = {
       <line x1="21" y1="12" x2="9" y2="12" />
     </svg>
   ),
+  vehicles: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="3" width="15" height="13" rx="1" />
+      <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+      <circle cx="5.5" cy="18.5" r="2.5" />
+      <circle cx="18.5" cy="18.5" r="2.5" />
+    </svg>
+  ),
 
   /* ── Utility / other icons (unchanged) ── */
   companies: (
@@ -213,6 +221,6 @@ const icons = {
   ),
 };
 
-export default function AdminIcon({ name, className }) {
-  return <span className={className}>{icons[name] || icons.dashboard}</span>;
+export default function AdminIcon({ name, className, style }) {
+  return <span className={className} style={style}>{icons[name] || icons.dashboard}</span>;
 }

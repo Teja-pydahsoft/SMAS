@@ -4,6 +4,7 @@ export const APP_NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: 'dashboard', module: null, section: 'GENERAL' },
   { path: '/access-scope', label: 'Gate Access', icon: 'gateAccess', module: 'gate', gateOnly: true, section: 'GENERAL' },
   { path: '/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate', section: 'GENERAL' },
+  { path: '/equipment/movements', label: 'Vehicle Entry & Exit', icon: 'entryExit', module: null, section: 'GENERAL' },
   { path: '/activity', label: 'Activity', icon: 'cameras', module: 'activity', section: 'GENERAL' },
   { path: '/roles', label: 'Roles', icon: 'roles', module: 'registration_roles', section: 'MANAGEMENT' },
   { path: '/registrations', label: 'Registrations', icon: 'registrations', module: 'registrations', section: 'MANAGEMENT' },
@@ -18,6 +19,20 @@ export const APP_NAV_ITEMS = [
       { path: '/organization?tab=divisions', label: 'Divisions', module: 'divisions' },
       { path: '/organization?tab=departments', label: 'Departments', module: 'departments' },
       { path: '/organization?tab=shifts', label: 'Shifts', module: 'shifts' },
+    ],
+  },
+  {
+    path: '/equipment/dashboard',
+    label: 'Vehicle & Equipment',
+    icon: 'cameras', // reusing an icon
+    module: null,
+    section: 'MANAGEMENT',
+    children: [
+      { path: '/vehicles/dashboard', label: 'Dashboard', icon: 'dashboard', module: null },
+      { path: '/vehicles/registrations?status=Pending', label: 'Registrations', icon: 'registrations', module: null },
+      { path: '/vehicles', label: 'Vehicle Master', icon: 'companies', module: null },
+      { path: '/equipment/movements', label: 'Entry & Exit', icon: 'entryExit', module: null },
+      { path: '/vehicles/reports', label: 'Reports', icon: 'reports', module: null },
     ],
   },
   {

@@ -82,6 +82,15 @@ export async function extractFaceEmbeddingsMulti(imageBuffer, filename = 'photo.
   return aiFetch('/embed-multi', { method: 'POST', body: formData }, AI_FACE_TIMEOUT_MS);
 }
 
+export async function analyzeVehicle(images) {
+  const formData = new FormData();
+  for (const [key, image] of Object.entries(images)) {
+    formData.append(key, new Blob([image.buffer], { type: image.mimeType }), image.filename);
+  }
+
+  return aiFetch('/vehicle/analyze', { method: 'POST', body: formData }, AI_FACE_TIMEOUT_MS);
+}
+
 export async function compareFaceEmbeddings(embedding1, embedding2) {
   return aiFetch(
     '/compare',

@@ -1497,4 +1497,93 @@ router.post(
   })
 );
 
+import { analyzeVehicle } from '../services/aiClient.js';
+import VehicleActivityLog from '../models/VehicleActivityLog.js';
+import Vehicle from '../models/Vehicle.js';
+
+router.post(
+  '/verify-vehicle',
+  upload.single('photo'),
+  asyncHandler(async (req, res) => {
+    const { gateId, eventType } = req.body;
+    
+    if (!req.file) return res.status(400).json({ error: 'Vehicle photo is required' });
+    if (!gateId) return res.status(400).json({ error: 'gateId is required' });
+    
+    // Read image buffer
+    const filePath = req.file.path || null;
+    const imageBuffer = req.file.buffer || fs.readFileSync(filePath);
+    
+    // Call AI Server for ANPR
+    let aiResult;
+    try {
+      aiResult = await analyzeVehicle(imageBuffer, req.file.originalname || 'vehicle.jpg', req.file.mimetype);
+    } catch (error) {
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      return res.status(500).json({ error: 'Failed to analyze vehicle image' });
+    }
+    
+    // Start upload in parallel
+    const uploadPromise = startGatePhotoUpload(imageBuffer, filePath);
+    
+    const capturedPlate = aiResult.plateDetected ? aiResult.plateNumber : null;
+    const normalizedCapturedPlate = capturedPlate ? capturedPlate.toLowerCase().replace(/\s+/g, '') : null;
+    const confidence = aiResult.ocrConfidence || 0;
+    
+    let decision = 'Unknown';
+    let reason = 'Plate not detected';
+    let vehicle = null;
+    
+    if (normalizedCapturedPlate) {
+      vehicle = await Vehicle.findOne({ normalizedCapturedPlate }).populate('allowedGates');
+      
+      if (!vehicle) {
+        decision = 'Denied';
+        reason = 'Vehicle not registered';
+      } else if (vehicle.status !== 'Active') {
+        decision = 'Denied';
+        reason = `Vehicle is ${vehicle.status}`;
+      } else if (vehicle.expiryDate && new Date(vehicle.expiryDate) < new Date()) {
+        decision = 'Denied';
+        reason = 'Vehicle registration expired';
+      } else {
+        // Check Gate permissions
+        const allowedGateIds = vehicle.allowedGates.map(g => g._id.toString());
+        if (allowedGateIds.length > 0 && !allowedGateIds.includes(gateId.toString())) {
+          decision = 'Denied';
+          reason = 'Vehicle not allowed at this gate';
+        } else {
+          decision = 'Granted';
+          reason = 'Access granted';
+        }
+      }
+    }
+    
+    const snapshotUrl = await uploadPromise.catch(() => null);
+    
+    const activityLog = await VehicleActivityLog.create({
+      gateId,
+      vehicleId: vehicle ? vehicle._id : null,
+      ownerId: vehicle ? vehicle.ownerId : null,
+      ownerModel: vehicle ? vehicle.ownerModel : null,
+      departmentId: vehicle ? vehicle.departmentId : null,
+      capturedPlate,
+      normalizedCapturedPlate,
+      confidence,
+      snapshotUrl,
+      decision,
+      reason,
+      metadata: aiResult
+    });
+    
+    res.json({
+      decision,
+      reason,
+      capturedPlate,
+      vehicle: vehicle ? { _id: vehicle._id, typeId: vehicle.typeId, categoryId: vehicle.categoryId } : null,
+      logId: activityLog._id
+    });
+  })
+);
+
 export default router;

@@ -12,6 +12,12 @@ const S3_BUCKET = (process.env.S3_BUCKET || '').trim();
 const AWS_ACCESS_KEY_ID = (process.env.AWS_ACCESS_KEY_ID || '').trim();
 const AWS_SECRET_ACCESS_KEY = (process.env.AWS_SECRET_ACCESS_KEY || '').trim();
 
+console.log('--- AWS Config Check ---');
+console.log(`AWS_REGION: ${AWS_REGION}`);
+console.log(`S3_BUCKET: ${S3_BUCKET}`);
+console.log(`AWS_ACCESS_KEY_ID exists: ${!!AWS_ACCESS_KEY_ID}`);
+console.log(`AWS_SECRET_ACCESS_KEY exists: ${!!AWS_SECRET_ACCESS_KEY}`);
+
 let s3Client = null;
 
 function getClient() {
@@ -135,27 +141,43 @@ export async function uploadToS3(buffer, folder, filename = null, contentType = 
   const safeName = sanitizeFilename(filename || `upload-${Date.now()}`);
   const key = `smas/${folder}/${safeName}`;
 
-  await getClient().send(
-    new PutObjectCommand({
-      Bucket: S3_BUCKET,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType || 'application/octet-stream',
-    })
-  );
+  console.log(`--- S3 Upload Start: ${folder} ---`);
+  console.log(`Bucket: ${S3_BUCKET}`);
+  console.log(`Key: ${key}`);
+  console.log(`Mime: ${contentType}`);
+  console.log(`Size: ${buffer ? buffer.length : 'unknown'} bytes`);
 
-  const resourceType = String(contentType || '').startsWith('image/')
-    ? 'image'
-    : String(contentType || '').startsWith('video/')
-      ? 'video'
-      : 'raw';
+  try {
+    const response = await getClient().send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType || 'application/octet-stream',
+      })
+    );
 
-  return {
-    url: buildS3ObjectUrl(key),
-    key,
-    publicId: key,
-    resourceType,
-  };
+    const resourceType = String(contentType || '').startsWith('image/')
+      ? 'image'
+      : String(contentType || '').startsWith('video/')
+        ? 'video'
+        : 'raw';
+
+    const url = buildS3ObjectUrl(key);
+    console.log(`✓ Uploaded ${folder}: ${key}`);
+    console.log(`Returned URL: ${url}`);
+    console.log(`ETag: ${response.ETag}`);
+
+    return {
+      url,
+      key,
+      publicId: key,
+      resourceType,
+    };
+  } catch (error) {
+    console.error(`✗ S3 Upload Failed for ${folder}:`, error.stack);
+    throw error;
+  }
 }
 
 export async function deleteFromS3(keyOrUrl) {

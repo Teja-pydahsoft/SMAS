@@ -272,7 +272,7 @@ export default function CameraCapture({
           {!active && (
             <div className="camera-placeholder">
               <p>Camera not started</p>
-              <button type="button" className="btn-primary" onClick={() => startCamera()}>
+              <button type="button" className="admin-btn admin-btn--primary" onClick={() => startCamera()}>
                 Start Camera
               </button>
             </div>
@@ -288,17 +288,17 @@ export default function CameraCapture({
 
       <div className="camera-actions">
         {showCaptureButton && (
-          <button type="button" className="btn-primary" onClick={capture}>
+          <button type="button" className="admin-btn admin-btn--primary" onClick={capture}>
             {label}
           </button>
         )}
         {processing && (
-          <button type="button" className="btn-primary" disabled>
+          <button type="button" className="admin-btn admin-btn--primary" disabled>
             {processingLabel}
           </button>
         )}
         {showRetakeButton && (
-          <button type="button" className="btn-secondary" onClick={retake}>
+          <button type="button" className="admin-btn admin-btn--secondary" onClick={retake}>
             Retake Photo
           </button>
         )}

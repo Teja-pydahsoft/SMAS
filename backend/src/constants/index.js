@@ -215,6 +215,16 @@ export const PERMISSION_MODULES = {
   DEVICES: 'devices',
   LOCATIONS: 'locations',
   GEO_LOGIN_ACTIVITY: 'geo_login_activity',
+  VEHICLE_TYPES: 'vehicle_types',
+  VEHICLE_CATEGORIES: 'vehicle_categories',
+  VEHICLE_REGISTRATIONS: 'vehicle_registrations',
+  VEHICLES: 'vehicles',
+  VEHICLE_ACTIVITY: 'vehicle_activity',
+  VEHICLE_REPORTS: 'vehicle_reports',
+  EQUIPMENT_MOVEMENTS: 'equipment_movements',
+  IDLE_MONITORING: 'idle_monitoring',
+  IDLE_REPORTS: 'idle_reports',
+  IDLE_DASHBOARD: 'idle_dashboard',
 };
 
 export const PERMISSION_MODULE_LIST = Object.values(PERMISSION_MODULES);
@@ -234,6 +244,16 @@ export const PERMISSION_LABELS = {
   devices: 'Device Maintenance',
   locations: 'Geo Location Access',
   geo_login_activity: 'Geo Login Audit',
+  vehicle_types: 'Vehicle Types',
+  vehicle_categories: 'Vehicle Categories',
+  vehicle_registrations: 'Vehicle Registrations',
+  vehicles: 'Vehicles',
+  vehicle_activity: 'Vehicle Activity Log',
+  vehicle_reports: 'Vehicle Reports',
+  equipment_movements: 'Equipment Movements',
+  idle_monitoring: 'Idle Monitoring',
+  idle_reports: 'Idle Reports',
+  idle_dashboard: 'Idle Dashboard',
 };
 
 export function emptyPermissions() {

@@ -79,7 +79,14 @@ function NavGroup({ item, collapsed, pathname, searchParams }) {
       </button>
 
       <div className={`admin-sidebar__sub-nav ${open ? 'admin-sidebar__sub-nav--open' : ''}`}>
-        {item.children.map((child) => {
+        {item.children.map((child, i) => {
+          if (child.isSeparator) {
+            return <div key={`sep-${i}`} className="admin-sidebar__sub-nav-separator" style={{ height: 1, background: 'var(--border-color)', margin: '8px 16px' }} />;
+          }
+          if (child.isSection) {
+            return <div key={`sec-${i}`} className="admin-sidebar__sub-nav-section" style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--text-secondary)', padding: '8px 16px 4px', textTransform: 'uppercase' }}>{child.label}</div>;
+          }
+
           const childActive = isPathActive(pathname, searchParams, child.path);
           return (
             <Link
@@ -87,6 +94,11 @@ function NavGroup({ item, collapsed, pathname, searchParams }) {
               href={child.path}
               className={`admin-sidebar__sub-link ${childActive ? 'admin-sidebar__sub-link--active' : ''}`}
             >
+              {child.icon && (
+                <span style={{ marginRight: '8px', display: 'inline-flex', alignItems: 'center' }}>
+                  <AdminIcon name={child.icon} className="admin-icon" style={{ width: 14, height: 14 }} />
+                </span>
+              )}
               {child.label}
             </Link>
           );

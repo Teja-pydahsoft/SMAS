@@ -45,5 +45,7 @@ async def health():
 
 
 from app.routes.face import router as face_router
+from app.routes.vehicle import router as vehicle_router
 
 app.include_router(face_router)
+app.include_router(vehicle_router)

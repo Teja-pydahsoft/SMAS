@@ -37,7 +37,16 @@ import pushRouter from './routes/push.js';
 import devicesRouter from './routes/devices.js';
 import geoLocationsRouter from './routes/geoLocations.js';
 import { startOverstayMonitor } from './services/overstayMonitor.js';
+import { startIdleMonitor } from './services/idleMonitor.js';
 import { migrateProjectsPermissionsFromDepartments } from './services/projectPermissionMigration.js';
+import vehicleTypesRouter from './routes/vehicleTypes.js';
+import vehicleCategoriesRouter from './routes/vehicleCategories.js';
+import vehiclesRouter from './routes/vehicles.js';
+import { seedVehicleTypes } from './services/vehicleTypeSeeder.js';
+import vehicleRegistrationFormsRouter from './routes/vehicleRegistrationForms.js';
+import vehicleRegistrationsRouter from './routes/vehicleRegistrations.js';
+import equipmentMovementsRouter from './routes/equipmentMovements.js';
+import idleMonitoringRouter from './routes/idleMonitoring.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -193,6 +202,13 @@ app.use('/api/push', pushRouter);
 app.use('/api/devices', devicesRouter);
 app.use('/api/geo-locations', geoLocationsRouter);
 app.use('/api/geo-login-audit', geoLoginAuditRouter);
+app.use('/api/vehicles/types', vehicleTypesRouter);
+app.use('/api/vehicles/categories', vehicleCategoriesRouter);
+app.use('/api/vehicles/forms', vehicleRegistrationFormsRouter);
+app.use('/api/vehicles/registrations', vehicleRegistrationsRouter);
+app.use('/api/vehicles', vehiclesRouter);
+app.use('/api/equipment/movements', equipmentMovementsRouter);
+app.use('/api/equipment/idle-monitoring', idleMonitoringRouter);
 
 app.use(notFound);
 app.use(errorHandler);
@@ -256,6 +272,12 @@ async function runBackgroundBootstrap() {
     console.warn('Super admin setup failed:', err.message);
   }
 
+  try {
+    await seedVehicleTypes();
+  } catch (err) {
+    console.warn('Vehicle type seeding failed:', err.message);
+  }
+
   const aiReady = await waitForAiServer();
   if (!aiReady) {
     console.warn('AI server not reachable — face index sync deferred until AI is online');
@@ -275,6 +297,7 @@ async function runBackgroundBootstrap() {
   }
 
   startOverstayMonitor();
+  startIdleMonitor();
 }
 
 async function start() {

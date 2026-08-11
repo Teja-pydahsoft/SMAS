@@ -31,7 +31,7 @@ RUN pip install --upgrade pip setuptools wheel cython \
     && pip install opencv-python-headless==4.10.0.84 \
     && pip install faiss-cpu==1.8.0.post1 \
     && pip install insightface==0.7.3 \
-    && pip install fastapi==0.115.6 "uvicorn[standard]==0.34.0" python-multipart==0.0.20 Pillow==11.1.0
+    && pip install fastapi==0.115.6 "uvicorn[standard]==0.34.0" python-multipart==0.0.20 Pillow==11.1.0 easyocr==1.7.1
 
 COPY app ./app
 

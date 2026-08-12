@@ -81,7 +81,7 @@ function RegistrationFlowModal({ title, subtitle, onClose, children, ariaLabel }
   return createPortal(modalContent, document.body);
 }
 
-function NewRegistrationModal({ roles, onClose, onComplete }) {
+function NewRegistrationModal({ roles, roleId, onClose, onComplete }) {
   const [flowKey, setFlowKey] = useState(0);
 
   function handleRegistrationComplete(reg) {
@@ -101,7 +101,8 @@ function NewRegistrationModal({ roles, onClose, onComplete }) {
     >
       <RegistrationFlow
         key={`new-modal-${flowKey}`}
-        roles={roles}
+        roles={roleId ? undefined : roles}
+        roleId={roleId}
         onComplete={handleRegistrationComplete}
         onCancel={onClose}
         onRegisterAnother={handleRegisterAnother}
@@ -226,8 +227,25 @@ function ManageRegistrationsContent() {
   }, [filterRoleId, searchQuery]);
 
   useEffect(() => {
-    api.roles.list().then(setRoles).catch((e) => setError(e.message));
-  }, []);
+    api.roles.list().then((loadedRoles) => {
+      const urlRoleSlug = searchParams.get('roleSlug');
+      
+      let finalRoles = loadedRoles;
+      if (urlRoleSlug === 'driver') {
+        const driverRole = loadedRoles.find(r => r.slug === 'driver');
+        if (driverRole) {
+          setFilterRoleId(driverRole._id);
+        }
+        // If we are on the driver page, we probably only need the driver role
+        finalRoles = loadedRoles.filter(r => r.slug === 'driver');
+      } else {
+        // Otherwise, hide the driver role from the main dropdown
+        finalRoles = loadedRoles.filter(r => r.slug !== 'driver');
+      }
+      
+      setRoles(finalRoles);
+    }).catch((e) => setError(e.message));
+  }, [searchParams]);
 
   // Debounce search input so typing doesn't hammer the API
   useEffect(() => {
@@ -551,6 +569,7 @@ function ManageRegistrationsContent() {
       {showNewRegistrationModal && (
         <NewRegistrationModal
           roles={roles}
+          roleId={filterRoleId || undefined}
           onClose={() => setShowNewRegistrationModal(false)}
           onComplete={handleRegistrationComplete}
         />

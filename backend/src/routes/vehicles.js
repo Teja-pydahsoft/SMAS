@@ -90,6 +90,7 @@ router.get(
     const vehicles = await Vehicle.find(filter)
       .populate('typeId')
       .populate('categoryId')
+      .populate('driverId')
       .sort({ createdAt: -1 })
       .lean();
       
@@ -148,6 +149,7 @@ router.get(
     const vehicle = await Vehicle.findById(req.params.id)
       .populate('typeId')
       .populate('categoryId')
+      .populate('driverId')
       .populate('departmentId')
       .populate('divisionId')
       .populate('allowedGates');
@@ -169,7 +171,7 @@ router.delete(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { plateNumber, typeId, categoryId, departmentId, divisionId, status, allowedGates, expiryDate, ownerId, ownerModel, metadata } = req.body;
+    const { plateNumber, typeId, categoryId, driverId, departmentId, divisionId, status, allowedGates, expiryDate, ownerId, ownerModel, metadata } = req.body;
     if (!plateNumber || !typeId || !categoryId) {
       return res.status(400).json({ error: 'Plate Number, Type, and Category are required' });
     }
@@ -186,6 +188,7 @@ router.post(
       normalizedPlateNumber,
       typeId,
       categoryId,
+      driverId,
       departmentId,
       divisionId,
       status: status || 'Active',
@@ -202,9 +205,9 @@ router.post(
 router.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const { status, allowedGates, expiryDate, departmentId, divisionId, typeId, categoryId, metadata } = req.body;
+    const { status, allowedGates, expiryDate, departmentId, divisionId, typeId, categoryId, driverId, metadata } = req.body;
     
-    const update = { status, allowedGates, expiryDate, departmentId, divisionId, typeId, categoryId, metadata };
+    const update = { status, allowedGates, expiryDate, departmentId, divisionId, typeId, categoryId, driverId, metadata };
     
     const vehicle = await Vehicle.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true });
     if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });

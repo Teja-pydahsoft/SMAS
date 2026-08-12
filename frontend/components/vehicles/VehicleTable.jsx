@@ -49,44 +49,63 @@ export default function VehicleTable({ vehicles, onViewClick, onDeleteClick }) {
         <table className="admin-table" style={{ tableLayout: 'fixed', width: '100%', whiteSpace: 'normal' }}>
           <thead>
             <tr>
-              <th style={{ width: '80px', padding: '0.75rem 1rem' }}>Photo</th>
-              <th style={{ width: '25%', padding: '0.75rem 1rem' }}>Vehicle</th>
-              <th style={{ width: '25%', padding: '0.75rem 1rem' }}>Type</th>
-              <th style={{ width: '40%', padding: '0.75rem 1rem' }}>Last Activity</th>
+              <th style={{ width: '20%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>VEHICLE NUMBER</th>
+              <th style={{ width: '15%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>TYPE</th>
+              <th style={{ width: '25%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>ACTIVITY</th>
+              <th style={{ width: '10%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>STATUS</th>
+              <th style={{ width: '15%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>REGISTRATION DATE</th>
+              <th style={{ width: '15%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold', textAlign: 'right' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {vehicles.map(v => (
-              <tr key={v._id} className="admin-table-row" onClick={() => onViewClick(v)}>
-                <td style={{ padding: '0.5rem 1rem' }}>
-                  <div style={{ width: '48px', height: '48px', borderRadius: '8px', overflow: 'hidden', background: 'var(--surface-inset)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {v.metadata?.photos?.front ? (
-                      <img src={resolvePhotoUrl(v.metadata.photos.front)} alt="Vehicle" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <AdminIcon name="vehicles" style={{ width: '24px', height: '24px', color: 'var(--text-muted)' }} />
-                    )}
-                  </div>
-                </td>
-                <td style={{ fontWeight: 600, fontFamily: 'monospace', padding: '0.75rem 1rem' }}>
+              <tr key={v._id} className="admin-table-row">
+                <td style={{ fontWeight: 600, fontFamily: 'monospace', padding: '1rem' }}>
                   {v.plateNumber}
                 </td>
-                <td className="text-muted" style={{ padding: '0.75rem 1rem' }}>
+                <td className="text-muted" style={{ padding: '1rem' }}>
                   {v.typeId?.name || '-'}
                 </td>
-                <td style={{ padding: '0.75rem 1rem' }}>
+                <td style={{ padding: '1rem' }}>
                   {v.activeMovement ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: v.activeMovement.status === 'Inside' ? 'var(--success)' : 'var(--text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         <span style={{ width: 8, height: 8, flexShrink: 0, borderRadius: '50%', backgroundColor: v.activeMovement.status === 'Inside' ? 'var(--success)' : 'var(--text-muted)' }}></span>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.activeMovement.status === 'Inside' ? 'In:' : 'Out:'} {v.activeMovement.departmentId?.name}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.activeMovement.status === 'Inside' ? 'Inside' : 'Outside'} {v.activeMovement.departmentId?.name}</span>
                       </span>
                       <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-                        {new Date(v.activeMovement.inTime || v.activeMovement.createdAt).toLocaleDateString()} {new Date(v.activeMovement.inTime || v.activeMovement.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        Entered by System
                       </span>
                     </div>
                   ) : (
-                    <span className="text-muted">No Activity</span>
+                    <span className="text-muted">No Activity Found</span>
                   )}
+                </td>
+                <td style={{ padding: '1rem' }}>
+                  {v.status || 'Active'}
+                </td>
+                <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>
+                  {new Date(v.createdAt).toLocaleDateString()}
+                </td>
+                <td style={{ padding: '1rem', textAlign: 'right' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                    <button 
+                      type="button"
+                      className="admin-btn"
+                      style={{ padding: '0.3rem 0.75rem', fontSize: '12px', border: '1px solid var(--border-color)', borderRadius: '20px', background: 'transparent' }}
+                      onClick={(e) => { e.stopPropagation(); onViewClick(v); }}
+                    >
+                      View Details
+                    </button>
+                    <button 
+                      type="button"
+                      className="admin-btn"
+                      style={{ padding: '0.3rem 0.75rem', fontSize: '12px', border: '1px solid var(--border-color)', borderRadius: '20px', background: 'transparent' }}
+                      onClick={(e) => { e.stopPropagation(); onDeleteClick(v); }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

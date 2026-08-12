@@ -6,6 +6,7 @@ const vehicleSchema = new mongoose.Schema(
     normalizedPlateNumber: { type: String, required: true, lowercase: true, trim: true },
     typeId: { type: mongoose.Schema.Types.ObjectId, ref: 'VehicleType', required: true },
     categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'VehicleCategory', required: false },
+    driverId: { type: mongoose.Schema.Types.ObjectId, ref: 'Registration', required: false }, // Optional default driver
     ownerId: { type: mongoose.Schema.Types.ObjectId, required: false }, // Can reference SystemUser or Registration
     ownerModel: { type: String, enum: ['SystemUser', 'Registration'], required: false },
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', required: false },

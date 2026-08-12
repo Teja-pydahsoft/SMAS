@@ -31,6 +31,7 @@ export const APP_NAV_ITEMS = [
       { path: '/vehicles/dashboard', label: 'Dashboard', icon: 'dashboard', module: null },
       { path: '/vehicles/registrations?status=Pending', label: 'Registrations', icon: 'registrations', module: null },
       { path: '/vehicles', label: 'Vehicle Master', icon: 'companies', module: null },
+      { path: '/registrations?roleSlug=driver', label: 'Driver Registration', icon: 'registrations', module: 'registrations' },
       { path: '/equipment/movements', label: 'Entry & Exit', icon: 'entryExit', module: null },
       { path: '/vehicles/reports', label: 'Reports', icon: 'reports', module: null },
     ],

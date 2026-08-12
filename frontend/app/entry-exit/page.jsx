@@ -33,16 +33,13 @@ function notFoundMessage(result) {
 }
 
 function captureLabel(eventType, scanType) {
-  if (isAutoGateEvent(eventType) && scanType === 'gate') {
-    return 'Capture — entry or exit resolved from status';
-  }
-  if (isAutoGateEvent(eventType) && scanType === 'department') {
-    return 'Capture — check-in or check-out resolved from status';
+  if (isAutoGateEvent(eventType)) {
+    return 'Capture Face';
   }
   if (scanType === 'department') {
-    return eventType === 'entry' ? 'Capture for department check-in' : 'Capture for department check-out';
+    return eventType === 'entry' ? 'Capture for Check-in' : 'Capture for Check-out';
   }
-  return eventType === 'entry' ? 'Capture for gate entry' : 'Capture for gate exit';
+  return eventType === 'entry' ? 'Capture for Entry' : 'Capture for Exit';
 }
 
 function applyResult(res, setResult, setSessionState, setDayPass, setError) {

@@ -252,6 +252,11 @@ export default function GateCameraScanner({
     if (!video || !canvas || processing || preview || capturingRef.current) return;
     capturingRef.current = true;
 
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      capturingRef.current = false;
+      return;
+    }
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
@@ -261,7 +266,13 @@ export default function GateCameraScanner({
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
     }
-    ctx.drawImage(video, 0, 0);
+    
+    try {
+      ctx.drawImage(video, 0, 0);
+    } catch (err) {
+      capturingRef.current = false;
+      return;
+    }
 
     canvas.toBlob(
       async (blob) => {
@@ -311,20 +322,19 @@ export default function GateCameraScanner({
       <div className="camera-viewport gate-cam-scanner__viewport">
 
         {/* Live video */}
-        {!preview && (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className={[
-              active ? 'visible' : 'hidden',
-              videoMirrored ? 'gate-cam-scanner__video--mirrored' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-          />
-        )}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={[
+            active ? 'visible' : 'hidden',
+            videoMirrored ? 'gate-cam-scanner__video--mirrored' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          style={{ display: preview ? 'none' : 'block' }}
+        />
 
         {/* Frozen preview after face capture */}
         {preview && (
@@ -436,7 +446,7 @@ export default function GateCameraScanner({
 
         {showRetake && (
           <button type="button" className="btn-secondary" onClick={retake}>
-            Retake
+            Capture New Person
           </button>
         )}
 

@@ -325,6 +325,7 @@ router.post(
 
     let finalTypeId = typeId || registration.data?.typeId;
     let finalCategoryId = categoryId || registration.data?.categoryId;
+    let finalDriverId = registration.data?.driverId || null;
 
     if (!finalCategoryId) {
       const defaultCat = await VehicleCategory.findOne();
@@ -343,6 +344,7 @@ router.post(
       normalizedPlateNumber: normalizedPlateNumber,
       typeId: finalTypeId,
       categoryId: finalCategoryId,
+      driverId: finalDriverId,
       departmentId,
       allowedGates,
       expiryDate,

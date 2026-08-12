@@ -9,6 +9,8 @@ const equipmentMovementSchema = new mongoose.Schema(
     outTime: { type: Date, required: false },
     enteredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'SystemUser', required: false },
     exitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'SystemUser', required: false },
+    driverId: { type: mongoose.Schema.Types.ObjectId, ref: 'Registration', required: false },
+    driverLogId: { type: mongoose.Schema.Types.ObjectId, ref: 'GateLog', required: false },
     gateId: { type: mongoose.Schema.Types.ObjectId, ref: 'Gate', required: false },
     status: { type: String, enum: ['Inside', 'Exited'], default: 'Inside' },
     movementSource: { type: String, enum: ['manual', 'camera', 'rfid', 'qr', 'api'], default: 'manual' },

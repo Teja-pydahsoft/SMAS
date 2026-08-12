@@ -3,9 +3,12 @@ import { redirect } from 'next/navigation';
 export default async function RegistrationsIndexPage({ searchParams }) {
   const params = await searchParams;
 
+  let query = '';
   if (params?.edit) {
-    redirect(`/registrations/manage?edit=${params.edit}`);
+    query = `?edit=${params.edit}`;
+  } else if (params?.roleSlug) {
+    query = `?roleSlug=${params.roleSlug}`;
   }
 
-  redirect('/registrations/manage');
+  redirect(`/registrations/manage${query}`);
 }

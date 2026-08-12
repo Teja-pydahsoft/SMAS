@@ -43,6 +43,7 @@ import vehicleTypesRouter from './routes/vehicleTypes.js';
 import vehicleCategoriesRouter from './routes/vehicleCategories.js';
 import vehiclesRouter from './routes/vehicles.js';
 import { seedVehicleTypes } from './services/vehicleTypeSeeder.js';
+import { seedDriverRole } from './services/driverRoleSeeder.js';
 import vehicleRegistrationFormsRouter from './routes/vehicleRegistrationForms.js';
 import vehicleRegistrationsRouter from './routes/vehicleRegistrations.js';
 import equipmentMovementsRouter from './routes/equipmentMovements.js';
@@ -276,6 +277,12 @@ async function runBackgroundBootstrap() {
     await seedVehicleTypes();
   } catch (err) {
     console.warn('Vehicle type seeding failed:', err.message);
+  }
+
+  try {
+    await seedDriverRole();
+  } catch (err) {
+    console.warn('Driver role seeding failed:', err.message);
   }
 
   const aiReady = await waitForAiServer();

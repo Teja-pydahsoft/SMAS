@@ -8,7 +8,9 @@ import Department from '../models/Department.js';
 import Gate from '../models/Gate.js';
 import { createMulter } from '../utils/storage.js';
 import { isObjectStorageEnabled, uploadPhoto } from '../services/objectStorage.js';
-import { analyzeVehicle } from '../services/aiClient.js';
+import { analyzeVehicle, extractFaceEmbedding, searchFaceEmbeddings } from '../services/aiClient.js';
+import Registration from '../models/Registration.js';
+import GateLog from '../models/GateLog.js';
 import { 
   logDepartmentEntry, 
   logDepartmentExit, 
@@ -42,9 +44,27 @@ router.post(
       
       const plateNumber = aiResult.frontPlateNumber || aiResult.normalizedPlateNumber;
       let vehicle = null;
+      let driver = null;
+      let driverMatchScore = 0;
       
       if (plateNumber) {
         vehicle = await Vehicle.findOne({ normalizedPlateNumber: plateNumber.toLowerCase().replace(/\s+/g, '') }).populate('typeId');
+      }
+      
+      try {
+        const faceExt = await extractFaceEmbedding(req.file.buffer, req.file.originalname, req.file.mimetype);
+        if (faceExt.face_detected && faceExt.embedding?.length) {
+          const searchResult = await searchFaceEmbeddings(faceExt.embedding, {
+            topK: 1,
+            threshold: parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.42')
+          });
+          if (searchResult.best?.id) {
+            driver = await Registration.findById(searchResult.best.id).select('-faceEmbedding');
+            driverMatchScore = searchResult.best.similarity;
+          }
+        }
+      } catch (faceErr) {
+        console.warn('Face detection error during vehicle analysis:', faceErr.message);
       }
       
       let activeMovement = null;
@@ -76,9 +96,11 @@ router.post(
         success: true,
         aiResult,
         vehicle, 
+        driver,
+        driverMatchScore,
         activeMovement,
         snapshotUrl,
-        message: plateNumber ? 'Plate extracted successfully' : 'AI pending or could not extract plate. Manual entry required.'
+        message: plateNumber ? 'Analysis completed' : 'Analysis completed, manual entry may be required'
       });
     } catch (err) {
       res.status(500).json({ error: 'AI analysis failed', details: err.message });
@@ -90,7 +112,7 @@ router.post(
 router.post(
   '/capture',
   asyncHandler(async (req, res) => {
-    const { vehicleId, departmentId, divisionId, direction, snapshotUrl, confidence, aiPlate, confirmedPlate, isOverride } = req.body;
+    const { vehicleId, departmentId, divisionId, direction, snapshotUrl, confidence, aiPlate, confirmedPlate, isOverride, driverId } = req.body;
     const movementSource = 'camera';
 
     const vehicle = await Vehicle.findById(vehicleId);
@@ -128,8 +150,30 @@ router.post(
         await logIdleCleared(activeIdleSession);
       }
 
+      let driverLog = null;
+      if (driverId) {
+        const registration = await Registration.findById(driverId);
+        if (registration) {
+          driverLog = await GateLog.create({
+            registrationId: driverId,
+            roleId: registration.roleId,
+            divisionId,
+            departmentId,
+            gateId: 'department',
+            scanType: 'department',
+            eventType: 'entry',
+            accessGranted: true,
+            matched: true,
+            scannedBy: userId,
+            matchScore: 1.0,
+            photoPath: snapshotUrl,
+            metadata: { vehicleId }
+          });
+        }
+      }
+
       const movement = await EquipmentMovement.create({
-        vehicleId, departmentId, divisionId, enteredBy: userId, inTime: now, status: 'Inside', movementSource, snapshotUrl, metadata: { aiPlate, confirmedPlate }
+        vehicleId, departmentId, divisionId, enteredBy: userId, inTime: now, status: 'Inside', movementSource, snapshotUrl, driverId, driverLogId: driverLog?._id, metadata: { aiPlate, confirmedPlate }
       });
 
       await logDepartmentEntry(vehicle, departmentId, null, movementSource, movement._id, snapshotUrl, confidence);
@@ -145,6 +189,27 @@ router.post(
       existingMovement.exitedBy = userId;
       existingMovement.outSnapshotUrl = snapshotUrl;
       await existingMovement.save();
+
+      if (existingMovement.driverId) {
+        const registration = await Registration.findById(existingMovement.driverId);
+        if (registration) {
+          await GateLog.create({
+            registrationId: existingMovement.driverId,
+            roleId: registration.roleId,
+            divisionId: existingMovement.divisionId,
+            departmentId: existingMovement.departmentId,
+            gateId: 'department',
+            scanType: 'department',
+            eventType: 'exit',
+            accessGranted: true,
+            matched: true,
+            scannedBy: userId,
+            matchScore: 1.0,
+            photoPath: snapshotUrl,
+            metadata: { vehicleId, linkedMovementId: existingMovement._id }
+          });
+        }
+      }
 
       const idleSession = await IdleSession.create({ vehicleId, lastDepartmentId: existingMovement.departmentId, startTime: now, status: 'Active' });
       

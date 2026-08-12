@@ -22,6 +22,7 @@ export default function NewVehicleRegistrationPage() {
     equipmentName: '',
     typeId: '',
     categoryId: '',
+    driverId: '',
     remarks: ''
   });
   
@@ -50,16 +51,21 @@ export default function NewVehicleRegistrationPage() {
   // Lookups
   const [types, setTypes] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [isAddingNewType, setIsAddingNewType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
 
   useEffect(() => {
     Promise.all([
       api.vehicles.types.list().catch(() => []),
-      api.vehicles.categories.list().catch(() => [])
-    ]).then(([typesData, categoriesData]) => {
+      api.vehicles.categories.list().catch(() => []),
+      api.registrations.list().catch(() => [])
+    ]).then(([typesData, categoriesData, registrationsData]) => {
       if (Array.isArray(typesData)) setTypes(typesData);
       if (Array.isArray(categoriesData)) setCategories(categoriesData);
+      if (Array.isArray(registrationsData)) {
+        setDrivers(registrationsData.filter(r => r.roleId?.slug === 'driver' && r.status === 'verified'));
+      }
     });
 
     if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
@@ -189,6 +195,8 @@ export default function NewVehicleRegistrationPage() {
       formPayload.append('plateNumber', formData.plateNumber);
       formPayload.append('data', JSON.stringify({
         typeId: formData.typeId,
+        categoryId: formData.categoryId,
+        driverId: formData.driverId || null,
         equipmentName: formData.equipmentName,
         remarks: formData.remarks
       }));
@@ -316,6 +324,16 @@ export default function NewVehicleRegistrationPage() {
                   <div className="admin-form-group" style={{ margin: 0 }}>
                     <label style={{ fontWeight: '600' }}>Equipment Name</label>
                     <input type="text" className="admin-input" value={formData.equipmentName} onChange={(e) => setFormData({...formData, equipmentName: e.target.value})} style={{ backgroundColor: 'var(--surface-base)' }} />
+                  </div>
+
+                  <div className="admin-form-group" style={{ margin: 0 }}>
+                    <label style={{ fontWeight: '600' }}>Assign Driver (Optional)</label>
+                    <select className="admin-input" value={formData.driverId} onChange={(e) => setFormData({...formData, driverId: e.target.value})} style={{ backgroundColor: 'var(--surface-base)' }}>
+                      <option value="">-- No Default Driver --</option>
+                      {drivers.map(d => (
+                        <option key={d._id} value={d._id}>{d.formData?.name || d.registrationCode}</option>
+                      ))}
+                    </select>
                   </div>
 
                   

@@ -156,7 +156,8 @@ function MovementsContent() {
         confidence: analysisResult.aiResult?.confidence?.ocr || 0,
         aiPlate: analysisResult.aiResult?.frontPlateNumber || 'Unknown',
         confirmedPlate: overridePlate,
-        isOverride
+        isOverride,
+        driverId: analysisResult.driver?._id || undefined
       };
 
       const res = await fetch('/api/equipment/movements/capture', {
@@ -330,15 +331,35 @@ function MovementsContent() {
                          <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Operator Confirmation</h2>
                        </div>
                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', padding: '1.5rem', flex: 1 }}>
-                          <div>
-                            <div className="text-muted" style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Captured Image</div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', borderRadius: '8px', overflow: 'hidden' }}>
-                              <img src={analysisResult.snapshotUrl?.startsWith('http') ? resolvePhotoUrl(analysisResult.snapshotUrl) : resolvePhotoUrl(`/uploads/activity/${analysisResult.snapshotUrl}`)} alt="Capture" style={{ width: '100%', maxHeight: '350px', objectFit: 'contain', border: '1px solid var(--border-color)' }} />
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                             <div className="admin-form-group">
-                                <label>Confirm Plate (Manual Override)</label>
+                           <div>
+                             <div className="text-muted" style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Captured Image</div>
+                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', borderRadius: '8px', overflow: 'hidden', height: '350px' }}>
+                               <img src={analysisResult.snapshotUrl?.startsWith('http') ? resolvePhotoUrl(analysisResult.snapshotUrl) : resolvePhotoUrl(`/uploads/activity/${analysisResult.snapshotUrl}`)} alt="Capture" style={{ width: '100%', height: '100%', objectFit: 'contain', border: '1px solid var(--border-color)' }} />
+                             </div>
+                           </div>
+                           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                              
+                              {analysisResult.driver && (
+                                <div style={{ display: 'flex', gap: '1rem', padding: '1rem', backgroundColor: 'var(--surface-sunken)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                  <div style={{ width: '80px', height: '80px', borderRadius: '50%', overflow: 'hidden', border: '2px solid var(--success)', flexShrink: 0 }}>
+                                    {analysisResult.driver.photos?.photo ? (
+                                      <img src={resolvePhotoUrl(`/uploads/photos/${analysisResult.driver.photos.photo}`)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    ) : (
+                                      <div style={{ width: '100%', height: '100%', backgroundColor: 'var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <AdminIcon name="user" size={32} />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                    <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 'bold' }}>Matched Driver</div>
+                                    <div style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{analysisResult.driver.formData?.name || analysisResult.driver.registrationCode}</div>
+                                    <div style={{ fontSize: '0.875rem', color: 'var(--success)' }}>Face Match: {(analysisResult.driverMatchScore * 100).toFixed(1)}%</div>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              <div className="admin-form-group">
+                                 <label>Confirm Plate (Manual Override)</label>
                                 <input 
                                   type="text" 
                                   className="admin-input"
@@ -444,6 +465,21 @@ function MovementsContent() {
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span className="text-muted" style={{ fontSize: '0.875rem' }}>Vehicle Type</span>
                       {actionLoading ? <span style={{ width: '60px', height: '16px', backgroundColor: 'var(--surface-sunken)' }} /> : <span>{analysisResult?.vehicle?.typeId?.name || analysisResult?.aiResult?.vehicleType || 'N/A'}</span>}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span className="text-muted" style={{ fontSize: '0.875rem' }}>Driver Match</span>
+                      {actionLoading ? (
+                        <span style={{ width: '60px', height: '16px', backgroundColor: 'var(--surface-sunken)' }} />
+                      ) : (
+                        analysisResult?.driver ? (
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 'bold' }}>{analysisResult.driver.formData?.name || analysisResult.driver.registrationCode}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--success)' }}>Match: {(analysisResult.driverMatchScore * 100).toFixed(1)}%</div>
+                          </div>
+                        ) : (
+                          <span className="text-muted">Not Found</span>
+                        )
+                      )}
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span className="text-muted" style={{ fontSize: '0.875rem' }}>Last Scan Time</span>

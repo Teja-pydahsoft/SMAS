@@ -568,27 +568,43 @@ function WorkspaceContent() {
         <div className="pdg-layout">
           <aside className="pdg-timeline-col" aria-label="Project day timeline">
             {photoDays.length === 0 ? (<div className="pdg-empty-state pdg-empty-state--sm"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.35"><rect x="3" y="4" width="18" height="18" rx="3" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg><p>No days available yet.</p></div>) : (
-              <div className="pdg-day-list">
-                {photoDays.map((day) => {
-                  const isActive = day.photoDate === selectedPhotoDate;
-                  const hasPhotos = day.photoCount > 0;
-                  return (
-                    <button key={day.photoDate} type="button"
-                      className={['pdg-day-btn', isActive ? 'pdg-day-btn--active' : '', day.isToday ? 'pdg-day-btn--today' : '', day.isFuture ? 'pdg-day-btn--future' : '', hasPhotos ? 'pdg-day-btn--has-photos' : ''].filter(Boolean).join(' ')}
-                      onClick={() => { setSelectedPhotoDate(day.photoDate); setPdgSearch(''); setPdgDeptFilter(''); setPdgDivFilter(''); setPdgEntryExitFilter(''); setPdgTimeFilter(''); }}
-                      aria-pressed={isActive} disabled={day.isFuture} title={day.isFuture ? 'This day has not arrived yet' : undefined}>
-                      <div className="pdg-day-btn__indicator">
-                        {hasPhotos ? <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="currentColor" /></svg> : day.isFuture ? <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg> : <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4" /></svg>}
-                      </div>
-                      <div className="pdg-day-btn__content">
-                        <div className="pdg-day-btn__top"><span className="pdg-day-btn__number">Day {day.dayIndex}</span>{day.isToday && <span className="pdg-day-btn__today-chip">Today</span>}</div>
-                        <div className="pdg-day-btn__date">{formatDate(day.photoDate)}</div>
-                        <div className="pdg-day-btn__meta">{day.isFuture ? <span className="pdg-day-btn__future-label">Upcoming</span> : hasPhotos ? <span className="pdg-day-btn__count">{day.photoCount} photo{day.photoCount !== 1 ? 's' : ''}</span> : <span className="pdg-day-btn__empty-label">No photos</span>}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className="pdg-day-list pdg-day-list--desktop">
+                  {photoDays.map((day) => {
+                    const isActive = day.photoDate === selectedPhotoDate;
+                    const hasPhotos = day.photoCount > 0;
+                    return (
+                      <button key={day.photoDate} type="button"
+                        className={['pdg-day-btn', isActive ? 'pdg-day-btn--active' : '', day.isToday ? 'pdg-day-btn--today' : '', day.isFuture ? 'pdg-day-btn--future' : '', hasPhotos ? 'pdg-day-btn--has-photos' : ''].filter(Boolean).join(' ')}
+                        onClick={() => { setSelectedPhotoDate(day.photoDate); setPdgSearch(''); setPdgDeptFilter(''); setPdgDivFilter(''); setPdgEntryExitFilter(''); setPdgTimeFilter(''); }}
+                        aria-pressed={isActive} disabled={day.isFuture} title={day.isFuture ? 'This day has not arrived yet' : undefined}>
+                        <div className="pdg-day-btn__indicator">
+                          {hasPhotos ? <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="currentColor" /></svg> : day.isFuture ? <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg> : <svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4" /></svg>}
+                        </div>
+                        <div className="pdg-day-btn__content">
+                          <div className="pdg-day-btn__top"><span className="pdg-day-btn__number">Day {day.dayIndex}</span>{day.isToday && <span className="pdg-day-btn__today-chip">Today</span>}</div>
+                          <div className="pdg-day-btn__date">{formatDate(day.photoDate)}</div>
+                          <div className="pdg-day-btn__meta">{day.isFuture ? <span className="pdg-day-btn__future-label">Upcoming</span> : hasPhotos ? <span className="pdg-day-btn__count">{day.photoCount} photo{day.photoCount !== 1 ? 's' : ''}</span> : <span className="pdg-day-btn__empty-label">No photos</span>}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="pdg-day-select-mobile">
+                  <select 
+                    value={selectedPhotoDate} 
+                    onChange={(e) => { setSelectedPhotoDate(e.target.value); setPdgSearch(''); setPdgDeptFilter(''); setPdgDivFilter(''); setPdgEntryExitFilter(''); setPdgTimeFilter(''); }}
+                    className="pdg-filter-select"
+                    style={{ width: '100%', padding: '0.75rem', fontWeight: 600 }}
+                  >
+                    {photoDays.map((day) => (
+                      <option key={day.photoDate} value={day.photoDate} disabled={day.isFuture}>
+                        Day {day.dayIndex} · {formatDate(day.photoDate)} ({day.photoCount} photos)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
             )}
           </aside>
           <section className="pdg-gallery-col">

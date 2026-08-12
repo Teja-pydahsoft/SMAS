@@ -599,8 +599,15 @@
     grid-template-columns: 1fr;
   }
 
+  .pm-tab-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px; /* give some room for scrollbar if any */
+  }
+
   .pm-tab-btn {
-    flex: 1 1 calc(50% - 4px);
+    flex: 0 0 auto;
   }
 
   .pm-toolbar {
@@ -691,6 +698,10 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+
+.pdg-day-select-mobile {
+  display: none;
 }
 
 .pdg-day-btn {
@@ -1403,22 +1414,18 @@
     position: static;
     max-height: none;
     overflow: visible;
-    /* Horizontal scrollable date chips on tablet/mobile */
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 0.35rem 0.5rem;
-    gap: 0.4rem;
-    scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
+    padding: 0;
+    border: none;
+    background: transparent;
   }
 
-  .pdg-day-list {
-    display: flex;
-    flex-direction: row;
-    gap: 0.4rem;
-    flex-wrap: nowrap;
+  .pdg-day-list--desktop {
+    display: none !important;
+  }
+
+  .pdg-day-select-mobile {
+    display: block;
+    margin-bottom: 0.5rem;
   }
 
   .pdg-day-btn {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { hasMediaValue, isImageMedia, parseMediaValue, resolveMediaUrl } from '@/lib/mediaUtils';
+import SearchableSelect from '@/components/SearchableSelect';
 
 export const FIELD_TYPES = ['text', 'number', 'email', 'phone', 'date', 'select', 'textarea', 'checkbox', 'media'];
 
@@ -137,18 +138,30 @@ export default function DynamicFormFields({
                 disabled={readOnly}
               />
             ) : field.type === 'select' ? (
-              <select
-                value={values[field.fieldId] || ''}
-                onChange={(e) => handleChange(field.fieldId, e.target.value)}
-                disabled={readOnly}
-              >
-                <option value="">Select...</option>
-                {(field.options || []).map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
+              (field.options || []).length > 10 && !readOnly ? (
+                <SearchableSelect
+                  options={field.options || []}
+                  value={values[field.fieldId] || ''}
+                  onChange={(val) => handleChange(field.fieldId, val)}
+                  placeholder="Select..."
+                  emptyValue=""
+                  disabled={readOnly}
+                  className="rc-select"
+                />
+              ) : (
+                <select
+                  value={values[field.fieldId] || ''}
+                  onChange={(e) => handleChange(field.fieldId, e.target.value)}
+                  disabled={readOnly}
+                >
+                  <option value="">Select...</option>
+                  {(field.options || []).map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              )
             ) : field.type === 'checkbox' ? (
               <label className="checkbox-option" style={{ cursor: readOnly ? 'default' : 'pointer' }}>
                 <input

@@ -10,6 +10,7 @@ import { resolvePhotoUrl } from '@/lib/photoUrl';
 import { formatShiftWindow, formatDurationHours } from '@/lib/shiftTiming';
 import PassCard from '@/components/PassCard';
 import { useAuth } from '@/components/AuthProvider';
+import SearchableSelect from '@/components/SearchableSelect';
 
 /* ═══════════════════════════════════════════════════════════════
    UTILITIES
@@ -1758,20 +1759,38 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          {selectionColumns.map(label => (
-            <select
-              key={`sel-filter-${label}`}
-              className="rc-select"
-              value={selectionFilters[label] || 'all'}
-              onChange={e => setSelectionFilters(prev => ({ ...prev, [label]: e.target.value }))}
-              aria-label={`Filter by ${label}`}
-            >
-              <option value="all">All · {label}</option>
-              {selectionValueOptions(allPeople, label).map(val => (
-                <option key={val} value={val}>{val}</option>
-              ))}
-            </select>
-          ))}
+          {selectionColumns.map(label => {
+            const options = selectionValueOptions(allPeople, label);
+            const val = selectionFilters[label] || 'all';
+            
+            if (options.length > 10) {
+              return (
+                <div key={`sel-filter-${label}`} style={{ display: 'inline-flex' }}>
+                  <SearchableSelect
+                    options={options}
+                    value={val}
+                    onChange={(newVal) => setSelectionFilters(prev => ({ ...prev, [label]: newVal }))}
+                    placeholder={`All · ${label}`}
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <select
+                key={`sel-filter-${label}`}
+                className="rc-select"
+                value={val}
+                onChange={e => setSelectionFilters(prev => ({ ...prev, [label]: e.target.value }))}
+                aria-label={`Filter by ${label}`}
+              >
+                <option value="all">All · {label}</option>
+                {options.map(v => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            );
+          })}
         </div>
         <div className="rc-filters-bar__right">
           <span className="rc-filter-pill">
@@ -2842,6 +2861,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     payFrequency: '',
     shiftName: '',
   });
+  const [selectionFilters, setSelectionFilters] = useState({});
 
   useEffect(() => {
     api.roles.list().then((list) => setRoles(Array.isArray(list) ? list : [])).catch(() => setRoles([]));
@@ -3068,6 +3088,12 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   ].filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const searchQ = search.trim().toLowerCase();
   const employees = allEmployees.filter((emp) => {
+    for (const [label, val] of Object.entries(selectionFilters)) {
+      if (val && val !== 'all') {
+        const sel = (emp.selections || []).find((s) => s.label === label);
+        if (!sel || sel.value !== val) return false;
+      }
+    }
     if (filters.payFrequency && emp.payFrequency !== filters.payFrequency) return false;
     if (filters.shiftName) {
       const dayShiftNames = (emp.days || []).map((d) => d.shiftName).filter(Boolean);
@@ -3271,6 +3297,37 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
               ))}
             </select>
           </div>
+
+          {selectionColumns.map((label) => {
+            const options = selectionValueOptions(allEmployees, label);
+            const val = selectionFilters[label] || 'all';
+
+            return (
+              <div key={label} className="form-group rc-filter-inline__item">
+                <label>{label}</label>
+                {options.length > 10 ? (
+                  <SearchableSelect
+                    options={options}
+                    value={val}
+                    onChange={(newVal) => setSelectionFilters({ ...selectionFilters, [label]: newVal })}
+                    placeholder={`All ${label}s`}
+                    disabled={busy}
+                  />
+                ) : (
+                  <select
+                    value={val}
+                    onChange={(e) => setSelectionFilters({ ...selectionFilters, [label]: e.target.value })}
+                    disabled={busy}
+                  >
+                    <option value="all">All {label}s</option>
+                    {options.map((v) => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            );
+          })}
 
           <div className="form-group rc-filter-inline__item rc-filter-inline__item--action">
             <label>&nbsp;</label>

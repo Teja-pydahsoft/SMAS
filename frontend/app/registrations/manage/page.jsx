@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import RegistrationFlow from '@/components/RegistrationFlow';
@@ -9,6 +10,7 @@ import { formatDate } from '@/lib/formatDate';
 import { STATUS_BADGE, actionLabel, photoUrlFromPath } from '../shared';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
+import RegistrationReportModal from '@/components/RegistrationReportModal';
 
 const PAGE_SIZE = 25;
 
@@ -25,9 +27,21 @@ function PlusIcon() {
 }
 
 function RegistrationFlowModal({ title, subtitle, onClose, children, ariaLabel }) {
-  return (
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
+
+  const modalContent = (
     <div
       className="pass-modal-overlay reg-details-overlay"
+      style={{ alignItems: 'center' }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -62,6 +76,9 @@ function RegistrationFlowModal({ title, subtitle, onClose, children, ariaLabel }
       </div>
     </div>
   );
+
+  if (!mounted) return null;
+  return createPortal(modalContent, document.body);
 }
 
 function NewRegistrationModal({ roles, onClose, onComplete }) {
@@ -136,6 +153,7 @@ function ManageRegistrationsContent() {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingRegistrationId, setEditingRegistrationId] = useState(preselectedEdit || null);
+  const [reportRegistrationId, setReportRegistrationId] = useState(null);
   const [flowKey, setFlowKey] = useState(0);
   const [error, setError] = useState('');
   const [listLoading, setListLoading] = useState(true);
@@ -405,7 +423,12 @@ function ManageRegistrationsContent() {
                   {registrations.map((reg) => {
                     const photoUrl = reg.photoUrl || photoUrlFromPath(reg.photoPath);
                     return (
-                      <tr key={reg._id}>
+                      <tr 
+                        key={reg._id} 
+                        onClick={() => handleViewDetails(reg)} 
+                        style={{ cursor: 'pointer' }}
+                        className="clickable-row"
+                      >
                         <td>
                           {photoUrl ? (
                             <img src={photoUrl} alt="" className="reg-thumb" />
@@ -446,7 +469,7 @@ function ManageRegistrationsContent() {
                           <button
                             type="button"
                             className="btn-secondary btn-sm"
-                            onClick={() => handleViewDetails(reg)}
+                            onClick={(e) => { e.stopPropagation(); handleViewDetails(reg); }}
                           >
                             View Details
                           </button>
@@ -454,14 +477,14 @@ function ManageRegistrationsContent() {
                             <button
                               type="button"
                               className="btn-primary"
-                              onClick={() => handleEditRegistration(reg)}
+                              onClick={(e) => { e.stopPropagation(); handleEditRegistration(reg); }}
                             >
                               {actionLabel(reg)}
                             </button>
                             <button
                               type="button"
                               className="btn-danger"
-                              onClick={() => handleDeleteRegistration(reg)}
+                              onClick={(e) => { e.stopPropagation(); handleDeleteRegistration(reg); }}
                             >
                               Delete
                             </button>
@@ -512,6 +535,16 @@ function ManageRegistrationsContent() {
         <RegistrationDetailsModal
           registration={detailsRegistration}
           onClose={() => setDetailsRegistration(null)}
+          onViewActivity={() => {
+            setReportRegistrationId(detailsRegistration._id);
+          }}
+        />
+      )}
+
+      {reportRegistrationId && (
+        <RegistrationReportModal
+          registrationId={reportRegistrationId}
+          onClose={() => setReportRegistrationId(null)}
         />
       )}
 

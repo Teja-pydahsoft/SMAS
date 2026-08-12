@@ -220,9 +220,10 @@ router.post(
       return res.status(409).json({ error: 'A pending registration for this plate number already exists' });
     }
 
+    const uniquePrefix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     const photos = {
-      front: files.front[0].filename || files.front[0].originalname,
-      frontPlate: files.frontPlate[0].filename || files.frontPlate[0].originalname
+      front: files.front[0].filename || `${uniquePrefix}-${files.front[0].originalname}`,
+      frontPlate: files.frontPlate[0].filename || `${uniquePrefix}-${files.frontPlate[0].originalname}`
     };
 
     if (isObjectStorageEnabled()) {
@@ -456,7 +457,8 @@ router.put(
     
     if (isObjectStorageEnabled() && req.file.buffer) {
        try {
-         const uploadResult = await uploadPhoto(req.file.buffer, 'vehicles', req.file.originalname, req.file.mimetype);
+         const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}-${req.file.originalname}`;
+         const uploadResult = await uploadPhoto(req.file.buffer, 'vehicles', uniqueName, req.file.mimetype);
          registration.photos[photoKey] = uploadResult.url || uploadResult;
        } catch (err) {
          return res.status(500).json({ error: 'Failed to upload photo to cloud storage' });

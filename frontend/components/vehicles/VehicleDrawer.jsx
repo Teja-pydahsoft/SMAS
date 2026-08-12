@@ -1,14 +1,26 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import VehicleStatusBadge from './VehicleStatusBadge';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 
-export default function VehicleDrawer({ vehicle, onClose, logs = [] }) {
-  if (!vehicle) return null;
+export default function VehicleDrawer({ vehicle, onClose, visits = [] }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    // Prevent background scrolling when open
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
+  if (!vehicle || !mounted) return null;
 
   const aiData = vehicle.aiMetadata || {};
   const photos = vehicle.metadata?.photos || {};
 
-  return (
+  return createPortal(
     <>
       <div 
         style={{
@@ -16,21 +28,33 @@ export default function VehicleDrawer({ vehicle, onClose, logs = [] }) {
         }}
         onClick={onClose}
       />
+      <style dangerouslySetInnerHTML={{__html: `
+        .vehicle-drawer-container {
+          position: fixed; top: 0; right: 0; height: 100dvh; width: 100%; max-width: 480px;
+          background-color: var(--surface-base); z-index: 1000;
+          box-shadow: -4px 0 15px rgba(0,0,0,0.1); overflow-y: auto;
+        }
+        @media (max-width: 768px) {
+          .vehicle-drawer-container {
+            top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%);
+            height: auto; max-height: 90vh; width: 90%; max-width: 400px;
+            border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            display: flex; flex-direction: column;
+          }
+          .vehicle-drawer-content {
+            padding-bottom: 24px !important;
+          }
+        }
+      `}} />
       <div 
-        style={{
-          position: 'fixed', top: 0, right: 0, bottom: 0, width: '480px',
-          backgroundColor: 'var(--surface-base)', zIndex: 1000,
-          boxShadow: '-4px 0 15px rgba(0,0,0,0.1)',
-          display: 'flex', flexDirection: 'column',
-          overflowY: 'auto'
-        }}
+        className="vehicle-drawer-container"
       >
-        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, backgroundColor: 'var(--surface-base)', zIndex: 10 }}>
-          <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Vehicle Details</h2>
+        <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, backgroundColor: 'var(--surface-base)', zIndex: 10, borderRadius: '12px 12px 0 0' }}>
+          <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Vehicle Details</h2>
           <button onClick={onClose} className="admin-btn admin-btn--ghost" style={{ padding: '4px 8px' }}>✕</button>
         </div>
 
-        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <div className="vehicle-drawer-content" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '120px' }}>
           
           <section>
             <h3 style={{ fontSize: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Basic Information</h3>
@@ -108,31 +132,74 @@ export default function VehicleDrawer({ vehicle, onClose, logs = [] }) {
           </section>
 
           <section>
-            <h3 style={{ fontSize: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Activity Timeline</h3>
-            {logs.length === 0 ? (
-              <p style={{ color: 'var(--text-secondary)' }}>No recent activity found.</p>
+            <h3 style={{ fontSize: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Movement History</h3>
+            {visits.length === 0 ? (
+              <p style={{ color: 'var(--text-secondary)' }}>No recent movements found.</p>
             ) : (
-              <ul className="admin-live-list">
-                {logs.map(log => (
-                  <li key={log._id} className="admin-live-list__item" style={{ padding: '0.75rem 0', borderBottom: '1px solid var(--border-color)' }}>
-                    <div>
-                      <strong>{log.metadata?.action || log.reason || 'Activity'}</strong>
-                      <span style={{ display: 'block', fontSize: 'var(--text-12)', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                        {log.decision} {log.departmentId?.name && `• ${log.departmentId.name}`}
-                      </span>
-                    </div>
-                    <time style={{ textAlign: 'right', flexShrink: 0, fontSize: 'var(--text-12)', color: 'var(--text-secondary)' }}>
-                      {new Date(log.timestamp || log.createdAt).toLocaleDateString()}<br/>
-                      {new Date(log.timestamp || log.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                    </time>
-                  </li>
-                ))}
-              </ul>
+              <div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-12)', tableLayout: 'fixed' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                      <th style={{ padding: '0.5rem 0', fontWeight: 500, width: '28%' }}>Dept</th>
+                      <th style={{ padding: '0.5rem 0', fontWeight: 500, width: '28%' }}>In</th>
+                      <th style={{ padding: '0.5rem 0', fontWeight: 500, width: '28%' }}>Out</th>
+                      <th style={{ padding: '0.5rem 0', fontWeight: 500, width: '16%', textAlign: 'right' }}>Dur</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visits.map(visit => {
+                      let duration = '-';
+                      if (visit.inTime && visit.outTime) {
+                        const ms = new Date(visit.outTime) - new Date(visit.inTime);
+                        const mins = Math.floor(ms / 60000);
+                        if (mins < 60) duration = `${mins}m`;
+                        else {
+                          const hrs = Math.floor(mins / 60);
+                          const rem = mins % 60;
+                          duration = `${hrs}h ${rem}m`;
+                        }
+                      } else if (visit.status === 'Inside') {
+                        duration = 'Inside';
+                      }
+
+                      const inDateStr = visit.inTime ? new Date(visit.inTime).toLocaleDateString() : '';
+                      const inTimeStr = visit.inTime ? new Date(visit.inTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-';
+                      const outTimeStr = visit.outTime ? new Date(visit.outTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : (visit.status === 'Inside' ? 'Now' : '-');
+
+                      return (
+                        <tr key={visit._id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '0.75rem 0', paddingRight: '0.25rem' }}>
+                            <div style={{ fontWeight: 500, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'normal', wordBreak: 'break-word', fontSize: '11px' }}>
+                              {visit.departmentId?.name || '-'}
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.75rem 0', color: 'var(--text-secondary)', fontSize: '10px' }}>
+                            {inDateStr && <div style={{ marginBottom: '2px' }}>{inDateStr}</div>}
+                            <div style={{ fontWeight: 500, color: 'var(--text-main)' }}>{inTimeStr}</div>
+                          </td>
+                          <td style={{ padding: '0.75rem 0', color: 'var(--text-secondary)', fontSize: '10px' }}>
+                            {visit.outTime ? (
+                              <>
+                                <div style={{ marginBottom: '2px' }}>{new Date(visit.outTime).toLocaleDateString()}</div>
+                                <div style={{ fontWeight: 500, color: 'var(--text-main)' }}>{outTimeStr}</div>
+                              </>
+                            ) : (visit.status === 'Inside' ? <span style={{color: 'var(--status-active)'}}>Now</span> : '-')}
+                          </td>
+                          <td style={{ padding: '0.75rem 0', textAlign: 'right', fontWeight: 600, color: visit.status === 'Inside' ? 'var(--status-active)' : 'inherit', fontSize: '11px' }}>
+                            {duration}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
 
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

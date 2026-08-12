@@ -2,6 +2,7 @@
 
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
 import { formatDate, formatDateTime, todayDateStringIst } from '@/lib/formatDate';
 import { formatCurrency, PAY_FREQUENCY_LABELS, PAY_FREQUENCIES } from '@/lib/payFrequency';
@@ -13,6 +14,13 @@ import { useAuth } from '@/components/AuthProvider';
 /* ═══════════════════════════════════════════════════════════════
    UTILITIES
 ════════════════════════════════════════════════════════════════ */
+
+function PortalWrapper({ children }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted || typeof document === 'undefined') return null;
+  return createPortal(children, document.body);
+}
 
 /** Print helper — Daily / History download professional PDFs; others use browser print */
 function printReportCenterFallback() {
@@ -457,8 +465,8 @@ function TimelineEvent({ entry, isLast, showPhoto = true, onOpen }) {
   const isEntry = isActivity
     ? true
     : (entry.eventType || '').toLowerCase().includes('entry') ||
-      (entry.label || '').toLowerCase().includes('entry') ||
-      entry.isEntry;
+    (entry.label || '').toLowerCase().includes('entry') ||
+    entry.isEntry;
   const isActive = entry.status === 'Active';
   const time = entry.at || entry.entryAt;
 
@@ -558,17 +566,15 @@ function PeriodTrackNode({ entry, workDate, role, isEndpoint, onOpen }) {
 
   return (
     <div
-      className={`rc-day-track__node ${isEndpoint ? 'rc-day-track__node--endpoint' : 'rc-day-track__node--step'} ${
-        endpointKind ? `rc-day-track__node--${endpointKind}` : ''
-      }`}
+      className={`rc-day-track__node ${isEndpoint ? 'rc-day-track__node--endpoint' : 'rc-day-track__node--step'} ${endpointKind ? `rc-day-track__node--${endpointKind}` : ''
+        }`}
       title={entryLocationTitle(entry)}
     >
       <ScanPhoto
         url={entry.photoUrl}
         label={`${role} photo — click for details`}
-        className={`rc-day-track__photo-img ${isEndpoint ? 'rc-day-track__photo' : 'rc-day-track__step-photo'} ${
-          isEntry ? 'rc-day-track__photo-img--entry' : 'rc-day-track__photo-img--exit'
-        }`}
+        className={`rc-day-track__photo-img ${isEndpoint ? 'rc-day-track__photo' : 'rc-day-track__step-photo'} ${isEntry ? 'rc-day-track__photo-img--entry' : 'rc-day-track__photo-img--exit'
+          }`}
         size={isEndpoint ? 'md' : 'sm'}
         onClick={() => onOpen?.(entry)}
       />
@@ -608,11 +614,10 @@ function PeriodDayTrack({ entries, workDate = '' }) {
               <Fragment key={entry.id || `${entry.at}-${i}`}>
                 {i > 0 && (
                   <div
-                    className={`rc-day-track__seg ${
-                      isExitScan(sorted[i - 1]) || isExitScan(entry)
+                    className={`rc-day-track__seg ${isExitScan(sorted[i - 1]) || isExitScan(entry)
                         ? 'rc-day-track__seg--exit'
                         : 'rc-day-track__seg--entry'
-                    }`}
+                      }`}
                     aria-hidden
                   />
                 )}
@@ -632,11 +637,13 @@ function PeriodDayTrack({ entries, workDate = '' }) {
         )}
       </div>
       {detailEntry && (
-        <ScanDetailLightbox
-          entry={detailEntry}
-          workDate={workDate}
-          onClose={() => setDetailEntry(null)}
-        />
+        <PortalWrapper>
+          <ScanDetailLightbox
+            entry={detailEntry}
+            workDate={workDate}
+            onClose={() => setDetailEntry(null)}
+          />
+        </PortalWrapper>
       )}
     </>
   );
@@ -794,141 +801,158 @@ function PeriodDaySessionsTable({
   onStatusChange,
 }) {
   const [editingDay, setEditingDay] = useState(null);
+  const [expandedDays, setExpandedDays] = useState({});
+  const toggleDay = (date) => setExpandedDays(prev => ({ ...prev, [date]: !prev[date] }));
   const sortedDays = [...periodDays].reverse();
   const rate = payAmount != null ? Number(payAmount) : null;
 
   return (
     <>
-    <div className="rc-period-sessions-table-wrap">
-      <table className="rc-period-sessions-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Gate In</th>
-            <th>Last Activity</th>
-            <th>Shift</th>
-            <th>Hours</th>
-            <th>Break</th>
-            <th>Day Amount</th>
-            <th>Sessions</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sortedDays.map((day) => {
-            const entries = entriesByDateMap[day.date] || [];
-            const lastEntry = [...entries].sort((a, b) => new Date(a.at) - new Date(b.at)).at(-1);
-            const lastLabel = lastEntry
-              ? scanActivityLabel(lastEntry)
-              : day.lastActivityType === 'exit'
-                ? 'Gate Out'
-                : 'Gate In';
-            const hoursLabel = formatCellHours(day.activityHours) || '—';
-            const breakLabel = formatCellHours(day.breakHours) || '—';
-            const earned = dayEarnedAmount(day, rate);
-            const shiftWindow =
-              day.shiftTotalHours != null
-                ? `${formatDurationHours(day.shiftTotalHours)}h`
-                : formatShiftWindow(day.shiftStartTime, day.shiftEndTime);
-            const breakSegments = Array.isArray(day.breaks) ? day.breaks : [];
-            const overnight = isOvernightDay(day);
+      <div className="rc-period-sessions-table-wrap">
+        <table className="rc-period-sessions-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Gate In</th>
+              <th>Last Activity</th>
+              <th>Shift</th>
+              <th>Hours</th>
+              <th>Break</th>
+              <th>Day Amount</th>
+              <th>Sessions</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedDays.map((day) => {
+              const entries = entriesByDateMap[day.date] || [];
+              const lastEntry = [...entries].sort((a, b) => new Date(a.at) - new Date(b.at)).at(-1);
+              const lastLabel = lastEntry
+                ? scanActivityLabel(lastEntry)
+                : day.lastActivityType === 'exit'
+                  ? 'Gate Out'
+                  : 'Gate In';
+              const hoursLabel = formatCellHours(day.activityHours) || '—';
+              const breakLabel = formatCellHours(day.breakHours) || '—';
+              const earned = dayEarnedAmount(day, rate);
+              const shiftWindow =
+                day.shiftTotalHours != null
+                  ? `${formatDurationHours(day.shiftTotalHours)}h`
+                  : formatShiftWindow(day.shiftStartTime, day.shiftEndTime);
+              const breakSegments = Array.isArray(day.breaks) ? day.breaks : [];
+              const overnight = isOvernightDay(day);
 
-            return (
-              <Fragment key={day.date}>
-                <tr className="rc-period-sessions-table__meta">
-                  <td className="rc-period-sessions-table__date">
-                    {overnight ? (
-                      <span className="rc-period-sessions-table__date-overnight">
-                        {formatDate(day.date)}
-                        <span className="rc-period-sessions-table__date-next"> – {formatDate(nextIstDateStr(day.date))}</span>
+              return (
+                <Fragment key={day.date}>
+                  <tr className="rc-period-sessions-table__meta">
+                    <td className="rc-period-sessions-table__date">
+                      {overnight ? (
+                        <span className="rc-period-sessions-table__date-overnight">
+                          {formatDate(day.date)}
+                          <span className="rc-period-sessions-table__date-next"> – {formatDate(nextIstDateStr(day.date))}</span>
+                        </span>
+                      ) : (
+                        formatDate(day.date)
+                      )}
+                    </td>
+                    <td className="rc-period-sessions-table__time">
+                      <TimeWithOptionalDate at={day.checkIn} workDate={day.date} />
+                    </td>
+                    <td className="rc-period-sessions-table__time">
+                      <span className="rc-period-sessions-table__activity">
+                        <TimeWithOptionalDate at={day.lastActivityAt} workDate={day.date} />
+                        <span className="rc-period-sessions-table__activity-type">{lastLabel}</span>
                       </span>
-                    ) : (
-                      formatDate(day.date)
-                    )}
-                  </td>
-                  <td className="rc-period-sessions-table__time">
-                    <TimeWithOptionalDate at={day.checkIn} workDate={day.date} />
-                  </td>
-                  <td className="rc-period-sessions-table__time">
-                    <span className="rc-period-sessions-table__activity">
-                      <TimeWithOptionalDate at={day.lastActivityAt} workDate={day.date} />
-                      <span className="rc-period-sessions-table__activity-type">{lastLabel}</span>
-                    </span>
-                  </td>
-                  <td className="rc-period-sessions-table__shift">
-                    {shiftWindow || day.shiftName ? (
-                      <span className="rc-period-sessions-table__shift-cell">
-                        {day.shiftName && (
-                          <span className="rc-period-sessions-table__shift-name">{day.shiftName}</span>
+                    </td>
+                    <td className="rc-period-sessions-table__shift">
+                      {shiftWindow || day.shiftName ? (
+                        <span className="rc-period-sessions-table__shift-cell">
+                          {day.shiftName && (
+                            <span className="rc-period-sessions-table__shift-name">{day.shiftName}</span>
+                          )}
+                          {shiftWindow && (
+                            <span className="rc-period-sessions-table__shift-window">{shiftWindow}</span>
+                          )}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="rc-period-sessions-table__hours">{hoursLabel}</td>
+                    <td className="rc-period-sessions-table__break">
+                      {day.breakHours > 0 ? (
+                        <span className="rc-period-sessions-table__break-cell">
+                          <span className="rc-period-sessions-table__break-total">{breakLabel}</span>
+                          {breakSegments.length > 0 && (
+                            <span className="rc-period-sessions-table__break-detail">
+                              {breakSegments
+                                .map((b) => {
+                                  const fromLabel = istDateOf(b.from) !== day.date
+                                    ? `${formatTime(b.from)} (${formatShortDate(b.from)})`
+                                    : formatTime(b.from);
+                                  const toLabel = istDateOf(b.to) !== day.date
+                                    ? `${formatTime(b.to)} (${formatShortDate(b.to)})`
+                                    : formatTime(b.to);
+                                  return `${fromLabel}–${toLabel}`;
+                                })
+                                .join(', ')}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="rc-period-sessions-table__amount">
+                      {earned != null ? formatCurrency(earned) : '—'}
+                    </td>
+                    <td className="rc-period-sessions-table__count">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>{entries.length}</span>
+                        {entries.length > 0 && (
+                          <button 
+                            className="btn-secondary btn-sm"
+                            style={{ whiteSpace: 'nowrap', padding: '2px 8px', fontSize: '11px' }}
+                            onClick={() => toggleDay(day.date)}
+                          >
+                            {expandedDays[day.date] ? 'Hide Photos' : 'View Photos'}
+                          </button>
                         )}
-                        {shiftWindow && (
-                          <span className="rc-period-sessions-table__shift-window">{shiftWindow}</span>
+                      </div>
+                    </td>
+                    <td className="rc-period-sessions-table__status-cell">
+                      <AttendanceStatusEditor
+                        day={day}
+                        canEdit={canEditStatus && Boolean(registrationId)}
+                        onEdit={setEditingDay}
+                      />
+                    </td>
+                  </tr>
+                  {expandedDays[day.date] && (
+                    <tr className="rc-period-sessions-table__track-row">
+                      <td colSpan={9}>
+                        {entries.length === 0 ? (
+                          <p className="rc-period-day-timeline__empty">No scan events recorded for this day.</p>
+                        ) : (
+                          <PeriodDayTrack entries={entries} workDate={day.date} />
                         )}
-                      </span>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="rc-period-sessions-table__hours">{hoursLabel}</td>
-                  <td className="rc-period-sessions-table__break">
-                    {day.breakHours > 0 ? (
-                      <span className="rc-period-sessions-table__break-cell">
-                        <span className="rc-period-sessions-table__break-total">{breakLabel}</span>
-                        {breakSegments.length > 0 && (
-                          <span className="rc-period-sessions-table__break-detail">
-                            {breakSegments
-                              .map((b) => {
-                                const fromLabel = istDateOf(b.from) !== day.date
-                                  ? `${formatTime(b.from)} (${formatShortDate(b.from)})`
-                                  : formatTime(b.from);
-                                const toLabel = istDateOf(b.to) !== day.date
-                                  ? `${formatTime(b.to)} (${formatShortDate(b.to)})`
-                                  : formatTime(b.to);
-                                return `${fromLabel}–${toLabel}`;
-                              })
-                              .join(', ')}
-                          </span>
-                        )}
-                      </span>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="rc-period-sessions-table__amount">
-                    {earned != null ? formatCurrency(earned) : '—'}
-                  </td>
-                  <td className="rc-period-sessions-table__count">{entries.length}</td>
-                  <td className="rc-period-sessions-table__status-cell">
-                    <AttendanceStatusEditor
-                      day={day}
-                      canEdit={canEditStatus && Boolean(registrationId)}
-                      onEdit={setEditingDay}
-                    />
-                  </td>
-                </tr>
-                <tr className="rc-period-sessions-table__track-row">
-                  <td colSpan={9}>
-                    {entries.length === 0 ? (
-                      <p className="rc-period-day-timeline__empty">No scan events recorded for this day.</p>
-                    ) : (
-                      <PeriodDayTrack entries={entries} workDate={day.date} />
-                    )}
-                  </td>
-                </tr>
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-    {editingDay && registrationId && (
-      <AttendanceStatusEditPopup
-        registrationId={registrationId}
-        day={editingDay}
-        onClose={() => setEditingDay(null)}
-        onSaved={onStatusChange}
-      />
-    )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {editingDay && registrationId && (
+        <AttendanceStatusEditPopup
+          registrationId={registrationId}
+          day={editingDay}
+          onClose={() => setEditingDay(null)}
+          onSaved={onStatusChange}
+        />
+      )}
     </>
   );
 }
@@ -1097,14 +1121,14 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
 
   const innerTabs = hasDateRange
     ? [
-        { id: 'history', label: 'Period History' },
-        { id: 'details', label: 'Details' },
-      ]
+      { id: 'history', label: 'Period History' },
+      { id: 'details', label: 'Details' },
+    ]
     : [
-        { id: 'today', label: "Today's Timeline" },
-        { id: 'history', label: 'Date History' },
-        { id: 'details', label: 'Details' },
-      ];
+      { id: 'today', label: "Today's Timeline" },
+      { id: 'history', label: 'Date History' },
+      { id: 'details', label: 'Details' },
+    ];
 
   return (
     <div className="rc-dialog-overlay" onClick={onClose} role="dialog" aria-modal aria-label="Person Access Report">
@@ -1112,15 +1136,9 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
         {/* Header */}
         <div className="rc-dialog__header">
           <div className="rc-dialog__header-info">
-            {!loading && details.holderPhotoUrl && (
-              <Avatar url={details.holderPhotoUrl} name={details.holderName} size={44} />
-            )}
             <div>
-              <h2 className="rc-dialog__title">{loading ? 'Loading…' : (details.holderName || '—')}</h2>
-              <p className="rc-dialog__subtitle">
-                {details.roleName || ''}{details.registrationCode ? ` · ${details.registrationCode}` : ''}
-                {rangeLabel && <> · {rangeLabel}</>}
-              </p>
+              <h2 className="rc-dialog__title">{loading ? 'Loading…' : 'Access Report'}</h2>
+              {rangeLabel && <p className="rc-dialog__subtitle">{rangeLabel}</p>}
             </div>
           </div>
           <button className="rc-dialog__close" onClick={onClose} aria-label="Close dialog">
@@ -1264,9 +1282,9 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                             {(details.shiftTotalHours ?? session?.totalHours) != null
                               ? `${formatDurationHours(details.shiftTotalHours ?? session.totalHours)}h`
                               : formatShiftWindow(
-                                  details.shiftStartTime || session?.shiftStartTime,
-                                  details.shiftEndTime || session?.shiftEndTime
-                                ) || '—'}
+                                details.shiftStartTime || session?.shiftStartTime,
+                                details.shiftEndTime || session?.shiftEndTime
+                              ) || '—'}
                           </span>
                         </div>
                       )}
@@ -1487,13 +1505,15 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
           </div>
         </div>
       )}
-      
+
       {detailEntry && (
-        <ScanDetailLightbox
-          entry={detailEntry}
-          workDate={singleDayDate || todayDateStringIst()}
-          onClose={() => setDetailEntry(null)}
-        />
+        <PortalWrapper>
+          <ScanDetailLightbox
+            entry={detailEntry}
+            workDate={singleDayDate || todayDateStringIst()}
+            onClose={() => setDetailEntry(null)}
+          />
+        </PortalWrapper>
       )}
     </div>
   );
@@ -1517,6 +1537,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const [selectionFilters, setSelectionFilters] = useState({});
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [printing, setPrinting] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const intervalRef = useRef(null);
 
   const activityDate = selectedDate || todayDateStringIst();
@@ -1655,8 +1676,39 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
 
   return (
     <div>
+      {/* Mobile Filter Toggle */}
+      {/* Desktop Toggle */}
+      <div className="hide-on-desktop" style={{ marginBottom: '1rem', display: 'none' }}></div>
+
+      {/* Mobile Inline Toolbar */}
+      <div className="hide-on-desktop rc-mobile-toolbar" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
+        <div className="rc-search-wrap" style={{ flex: 1, minWidth: 0 }}>
+          <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="search"
+            className="rc-search-input"
+            placeholder="Search..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            disabled={loading || printing}
+          />
+        </div>
+        <button type="button" className={`btn-secondary btn-sm ${showFilters ? 'btn-primary' : ''}`} onClick={() => setShowFilters(!showFilters)} style={{ padding: '0 8px', flexShrink: 0 }} aria-label="Toggle Filters">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+        </button>
+        <button type="button" className="btn-secondary btn-sm" onClick={() => load()} disabled={loading} style={{ padding: '0 8px', flexShrink: 0 }} aria-label="Refresh">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+        </button>
+        <button type="button" className="btn-secondary btn-sm" onClick={handlePrintPdf} disabled={printing} style={{ padding: '0 8px', flexShrink: 0 }} aria-label="Print">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>
+        </button>
+      </div>
+
       {/* Filters bar */}
-      <div className="rc-filters-bar">
+      <div className={`rc-filters-bar ${!showFilters ? 'hide-on-mobile' : ''}`}>
         <div className="rc-filters-bar__left">
           <ActivityDatePicker
             value={activityDate}
@@ -1664,7 +1716,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
             displayLabel={isToday ? `Today · ${formatDate(activityDate)}` : formatDate(activityDate)}
             className="rc-activity-date--filter"
           />
-          <div className="rc-search-wrap">
+          <div className="rc-search-wrap hide-on-mobile">
             <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -2540,8 +2592,8 @@ function AttendanceDayDialog({ employee, day, onClose }) {
         : day.status === 'HD' || day.status === 'FH' || day.status === 'SH'
           ? `Half day × ${formatCurrency(dayRate)}`
           : day.activityHours != null &&
-              day.shiftTotalHours != null &&
-              day.shiftTotalHours > 0
+            day.shiftTotalHours != null &&
+            day.shiftTotalHours > 0
             ? `${day.activityHours}h / ${day.shiftTotalHours}h × ${formatCurrency(dayRate)}`
             : null;
 
@@ -2726,27 +2778,30 @@ function AttendanceAbstractTable({
               tabIndex={0} role="button"
               aria-label={`View history for ${emp.displayName || 'Unnamed'}`}
               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewPerson(emp.registrationId); } }}>
-              <td className="rc-att-abstract-table__index">{idx + 1}</td>
-              <td>
+              <td className="rc-att-abstract-table__index hide-on-mobile" data-label="#">{idx + 1}</td>
+              <td data-label="Person" className="rc-att-abstract-table__person-cell">
                 <div className="rc-table__person">
-                  <Avatar url={emp.photoUrl} name={emp.displayName} size={34} />
-                  <span className="rc-table__name">{emp.displayName || 'Unnamed'}</span>
+                  <Avatar url={emp.photoUrl} name={emp.displayName} size={38} />
+                  <div className="rc-table__person-info">
+                    <span className="rc-table__name">{emp.displayName || 'Unnamed'}</span>
+                    <span className="rc-table__mobile-pin hide-on-desktop">{emp.registrationCode}</span>
+                  </div>
                 </div>
               </td>
-              <td><span className="rc-table__muted">{emp.roleName || '—'}</span></td>
-              <td><code className="rc-table__code">{emp.registrationCode}</code></td>
-              <td className="rc-table__muted">{emp.displayPhone || '—'}</td>
+              <td data-label="Role"><span className="rc-table__muted">{emp.roleName || '—'}</span></td>
+              <td data-label="PIN / ID" className="hide-on-mobile"><code className="rc-table__code">{emp.registrationCode}</code></td>
+              <td data-label="Phone" className="rc-table__muted">{emp.displayPhone || '—'}</td>
               {selectionColumns.map(label => (
-                <td key={`abs-sel-${emp.registrationId}-${label}`} className="rc-table__muted">{selectionValueFor(emp, label)}</td>
+                <td key={`abs-sel-${emp.registrationId}-${label}`} className="rc-table__muted" data-label={label}>{selectionValueFor(emp, label)}</td>
               ))}
-              <td className="rc-att-abstract-table__num">{emp.summary.totalDays}</td>
-              <td className="rc-att-abstract-table__num rc-att-abstract-table__num--present">{emp.summary.present}</td>
-              <td className="rc-att-abstract-table__num">{emp.summary.halfDay ?? 0}</td>
-              <td className="rc-att-abstract-table__num rc-att-abstract-table__num--absent">{emp.summary.absent}</td>
-              <td className="rc-table__muted">{emp.payFrequencyLabel || '—'}</td>
-              <td className="rc-att-abstract-table__num">{emp.payAmount != null ? formatCurrency(emp.payAmount) : '—'}</td>
-              <td className="rc-att-abstract-table__num">{emp.payment?.paymentDays ?? '—'}</td>
-              <td className="rc-att-abstract-table__num rc-att-abstract-table__num--pay">
+              <td data-label="Total Days" className="rc-att-abstract-table__num">{emp.summary.totalDays}</td>
+              <td data-label="Present Days" className="rc-att-abstract-table__num rc-att-abstract-table__num--present">{emp.summary.present}</td>
+              <td data-label="Partial Days" className="rc-att-abstract-table__num">{emp.summary.halfDay ?? 0}</td>
+              <td data-label="Absent Days" className="rc-att-abstract-table__num rc-att-abstract-table__num--absent">{emp.summary.absent}</td>
+              <td data-label="Pay Frequency" className="rc-table__muted">{emp.payFrequencyLabel || '—'}</td>
+              <td data-label="Pay Amount" className="rc-att-abstract-table__num">{emp.payAmount != null ? formatCurrency(emp.payAmount) : '—'}</td>
+              <td data-label="Payment Days" className="rc-att-abstract-table__num">{emp.payment?.paymentDays ?? '—'}</td>
+              <td data-label="Calculated Amount" className="rc-att-abstract-table__num rc-att-abstract-table__num--pay">
                 {emp.payment ? formatCurrency(emp.payment.totalAmount) : '—'}
               </td>
             </tr>
@@ -2776,6 +2831,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [printing, setPrinting] = useState(false);
   const [search, setSearch] = useState('');
   const [pinSortDir, setPinSortDir] = useState('asc');
+  const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     month: currentMonthValue(),
     week: currentIsoWeekValue(),
@@ -2976,9 +3032,9 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
             : '—';
         setSuccess(
           `Recalculated ${meta.employeeCount ?? 0} people using current shift rules` +
-            ` (${meta.shiftsApplied ?? 0} shifts, ${meta.passesUpdated ?? 0} day passes updated).` +
-            ` Present ${meta.presentDays ?? 0}, Partial ${meta.partialDays ?? 0}, Absent ${meta.absentDays ?? 0}.` +
-            ` Payroll total: ${payLabel}.`
+          ` (${meta.shiftsApplied ?? 0} shifts, ${meta.passesUpdated ?? 0} day passes updated).` +
+          ` Present ${meta.presentDays ?? 0}, Partial ${meta.partialDays ?? 0}, Absent ${meta.absentDays ?? 0}.` +
+          ` Payroll total: ${payLabel}.`
         );
       } else {
         setSuccess('Attendance and payroll recalculated from current shift settings.');
@@ -3071,7 +3127,37 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
 
   return (
     <div>
-      <div className="rc-filter-panel rc-filter-panel--inline">
+      {/* Desktop Toggle */}
+      <div className="hide-on-desktop" style={{ marginBottom: '1rem', display: 'none' }}></div>
+
+      {/* Mobile Inline Toolbar */}
+      <div className="hide-on-desktop rc-mobile-toolbar" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
+        <div className="rc-search-wrap" style={{ flex: 1, minWidth: 0 }}>
+          <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="search"
+            className="rc-search-input"
+            placeholder="Search..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            disabled={recalculating || printing}
+          />
+        </div>
+        <button type="button" className={`btn-secondary btn-sm ${showFilters ? 'btn-primary' : ''}`} onClick={() => setShowFilters(!showFilters)} style={{ padding: '0 8px', flexShrink: 0 }} aria-label="Toggle Filters">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+        </button>
+        <button type="button" className="btn-secondary btn-sm" onClick={() => loadHistory()} disabled={busy} style={{ padding: '0 8px', flexShrink: 0 }} aria-label="Refresh">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+        </button>
+        <button type="button" className="btn-secondary btn-sm" onClick={handlePrintPdf} disabled={printing} style={{ padding: '0 8px', flexShrink: 0 }} aria-label="Print">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>
+        </button>
+      </div>
+
+      <div className={`rc-filter-panel rc-filter-panel--inline ${!showFilters ? 'hide-on-mobile' : ''}`}>
         <div className="rc-filter-panel__inline">
           <div className="form-group rc-filter-inline__item">
             <label>Range Type</label>
@@ -3122,15 +3208,15 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
             </select>
           </div>
 
-          <div className="form-group rc-filter-inline__item rc-filter-inline__item--search">
-            <label htmlFor="att-history-search">Search</label>
+          <div className="form-group rc-filter-inline__item rc-filter-inline__item--search hide-on-mobile">
+            <label htmlFor="att-history-search-desktop">Search</label>
             <div className="rc-search-wrap">
               <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
               <input
-                id="att-history-search"
+                id="att-history-search-desktop"
                 type="search"
                 className="rc-search-input"
                 placeholder="Search name, code, role…"
@@ -3713,12 +3799,12 @@ function ExportCenterTab() {
    MAIN PAGE — REPORT CENTER
 ════════════════════════════════════════════════════════════════ */
 const REPORT_TABS = [
-  { id: 'today',    label: "Today's Activity" },
+  { id: 'today', label: "Today's Activity" },
   { id: 'division', label: 'Division Activity' },
   { id: 'department', label: 'Department Activity' },
   { id: 'history', label: 'Attendance History' },
   { id: 'analytics', label: 'Analytics' },
-  { id: 'export',  label: 'Export Center' },
+  { id: 'export', label: 'Export Center' },
 ];
 
 function ReportsContent() {
@@ -3813,7 +3899,7 @@ function ReportsContent() {
             )}
             <span className="rc-page-header__time">{timeStr}</span>
           </div>
-          <button className="btn-secondary btn-sm" onClick={loadData} title="Refresh all data" aria-label="Refresh">
+          <button className="btn-secondary btn-sm hide-on-mobile" onClick={loadData} title="Refresh all data" aria-label="Refresh">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -3821,7 +3907,7 @@ function ReportsContent() {
             Refresh
           </button>
           <button
-            className="btn-secondary btn-sm"
+            className="btn-secondary btn-sm hide-on-mobile"
             onClick={handleHeaderPrint}
             disabled={printing}
             title={tab === 'today' || tab === 'division' || tab === 'history' ? 'Download professional PDF report' : 'Print current report'}
@@ -3869,18 +3955,20 @@ function ReportsContent() {
             />
           )}
           {tab === 'analytics' && <AnalyticsTab gateLogs={gateLogs} registrations={registrations} />}
-          {tab === 'export'   && <ExportCenterTab />}
+          {tab === 'export' && <ExportCenterTab />}
         </div>
       </div>
 
       {selectedPerson && (
-        <PersonDetailDialog
-          registrationId={selectedPerson.registrationId}
-          dateFrom={selectedPerson.dateFrom}
-          dateTo={selectedPerson.dateTo}
-          divisionId={selectedPerson.divisionId}
-          onClose={() => setSelectedPerson(null)}
-        />
+        <PortalWrapper>
+          <PersonDetailDialog
+            registrationId={selectedPerson.registrationId}
+            dateFrom={selectedPerson.dateFrom}
+            dateTo={selectedPerson.dateTo}
+            divisionId={selectedPerson.divisionId}
+            onClose={() => setSelectedPerson(null)}
+          />
+        </PortalWrapper>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
 import PassCard from '@/components/PassCard';
 import MediaDocumentModal from '@/components/MediaDocumentModal';
@@ -70,12 +71,22 @@ function DocumentRow({ doc, onPreview }) {
   );
 }
 
-export default function RegistrationDetailsModal({ registration, onClose }) {
+export default function RegistrationDetailsModal({ registration, onClose, onViewActivity }) {
   const [pass, setPass] = useState(null);
   const [loadingPass, setLoadingPass] = useState(false);
   const [error, setError] = useState('');
   const [previewDocument, setPreviewDocument] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
 
   const isVerified = registration?.status === 'verified';
   const photoUrl = registration?.photoUrl || photoUrlFromPath(registration?.photoPath);
@@ -95,10 +106,10 @@ export default function RegistrationDetailsModal({ registration, onClose }) {
       .finally(() => setLoadingPass(false));
   }, [registration, isVerified]);
 
-  if (!registration) return null;
+  if (!registration || !mounted) return null;
 
-  return (
-    <div className="pass-modal-overlay reg-details-overlay" onClick={onClose}>
+  const modalContent = (
+    <div className="pass-modal-overlay reg-details-overlay" style={{ alignItems: 'center' }} onClick={onClose}>
       <div className="reg-details-modal reg-details-modal--wide" onClick={(e) => e.stopPropagation()}>
 
         <div className="reg-details-modal__header no-print">
@@ -249,8 +260,13 @@ export default function RegistrationDetailsModal({ registration, onClose }) {
           )}
         </div>
 
-        <div className="reg-details-modal__footer no-print">
+        <div className="reg-details-modal__footer no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
+          {onViewActivity && (
+            <button type="button" className="btn-primary" onClick={onViewActivity}>
+              View Daily Activity
+            </button>
+          )}
         </div>
       </div>
 
@@ -259,4 +275,6 @@ export default function RegistrationDetailsModal({ registration, onClose }) {
       )}
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

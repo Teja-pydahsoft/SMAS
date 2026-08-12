@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
 import PassVerifyView from '@/components/PassVerifyView';
 
@@ -8,6 +9,16 @@ export default function RegistrationReportModal({ registrationId, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
 
   useEffect(() => {
     if (!registrationId) return;
@@ -21,10 +32,10 @@ export default function RegistrationReportModal({ registrationId, onClose }) {
       .finally(() => setLoading(false));
   }, [registrationId]);
 
-  if (!registrationId) return null;
+  if (!registrationId || !mounted) return null;
 
-  return (
-    <div className="pass-modal-overlay reports-modal-overlay" onClick={onClose}>
+  const modalContent = (
+    <div className="pass-modal-overlay reports-modal-overlay" style={{ alignItems: 'center' }} onClick={onClose}>
       <div className="reports-slide-modal" onClick={(e) => e.stopPropagation()}>
         <div className="reports-slide-modal__header">
           <div className="reports-slide-modal__title-wrap">
@@ -63,6 +74,7 @@ export default function RegistrationReportModal({ registrationId, onClose }) {
               data={data}
               title="Registered person report"
               subtitle="Access history"
+              hideHeader={true}
               showPassFields={false}
             />
           )}
@@ -76,4 +88,6 @@ export default function RegistrationReportModal({ registrationId, onClose }) {
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

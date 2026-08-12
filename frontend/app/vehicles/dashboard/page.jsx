@@ -60,7 +60,7 @@ function DonutChart({ data, colors }) {
   });
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
       <div style={{ position: 'relative', width: '150px', height: '150px', borderRadius: '50%', background: `conic-gradient(${segments.map(s => `${s.color} ${s.startAngle}deg ${s.startAngle + s.angle}deg`).join(', ')})` }}>
         <div style={{ position: 'absolute', inset: '25px', backgroundColor: 'var(--surface-base)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
           <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{total}</span>
@@ -161,7 +161,7 @@ export default function VehicleDashboardPage() {
       headerActions={headerActions}
     >
       {/* ─── METRICS GRID ─── */}
-      <section className="admin-fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+      <section className="admin-fade-in vehicle-metrics-grid">
         <MetricCard icon="vehicles" iconColor="primary" label="Total Vehicles" value={stats.total} loading={loading} />
         <MetricCard icon="shield" iconColor="success" label="Active Vehicles" value={stats.active} loading={loading} />
         <MetricCard icon="entryExit" iconColor="warning" label="Vehicles Inside" value={stats.inside} loading={loading} trend="Live" />
@@ -193,7 +193,7 @@ export default function VehicleDashboardPage() {
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
         <Panel title="Live Vehicle Activity" meta={<Link href="/vehicles/reports" style={{fontSize:'0.875rem'}}>View All</Link>} className="min-w-0" style={{ minWidth: 0 }}>
           <div className="admin-table-container" style={{ overflowX: 'auto' }}>
-            <table className="admin-table">
+            <table className="admin-table vehicle-dash-table--activity">
               <thead>
                 <tr>
                   <th>Plate</th>
@@ -226,7 +226,7 @@ export default function VehicleDashboardPage() {
 
         <Panel title="Vehicles Currently Inside" className="min-w-0" style={{ minWidth: 0 }}>
           <div className="admin-table-container" style={{ overflowX: 'auto' }}>
-            <table className="admin-table">
+            <table className="admin-table vehicle-dash-table--inside">
               <thead>
                 <tr>
                   <th>Plate</th>
@@ -260,7 +260,7 @@ export default function VehicleDashboardPage() {
       <section style={{ marginBottom: '2rem' }}>
         <Panel title="Recent Vehicle Registrations" meta={<Link href="/vehicles/registrations" style={{fontSize:'0.875rem'}}>View All</Link>}>
           <div className="admin-table-container">
-            <table className="admin-table">
+            <table className="admin-table vehicle-dash-table--regs">
               <thead>
                 <tr>
                   <th>Registration Date</th>

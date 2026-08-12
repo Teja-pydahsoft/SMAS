@@ -6,8 +6,8 @@ import { resolvePhotoUrl } from '@/lib/photoUrl';
 
 const TABS = [
   { id: 'details', label: 'Details' },
-  { id: 'today', label: 'Today Active' },
-  { id: 'history', label: 'Date-wise Entries' },
+  { id: 'today', label: 'Today' },
+  { id: 'history', label: 'History' },
 ];
 
 function StatusBadge({ valid, expired, inactive }) {
@@ -23,32 +23,43 @@ function StatusBadge({ valid, expired, inactive }) {
   return <span className="badge badge-info pass-verify-status">Unverified</span>;
 }
 
-function EntryRow({ entry, showActive }) {
+function EntryRow({ entry, showActive, onPhotoClick }) {
   return (
-    <div className="pass-verify-entry">
-      <div className="pass-verify-entry__header">
-        <span className={`badge ${entry.scanType === 'department' ? 'badge-info' : 'badge-success'}`}>
-          {entry.scanType === 'department' ? 'Department' : 'Gate'}
-        </span>
-        {showActive && entry.status === 'Active' && (
-          <span className="badge badge-warning">Active</span>
+    <div className="pass-verify-entry" style={{ display: 'flex', flexDirection: 'row', gap: '12px', alignItems: 'flex-start' }}>
+      {entry.photoUrl && (
+        <img 
+          src={resolvePhotoUrl(entry.photoUrl)} 
+          alt="Scan Photo" 
+          className="pass-verify-entry__photo" 
+          style={{ cursor: 'pointer' }}
+          onClick={() => onPhotoClick(entry.photoUrl, entry.label)}
+        />
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="pass-verify-entry__header">
+          <span className={`badge ${entry.scanType === 'department' ? 'badge-info' : 'badge-success'}`}>
+            {entry.scanType === 'department' ? 'Department' : 'Gate'}
+          </span>
+          {showActive && entry.status === 'Active' && (
+            <span className="badge badge-warning">Active</span>
+          )}
+          <span className="pass-verify-entry__time">
+            {entry.at ? formatDateTime(entry.at) : entry.entryAt ? formatDateTime(entry.entryAt) : '—'}
+          </span>
+        </div>
+        <p className="pass-verify-entry__label">{entry.label}</p>
+        {entry.divisionName && (
+          <p className="pass-verify-entry__meta">Division: {entry.divisionName}</p>
         )}
-        <span className="pass-verify-entry__time">
-          {entry.at ? formatDateTime(entry.at) : entry.entryAt ? formatDateTime(entry.entryAt) : '—'}
-        </span>
+        {entry.departmentName && entry.scanType !== 'department' && (
+          <p className="pass-verify-entry__meta">Department: {entry.departmentName}</p>
+        )}
+        {entry.entryAt && entry.exitAt && (
+          <p className="pass-verify-entry__meta">
+            {formatDateTime(entry.entryAt)} → {formatDateTime(entry.exitAt)}
+          </p>
+        )}
       </div>
-      <p className="pass-verify-entry__label">{entry.label}</p>
-      {entry.divisionName && (
-        <p className="pass-verify-entry__meta">Division: {entry.divisionName}</p>
-      )}
-      {entry.departmentName && entry.scanType !== 'department' && (
-        <p className="pass-verify-entry__meta">Department: {entry.departmentName}</p>
-      )}
-      {entry.entryAt && entry.exitAt && (
-        <p className="pass-verify-entry__meta">
-          {formatDateTime(entry.entryAt)} → {formatDateTime(entry.exitAt)}
-        </p>
-      )}
     </div>
   );
 }
@@ -208,7 +219,7 @@ function DetailsTab({ details, valid, expired, inactive, sessionState, showPassF
   );
 }
 
-function TodayActiveTab({ todayActive, todayEntries, sessionState, shiftName, totalHours }) {
+function TodayActiveTab({ todayActive, todayEntries, sessionState, shiftName, totalHours, onPhotoClick }) {
   // Merge and sort all today's entries by time for the timeline
   const allEntries = [...todayEntries].sort((a, b) => {
     const ta = new Date(a.at || a.entryAt || 0).getTime();
@@ -297,54 +308,65 @@ function TodayActiveTab({ todayActive, todayEntries, sessionState, shiftName, to
                 </div>
 
                 {/* Content */}
-                <div className={`today-timeline__card ${isActive ? 'today-timeline__card--active' : ''}`}>
-                  <div className="today-timeline__card-header">
-                    <div className="today-timeline__card-badges">
-                      <span className={`badge ${isGate ? 'badge-success' : 'badge-info'}`}>
-                        {isGate ? 'Gate' : 'Department'}
+                <div className={`today-timeline__card ${isActive ? 'today-timeline__card--active' : ''}`} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="today-timeline__card-header">
+                      <div className="today-timeline__card-badges">
+                        <span className={`badge ${isGate ? 'badge-success' : 'badge-info'}`}>
+                          {isGate ? 'Gate' : 'Department'}
+                        </span>
+                        {isActive && (
+                          <span className="badge badge-warning today-timeline__active-badge">
+                            <span className="today-timeline__pulse" aria-hidden="true" />
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <span className="today-timeline__time">
+                        {time ? formatDateTime(time) : '—'}
                       </span>
-                      {isActive && (
-                        <span className="badge badge-warning today-timeline__active-badge">
-                          <span className="today-timeline__pulse" aria-hidden="true" />
-                          Active
+                    </div>
+
+                    <p className="today-timeline__label">{entry.label}</p>
+
+                    <div className="today-timeline__meta">
+                      {entry.divisionName && (
+                        <span className="today-timeline__meta-item">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <rect x="3" y="3" width="7" height="7" rx="1" />
+                            <rect x="14" y="3" width="7" height="7" rx="1" />
+                            <path d="M3 14h7v7H3z" /><path d="M14 14h7v7h-7z" />
+                          </svg>
+                          {entry.divisionName}
+                        </span>
+                      )}
+                      {entry.departmentName && entry.scanType !== 'department' && (
+                        <span className="today-timeline__meta-item">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" />
+                          </svg>
+                          {entry.departmentName}
+                        </span>
+                      )}
+                      {entry.entryAt && entry.exitAt && (
+                        <span className="today-timeline__meta-item today-timeline__meta-item--duration">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                          </svg>
+                          {formatDateTime(entry.entryAt)} → {formatDateTime(entry.exitAt)}
                         </span>
                       )}
                     </div>
-                    <span className="today-timeline__time">
-                      {time ? formatDateTime(time) : '—'}
-                    </span>
                   </div>
-
-                  <p className="today-timeline__label">{entry.label}</p>
-
-                  <div className="today-timeline__meta">
-                    {entry.divisionName && (
-                      <span className="today-timeline__meta-item">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <rect x="3" y="3" width="7" height="7" rx="1" />
-                          <rect x="14" y="3" width="7" height="7" rx="1" />
-                          <path d="M3 14h7v7H3z" /><path d="M14 14h7v7h-7z" />
-                        </svg>
-                        {entry.divisionName}
-                      </span>
-                    )}
-                    {entry.departmentName && entry.scanType !== 'department' && (
-                      <span className="today-timeline__meta-item">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" />
-                        </svg>
-                        {entry.departmentName}
-                      </span>
-                    )}
-                    {entry.entryAt && entry.exitAt && (
-                      <span className="today-timeline__meta-item today-timeline__meta-item--duration">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-                        </svg>
-                        {formatDateTime(entry.entryAt)} → {formatDateTime(entry.exitAt)}
-                      </span>
-                    )}
-                  </div>
+                  {entry.photoUrl && (
+                    <img 
+                      src={resolvePhotoUrl(entry.photoUrl)} 
+                      alt="Scan Photo" 
+                      className="today-timeline__photo" 
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => onPhotoClick(entry.photoUrl, entry.label)}
+                    />
+                  )}
                 </div>
               </div>
             );
@@ -355,7 +377,7 @@ function TodayActiveTab({ todayActive, todayEntries, sessionState, shiftName, to
   );
 }
 
-function HistoryTab({ entriesByDate }) {
+function HistoryTab({ entriesByDate, onPhotoClick }) {
   if (!entriesByDate.length) {
     return <p className="pass-verify-empty">No gate or department entry history found.</p>;
   }
@@ -367,7 +389,7 @@ function HistoryTab({ entriesByDate }) {
           <h3 className="pass-verify-history__date">{formatDate(group.date)}</h3>
           <div className="pass-verify-entry-list">
             {group.entries.map((entry) => (
-              <EntryRow key={entry.id} entry={entry} />
+              <EntryRow key={entry.id} entry={entry} onPhotoClick={onPhotoClick} />
             ))}
           </div>
         </div>
@@ -381,8 +403,10 @@ export default function PassVerifyView({
   title = 'Pass verification',
   subtitle = 'SAMS',
   showPassFields = true,
+  hideHeader = false,
 }) {
   const [tab, setTab] = useState('details');
+  const [previewPhoto, setPreviewPhoto] = useState(null);
 
   if (!data) return null;
 
@@ -390,18 +414,20 @@ export default function PassVerifyView({
 
   return (
     <div className="pass-verify">
-      <div className="pass-verify-header">
-        <div className="pass-verify-brand">
-          <span className="pass-brand-icon pass-brand-icon--logo" aria-hidden="true">
-            <img src="/icons/icon-192.png" alt="" />
-          </span>
-          <div>
-            <p className="pass-brand-name">SAMS</p>
-            <p className="pass-brand-sub">{subtitle || title}</p>
+      {!hideHeader && (
+        <div className="pass-verify-header">
+          <div className="pass-verify-brand">
+            <span className="pass-brand-icon pass-brand-icon--logo" aria-hidden="true">
+              <img src="/icons/icon-192.png" alt="" />
+            </span>
+            <div>
+              <p className="pass-brand-name">SAMS</p>
+              <p className="pass-brand-sub">{subtitle || title}</p>
+            </div>
           </div>
+          <p className="pass-verify-header__title">{title}</p>
         </div>
-        <p className="pass-verify-header__title">{title}</p>
-      </div>
+      )}
 
       <div className="sub-nav pass-verify-tabs" role="tablist">
         {TABS.map((item) => (
@@ -436,10 +462,49 @@ export default function PassVerifyView({
             sessionState={sessionState}
             shiftName={details?.shiftName || null}
             totalHours={details?.totalHours ?? null}
+            onPhotoClick={(url, label) => setPreviewPhoto({ isImage: true, url, label: label || 'Scan Photo', originalName: 'Device Capture' })}
           />
         )}
-        {tab === 'history' && <HistoryTab entriesByDate={entriesByDate} />}
+        {tab === 'history' && (
+          <HistoryTab 
+            entriesByDate={entriesByDate} 
+            onPhotoClick={(url, label) => setPreviewPhoto({ isImage: true, url, label: label || 'Scan Photo', originalName: 'Device Capture' })}
+          />
+        )}
       </div>
+
+      {previewPhoto && (
+        <div 
+          className="pass-modal-overlay" 
+          onClick={() => setPreviewPhoto(null)} 
+          style={{ zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.8)' }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90%', maxHeight: '90%' }}>
+            <img 
+              src={resolvePhotoUrl(previewPhoto.url)} 
+              alt={previewPhoto.label} 
+              style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: '12px', display: 'block', border: '2px solid rgba(255,255,255,0.1)' }} 
+            />
+            <button 
+              type="button" 
+              onClick={() => setPreviewPhoto(null)}
+              title="Close"
+              style={{ 
+                position: 'absolute', top: '12px', right: '12px', 
+                background: 'rgba(255, 255, 255, 0.9)', color: '#000', borderRadius: '50%', 
+                width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                border: 'none', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                fontSize: '24px', lineHeight: 1, paddingBottom: '2px'
+              }}
+            >
+              &times;
+            </button>
+            <p style={{ color: '#fff', marginTop: '12px', textAlign: 'center', fontWeight: '500', fontSize: '15px' }}>
+              {previewPhoto.label}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -200,11 +200,11 @@ function MovementsContent() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             
             {/* 75% / 25% Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 1fr)', gap: '1.5rem' }}>
+            <div className="vehicle-entry-grid">
               
               {/* LEFT SIDE: Camera */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div className="admin-panel glass-panel" style={{ padding: '1rem', display: 'flex', gap: '1rem', alignItems: 'flex-end' }}>
+                <div className="admin-panel glass-panel vehicle-entry-filters">
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.25rem', display: 'block' }}>Division</label>
                     <select 
@@ -250,7 +250,7 @@ function MovementsContent() {
                   {!analysisResult ? (
                     <>
 
-                      <div className="custom-camera-wrapper" style={{ position: 'relative', height: '360px', backgroundColor: '#000', display: 'flex', alignItems: 'stretch' }}>
+                      <div className="custom-camera-wrapper" style={{ position: 'relative', height: 'min(50vh, 400px)', minHeight: '260px', backgroundColor: '#000', display: 'flex', alignItems: 'stretch' }}>
                         <style dangerouslySetInnerHTML={{__html: `
                           .custom-camera-wrapper .camera-capture {
                             width: 100% !important;
@@ -272,6 +272,7 @@ function MovementsContent() {
                             margin: 0 !important;
                             padding: 0 !important;
                             max-width: none !important;
+                            aspect-ratio: unset !important;
                           }
                           .custom-camera-wrapper .camera-viewport video {
                             width: 100% !important;
@@ -458,7 +459,7 @@ function MovementsContent() {
       </div>
 
       {/* STATUS HEADER */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginTop: '1.5rem' }}>
+      <div className="vehicle-entry-statuses" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginTop: '1.5rem' }}>
         <div className="admin-panel glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <div className="text-muted" style={{ fontSize: '0.875rem', textTransform: 'uppercase', fontWeight: '600', letterSpacing: '0.5px' }}>Camera Status</div>
           <div><span className="admin-badge admin-badge--success">Online</span></div>

@@ -22,7 +22,6 @@ export default function NewVehicleRegistrationPage() {
     equipmentName: '',
     typeId: '',
     categoryId: '',
-    departmentId: '',
     remarks: ''
   });
   
@@ -190,7 +189,6 @@ export default function NewVehicleRegistrationPage() {
       formPayload.append('plateNumber', formData.plateNumber);
       formPayload.append('data', JSON.stringify({
         typeId: formData.typeId,
-        departmentId: formData.departmentId,
         equipmentName: formData.equipmentName,
         remarks: formData.remarks
       }));
@@ -245,15 +243,13 @@ export default function NewVehicleRegistrationPage() {
     );
   }
 
-  const isFormComplete = Object.values(files).every(f => f !== null) && formData.plateNumber && formData.typeId && !foundInMaster;
+  const isFormComplete = Object.values(files).every(f => f !== null) && formData.plateNumber && !foundInMaster;
 
   return (
     <PageShell 
       title="Vehicle Registration" 
       description="Live Gate Capture System"
-      toolbar={<div className="admin-badge admin-badge--info">Status: New Draft</div>}
     >
-      <PageTabs tabs={[{ label: 'Active Terminal', path: '/vehicles/registrations/new' }, { label: 'Queue', path: '/vehicles/registrations?status=Pending' }]} />
       
       {error && (
         <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '16px', borderRadius: '4px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -267,7 +263,7 @@ export default function NewVehicleRegistrationPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem' }}>
           
           {/* LEFT COLUMN: Vehicle Details */}
-          <div style={{ flex: '1 1 45%', minWidth: '350px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: '1 1 45%', minWidth: 'min(100%, 350px)', display: 'flex', flexDirection: 'column' }}>
             {foundInMaster ? (
               <div className="admin-panel glass-panel" style={{ padding: '2rem', height: '100%', backgroundColor: '#fffbe1', border: '1px solid #fde047' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', color: '#854d0e' }}>
@@ -298,9 +294,9 @@ export default function NewVehicleRegistrationPage() {
                   </div>
                 </div>
 
-                <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem' }}>
-                  <button className="admin-btn admin-btn--primary" onClick={() => router.push('/vehicles')}>Go to Vehicle Profile</button>
-                  <button className="admin-btn admin-btn--ghost" onClick={() => router.push('/equipment/movements')}>Go to Entry / Exit</button>
+                <div style={{ marginTop: '2rem', display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                  <button className="admin-btn admin-btn--primary" style={{ flex: '1 1 auto', whiteSpace: 'nowrap', minWidth: 'min-content' }} onClick={() => router.push('/vehicles')}>Go to Vehicle Profile</button>
+                  <button className="admin-btn admin-btn--ghost" style={{ flex: '1 1 auto', whiteSpace: 'nowrap', minWidth: 'min-content' }} onClick={() => router.push('/equipment/movements')}>Go to Entry / Exit</button>
                 </div>
               </div>
             ) : (
@@ -315,49 +311,13 @@ export default function NewVehicleRegistrationPage() {
                     <input type="text" className="admin-input" value={formData.plateNumber} onChange={(e) => setFormData({...formData, plateNumber: e.target.value})} style={{ backgroundColor: 'var(--surface-base)', textTransform: 'uppercase' }} placeholder="Auto-filled by OCR" />
                   </div>
                   
-                  <div className="admin-form-group" style={{ margin: 0 }}>
-                    <label style={{ fontWeight: '600' }}>Vehicle Type *</label>
-                    {isAddingNewType ? (
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <input 
-                          type="text" 
-                          className="admin-input" 
-                          autoFocus
-                          placeholder="Enter new type..." 
-                          value={newTypeName} 
-                          onChange={e => setNewTypeName(e.target.value)} 
-                        />
-                        <button className="admin-btn admin-btn--primary" type="button" onClick={handleAddNewType}>Save</button>
-                        <button className="admin-btn admin-btn--ghost" type="button" onClick={() => setIsAddingNewType(false)}>Cancel</button>
-                      </div>
-                    ) : (
-                      <select 
-                        className="admin-input" 
-                        value={formData.typeId} 
-                        onChange={(e) => {
-                          if (e.target.value === 'ADD_NEW') setIsAddingNewType(true);
-                          else setFormData({...formData, typeId: e.target.value});
-                        }} 
-                        style={{ backgroundColor: 'var(--surface-base)' }}
-                      >
-                        <option value="">Select a type...</option>
-                        {types.map(t => (
-                          <option key={t._id} value={t._id}>{t.name}</option>
-                        ))}
-                        <option value="ADD_NEW" style={{ fontWeight: 'bold', color: 'var(--primary)' }}>+ Add New Type</option>
-                      </select>
-                    )}
-                  </div>
+
 
                   <div className="admin-form-group" style={{ margin: 0 }}>
                     <label style={{ fontWeight: '600' }}>Equipment Name</label>
                     <input type="text" className="admin-input" value={formData.equipmentName} onChange={(e) => setFormData({...formData, equipmentName: e.target.value})} style={{ backgroundColor: 'var(--surface-base)' }} />
                   </div>
 
-                  <div className="admin-form-group" style={{ margin: 0 }}>
-                    <label style={{ fontWeight: '600' }}>Department (Optional)</label>
-                    <input type="text" className="admin-input" value={formData.departmentId} onChange={(e) => setFormData({...formData, departmentId: e.target.value})} style={{ backgroundColor: 'var(--surface-base)' }} placeholder="Will be assigned during first Entry" />
-                  </div>
                   
                   <div className="admin-form-group" style={{ margin: 0 }}>
                     <label style={{ fontWeight: '600' }}>Remarks</label>
@@ -369,7 +329,7 @@ export default function NewVehicleRegistrationPage() {
           </div>
 
           {/* RIGHT COLUMN: Camera & OCR */}
-          <div style={{ flex: '1 1 45%', minWidth: '350px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ flex: '1 1 45%', minWidth: 'min(100%, 350px)', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             
             {/* Camera Panel */}
             <div className="admin-panel glass-panel" style={{ padding: '0', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
@@ -463,7 +423,6 @@ export default function NewVehicleRegistrationPage() {
                     Upload Image
                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileUpload} />
                   </label>
-                  <span className="text-muted" style={{ fontSize: '0.875rem', marginLeft: '0.5rem' }}>or click video</span>
                 </div>
               </div>
             </div>
@@ -569,20 +528,31 @@ export default function NewVehicleRegistrationPage() {
 
       {/* SECTION 4: Sticky Footer */}
       {!foundInMaster && (
-        <div style={{ 
-          position: 'fixed', 
-          bottom: 0, 
-          left: '280px', // Assuming sidebar is 280px
-          right: 0, 
-          padding: '1rem 2rem', 
-          background: 'var(--surface-base)', 
-          borderTop: '1px solid var(--border-color)', 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
-          zIndex: 100,
-          boxShadow: '0 -4px 12px rgba(0,0,0,0.05)'
-        }}>
+        <>
+          <style dangerouslySetInnerHTML={{__html: `
+            .registration-sticky-footer {
+              left: 280px;
+            }
+            @media (max-width: 768px) {
+              .registration-sticky-footer {
+                left: 0 !important;
+                padding: 1rem !important;
+              }
+            }
+          `}} />
+          <div className="registration-sticky-footer" style={{ 
+            position: 'fixed', 
+            bottom: 0, 
+            right: 0, 
+            padding: '1rem 2rem', 
+            background: 'var(--surface-base)', 
+            borderTop: '1px solid var(--border-color)', 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            zIndex: 100,
+            boxShadow: '0 -4px 12px rgba(0,0,0,0.05)'
+          }}>
           <button className="admin-btn admin-btn--ghost" onClick={() => router.back()} style={{ fontWeight: 'bold' }}>Cancel</button>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <button className="admin-btn admin-btn--primary" onClick={handleSubmit} disabled={loading || !isFormComplete} style={{ fontWeight: 'bold', padding: '0.5rem 2rem' }}>
@@ -590,8 +560,8 @@ export default function NewVehicleRegistrationPage() {
             </button>
           </div>
         </div>
+        </>
       )}
-
       {/* Preview Modal */}
       {previewModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPreviewModal(null)}>

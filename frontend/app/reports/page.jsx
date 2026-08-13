@@ -1663,8 +1663,8 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     return () => onPrintReady?.(null);
   }, [handlePrintPdf, onPrintReady]);
 
-  const insideCount = allPeople.filter(p => p.divisionInside).length;
-  const activeCount = allPeople.filter(p => p.hadActivityToday).length;
+  const insideCount = filtered.filter(p => p.divisionInside).length;
+  const activeCount = filtered.filter(p => p.hadActivityToday).length;
 
   const openPerson = (registrationId) => {
     const divisionId = divisionFilter !== 'all' ? divisionFilter : '';

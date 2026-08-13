@@ -553,7 +553,7 @@ function LoginSteps({ step, flow, onStepClick }) {
     flow === 'gate'
       ? [
           { id: 'username', label: 'Username' },
-          { id: 'gate-select', label: 'Select Gate' },
+          { id: 'gate-select', label: 'Gate' },
           { id: 'password', label: 'Password' },
         ]
       : [
@@ -882,6 +882,7 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
           {step === 'username' && (
             <label className="login-remember">
               <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+              <span className="login-remember__switch" />
               <span>Remember me</span>
             </label>
           )}
@@ -889,6 +890,7 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
             <div className="login-form__actions">
               <label className="login-remember">
                 <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+                <span className="login-remember__switch" />
                 <span>Remember me</span>
               </label>
               <button type="button" className="login-forgot"

@@ -29,7 +29,7 @@ const QUICK_ACTIONS = [
 ];
 
 /* ── Metric card ── */
-function MetricCard({ icon, iconColor, label, value, trend, trendUp, sparkData, loading, href }) {
+function MetricCard({ icon, iconColor, label, mobileLabel, value, trend, trendUp, sparkData, loading, href }) {
   const card = (
     <div className={`admin-metric-card admin-hover-lift admin-fade-in${href ? ' admin-metric-card--link' : ''}`}>
       <div className="admin-metric-card__head">
@@ -42,7 +42,10 @@ function MetricCard({ icon, iconColor, label, value, trend, trendUp, sparkData, 
           </span>
         )}
       </div>
-      <div className="admin-metric-card__label">{label}</div>
+      <div className="admin-metric-card__label">
+        <span className="admin-metric-card__label-desktop">{label}</span>
+        <span className="admin-metric-card__label-mobile">{mobileLabel || label}</span>
+      </div>
       <div className="admin-metric-card__value">
         {loading ? (
           <span className="admin-skeleton__line admin-skeleton__line--lg" style={{ display: 'inline-block', width: 60 }} />
@@ -85,7 +88,9 @@ export default function DashboardPage() {
   const [gates,         setGates]         = useState([]);
   const [dashboardStats,setDashboardStats]= useState(null);
   const [loading,       setLoading]       = useState(true);
+  const [personType,    setPersonType]    = useState('labour'); // 'labour' or 'visitor'
 
+  // Fetch initial collections on mount
   useEffect(() => {
     if (authLoading || !user) return;
     setLoading(true);
@@ -98,8 +103,7 @@ export default function DashboardPage() {
       api.divisions.list().catch(() => []),
       api.departments.list().catch(() => []),
       api.gates.list().catch(() => []),
-      api.dashboard.stats().catch(() => null),
-    ]).then(([h, regs, logs, rl, divs, depts, gts, stats]) => {
+    ]).then(([h, regs, logs, rl, divs, depts, gts]) => {
       setHealth(h);
       setRegistrations(Array.isArray(regs) ? regs : []);
       setGateLogs(Array.isArray(logs) ? logs : []);
@@ -107,10 +111,29 @@ export default function DashboardPage() {
       setDivisions(Array.isArray(divs) ? divs : []);
       setDepartments(Array.isArray(depts) ? depts : []);
       setGates(Array.isArray(gts) ? gts : []);
-      setDashboardStats(stats);
       setLoading(false);
     });
   }, [authLoading, user]);
+
+  // Fetch /api/dashboard stats dynamically when filter scope changes
+  useEffect(() => {
+    if (authLoading || !user || roles.length === 0) return;
+
+    const labourRoleIds = roles
+      .filter(r => (r?.name && r.name.toLowerCase().includes('labour')) || (r?.slug && r.slug.toLowerCase().includes('labour')))
+      .map(r => r._id);
+    const visitorRoleIds = roles
+      .filter(r => (r?.name && (r.name.toLowerCase().includes('visitor') || r.name.toLowerCase().includes('guest'))) || (r?.slug && (r.slug.toLowerCase().includes('visitor') || r.slug.toLowerCase().includes('guest'))))
+      .map(r => r._id);
+
+    const activeRoleIds = personType === 'labour' ? labourRoleIds : visitorRoleIds;
+
+    api.dashboard.stats({ roleIds: activeRoleIds.join(',') })
+      .then(stats => {
+        setDashboardStats(stats);
+      })
+      .catch(() => setDashboardStats(null));
+  }, [personType, roles, authLoading, user]);
 
   if (authLoading || !user) {
     return (
@@ -121,21 +144,43 @@ export default function DashboardPage() {
     );
   }
 
+  // Derived filter matching role categories
+  const labourRoleIdsStr = roles
+    .filter(r => (r?.name && r.name.toLowerCase().includes('labour')) || (r?.slug && r.slug.toLowerCase().includes('labour')))
+    .map(r => String(r._id));
+  const visitorRoleIdsStr = roles
+    .filter(r => (r?.name && (r.name.toLowerCase().includes('visitor') || r.name.toLowerCase().includes('guest'))) || (r?.slug && (r.slug.toLowerCase().includes('visitor') || r.slug.toLowerCase().includes('guest'))))
+    .map(r => String(r._id));
+
+  const activeFilterRoleIdsStr = personType === 'labour' ? labourRoleIdsStr : visitorRoleIdsStr;
+
+  const filteredRegs = registrations.filter(r => {
+    if (!r) return false;
+    const roleIdVal = r.roleId?._id || r.roleId;
+    return roleIdVal ? activeFilterRoleIdsStr.includes(String(roleIdVal)) : false;
+  });
+
+  const filteredLogs = gateLogs.filter(l => {
+    if (!l) return false;
+    const roleIdVal = l.roleId?._id || l.roleId;
+    return roleIdVal ? activeFilterRoleIdsStr.includes(String(roleIdVal)) : false;
+  });
+
   /* ── derived stats ── */
-  const totalReg    = registrations.length;
-  const verified    = registrations.filter(r => r.status === 'verified').length;
-  const pending     = registrations.filter(r => r.status === 'pending_verification').length;
-  const rejected    = registrations.filter(r => r.status === 'rejected').length;
-  const inProgress  = registrations.filter(r => r.status === 'in_progress').length;
+  const totalReg    = filteredRegs.length;
+  const verified    = filteredRegs.filter(r => r?.status === 'verified').length;
+  const pending     = filteredRegs.filter(r => r?.status === 'pending_verification').length;
+  const rejected    = filteredRegs.filter(r => r?.status === 'rejected').length;
+  const inProgress  = filteredRegs.filter(r => r?.status === 'in_progress').length;
   const aiOnline    = health?.services?.ai === 'online';
-  const activeDivs  = divisions.filter(d => d.isActive !== false).length;
-  const activeDepts = departments.filter(d => d.isActive !== false).length;
-  const activeGates = gates.filter(g => g.isActive !== false).length;
-  const activeRoles = roles.filter(r => r.isActive !== false).length;
+  const activeDivs  = divisions.filter(d => d?.isActive !== false).length;
+  const activeDepts = departments.filter(d => d?.isActive !== false).length;
+  const activeGates = gates.filter(g => g?.isActive !== false).length;
+  const activeRoles = roles.filter(r => r?.isActive !== false && r?._id && activeFilterRoleIdsStr.includes(String(r._id))).length;
 
   /* today's gate logs */
   const today = new Date().toDateString();
-  const todayLogs  = gateLogs.filter(l => new Date(l.createdAt).toDateString() === today);
+  const todayLogs  = filteredLogs.filter(l => new Date(l.createdAt).toDateString() === today);
   const todayEntry = Number.isFinite(dashboardStats?.todayEntries)
     ? dashboardStats.todayEntries
     : todayLogs.filter(l => l.eventType === 'entry' && l.matched).length;
@@ -157,14 +202,14 @@ export default function DashboardPage() {
     : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   /* accuracy estimate from matchScore */
-  const scoredLogs = gateLogs.filter(l => l.matched && l.matchScore);
+  const scoredLogs = filteredLogs.filter(l => l.matched && l.matchScore);
   const avgAcc = scoredLogs.length
     ? Math.round(scoredLogs.reduce((s, l) => s + l.matchScore * 100, 0) / scoredLogs.length)
     : 99;
 
   /* role distribution pie */
   const roleMap = {};
-  registrations.forEach(r => {
+  filteredRegs.forEach(r => {
     const name = r.roleId?.name || 'Unknown';
     roleMap[name] = (roleMap[name] || 0) + 1;
   });
@@ -186,37 +231,37 @@ export default function DashboardPage() {
       <div className="admin-dashboard">
 
         {/* ─── TOP BAR ─── */}
-        <section
-          className="admin-fade-in"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '0.75rem',
-            marginBottom: '1rem',
-          }}
-        >
+        <section className="admin-fade-in admin-dashboard-topbar">
           <div>
             <h1 style={{ margin: 0, fontSize: '1.25rem' }}>Dashboard</h1>
             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               Welcome back, {user.displayName}
             </p>
           </div>
-          <NotificationBell />
+          <div className="admin-dashboard-topbar__actions">
+            <select
+              value={personType}
+              onChange={(e) => setPersonType(e.target.value)}
+              className="dash-scope-select"
+              aria-label="Filter stats scope"
+            >
+              <option value="labour">Labours</option>
+              <option value="visitor">Visitors</option>
+            </select>
+            <NotificationBell />
+          </div>
         </section>
 
         {/* ─── METRICS GRID ─── */}
         <section className="admin-metrics-grid">
-          <MetricCard icon="registrations" iconColor="primary"   label="Total Registrations" value={totalReg}    sparkData={weeklyRegistrationData} loading={loading} href="/registrations" />
-          <MetricCard icon="approvals"     iconColor="success"   label="Verified Users"       value={verified}   trend={8}  trendUp sparkData={ENTRY_TREND.map(v=>v*0.7)} loading={loading} href="/registrations" />
-          <MetricCard icon="alert"         iconColor="warning"   label="Pending Approvals"    value={pending}    trend={pending > 5 ? 3 : undefined} trendUp={false} sparkData={DAILY_DATA} loading={loading} href="/registrations" />
-          <MetricCard icon="entryExit"     iconColor="accent"    label="Today's Entries"      value={todayEntry} sparkData={weeklyEntryData} loading={loading} href="/reports" />
-          <MetricCard icon="shield"        iconColor="secondary" label="Currently Inside"      value={insideNow}  sparkData={DAILY_DATA.slice(0,5)} loading={loading} />
-          <MetricCard icon="divisions"     iconColor="primary"   label="Active Divisions"     value={activeDivs}  sparkData={[3,3,4,4,5,activeDivs]} loading={loading} href="/divisions/manage" />
-          <MetricCard icon="departments"   iconColor="accent"    label="Departments"           value={activeDepts} sparkData={[4,6,7,8,activeDepts]} loading={loading} href="/departments/manage" />
-          <MetricCard icon="cameras"       iconColor="success"   label="Active Gates"          value={activeGates} sparkData={[1,2,activeGates]} loading={loading} href="/divisions/manage" />
-          <MetricCard icon="roles"         iconColor="secondary" label="Registration Roles"    value={activeRoles} sparkData={[1,1,2,activeRoles]} loading={loading} href="/roles" />
-          <MetricCard icon="face"          iconColor="primary"   label="AI Accuracy"           value={avgAcc}     trend={2} trendUp sparkData={ACCURACY_AREA} loading={loading} />
+          <MetricCard icon="registrations" iconColor="primary"   label="Total Registrations" mobileLabel="Registrations" value={totalReg}    sparkData={weeklyRegistrationData} loading={loading} href="/registrations" />
+          <MetricCard icon="entryExit"     iconColor="accent"    label="Today's Entries"      mobileLabel="Entries"       value={todayEntry} sparkData={weeklyEntryData} loading={loading} href="/reports" />
+          <MetricCard icon="shield"        iconColor="secondary" label="Currently Inside"      mobileLabel="Inside"        value={insideNow}  sparkData={DAILY_DATA.slice(0,5)} loading={loading} />
+          <MetricCard icon="divisions"     iconColor="primary"   label="Active Divisions"     mobileLabel="Divisions"     value={activeDivs}  sparkData={[3,3,4,4,5,activeDivs]} loading={loading} href="/divisions/manage" />
+          <MetricCard icon="departments"   iconColor="accent"    label="Departments"           mobileLabel="Departments"   value={activeDepts} sparkData={[4,6,7,8,activeDepts]} loading={loading} href="/departments/manage" />
+          <MetricCard icon="cameras"       iconColor="success"   label="Active Gates"          mobileLabel="Gates"         value={activeGates} sparkData={[1,2,activeGates]} loading={loading} href="/divisions/manage" />
+          <MetricCard icon="roles"         iconColor="secondary" label="Registration Roles"    mobileLabel="Roles"         value={activeRoles} sparkData={[1,1,2,activeRoles]} loading={loading} href="/roles" />
+          <MetricCard icon="face"          iconColor="primary"   label="AI Accuracy"           mobileLabel="Accuracy"      value={avgAcc}     trend={2} trendUp sparkData={ACCURACY_AREA} loading={loading} />
         </section>
 
         {/* ─── ANALYTICS ROW ─── */}

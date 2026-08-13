@@ -32,10 +32,6 @@ export default function MobileHeader({ onOpenDrawer }) {
   return (
     <header className="mobile-header">
       <div className="mobile-header__inner">
-        <div className="mobile-header__brand">
-          <span className="mobile-header__logo">S</span>
-          <span className="mobile-header__title">{title}</span>
-        </div>
         <button 
           className="mobile-header__hamburger" 
           onClick={onOpenDrawer}
@@ -47,6 +43,10 @@ export default function MobileHeader({ onOpenDrawer }) {
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
         </button>
+        <div className="mobile-header__brand">
+          <span className="mobile-header__logo">S</span>
+          <span className="mobile-header__title">{title}</span>
+        </div>
       </div>
     </header>
   );

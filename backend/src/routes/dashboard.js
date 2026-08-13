@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import Registration from '../models/Registration.js';
 import GateLog from '../models/GateLog.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -35,9 +36,14 @@ router.get(
     const weekStart = istDateStart(weekStartKey);
     const weekEnd = istDateStart(weekEndKey);
 
+    const { roleIds } = req.query;
+    const roleIdFilter = roleIds && roleIds.trim()
+      ? { roleId: { $in: roleIds.split(',').filter(Boolean).map(id => new mongoose.Types.ObjectId(id)) } }
+      : {};
+
     const [weeklyRegistrationCounts, dailyCounts] = await Promise.all([
       Registration.aggregate([
-        { $match: { createdAt: { $gte: weekStart, $lt: weekEnd } } },
+        { $match: { ...roleIdFilter, createdAt: { $gte: weekStart, $lt: weekEnd } } },
         {
           $group: {
             _id: {
@@ -54,6 +60,7 @@ router.get(
       GateLog.aggregate([
         {
           $match: grantedGateLogFilter({
+            ...roleIdFilter,
             eventType: GATE_EVENT_TYPES.ENTRY,
             createdAt: { $gte: weekStart, $lt: weekEnd },
           }),

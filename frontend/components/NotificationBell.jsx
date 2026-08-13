@@ -76,16 +76,16 @@ export default function NotificationBell() {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: '0.5rem',
-        padding: '0.5rem 0.9rem',
-        borderRadius: '999px',
+        justifyContent: 'center',
+        width: '38px',
+        height: '38px',
+        borderRadius: '50%',
         border: `1px solid ${active ? 'rgba(34,197,94,0.45)' : 'var(--border, #E5E7EB)'}`,
         background: active ? 'rgba(34,197,94,0.08)' : 'var(--surface, #fff)',
         color: 'var(--text, #111827)',
-        fontSize: '0.85rem',
-        fontWeight: 600,
         cursor: disabled ? 'default' : 'pointer',
         opacity: working ? 0.7 : 1,
+        flexShrink: 0,
       }}
     >
       <span style={{ position: 'relative', display: 'inline-flex', width: 18, height: 18 }}>
@@ -104,7 +104,6 @@ export default function NotificationBell() {
           }}
         />
       </span>
-      <span>{working ? 'Please wait…' : meta.label}</span>
     </button>
   );
 }

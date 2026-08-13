@@ -16,6 +16,7 @@ export default function MobileDrawer({ onClose }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, can, logout } = useAuth();
+  const [isClosing, setIsClosing] = useState(false);
   
   const gateSessionUrl = useMemo(() => {
     const session = getGateSession();
@@ -30,12 +31,20 @@ export default function MobileDrawer({ onClose }) {
   const moreItems = visibleNavItems.filter(item => !EXCLUDED_PATHS.includes(item.path) && !item.path.startsWith('/equipment'));
   const roleLabel = getUserRoleLabel(user);
 
+  const handleClose = () => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      onClose();
+    }, 240); // Matches the 0.25s animation duration
+  };
+
   return (
-    <div className="mobile-drawer-overlay" onClick={onClose}>
-      <aside className="mobile-drawer" onClick={(e) => e.stopPropagation()}>
+    <div className={`mobile-drawer-overlay ${isClosing ? 'mobile-drawer-overlay--closing' : ''}`} onClick={handleClose}>
+      <aside className={`mobile-drawer ${isClosing ? 'mobile-drawer--closing' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="mobile-drawer__header">
           <span className="mobile-drawer__title">More</span>
-          <button className="mobile-drawer__close" onClick={onClose} aria-label="Close">
+          <button className="mobile-drawer__close" onClick={handleClose} aria-label="Close">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>

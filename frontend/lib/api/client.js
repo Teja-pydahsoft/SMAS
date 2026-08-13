@@ -199,7 +199,7 @@ export function warmBackend() {
 export const api = {
   health: () => request('/health'),
   dashboard: {
-    stats: () => request('/dashboard'),
+    stats: (params = {}) => request(`/dashboard${toQuery(params)}`),
   },
 
   equipment: {

@@ -22,7 +22,6 @@ export default function NewVehicleRegistrationPage() {
     equipmentName: '',
     typeId: '',
     categoryId: '',
-    driverId: '',
     remarks: ''
   });
   
@@ -51,21 +50,16 @@ export default function NewVehicleRegistrationPage() {
   // Lookups
   const [types, setTypes] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [drivers, setDrivers] = useState([]);
   const [isAddingNewType, setIsAddingNewType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
 
   useEffect(() => {
     Promise.all([
       api.vehicles.types.list().catch(() => []),
-      api.vehicles.categories.list().catch(() => []),
-      api.registrations.list().catch(() => [])
-    ]).then(([typesData, categoriesData, registrationsData]) => {
+      api.vehicles.categories.list().catch(() => [])
+    ]).then(([typesData, categoriesData]) => {
       if (Array.isArray(typesData)) setTypes(typesData);
       if (Array.isArray(categoriesData)) setCategories(categoriesData);
-      if (Array.isArray(registrationsData)) {
-        setDrivers(registrationsData.filter(r => r.roleId?.slug === 'driver' && r.status === 'verified'));
-      }
     });
 
     if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
@@ -196,7 +190,6 @@ export default function NewVehicleRegistrationPage() {
       formPayload.append('data', JSON.stringify({
         typeId: formData.typeId,
         categoryId: formData.categoryId,
-        driverId: formData.driverId || null,
         equipmentName: formData.equipmentName,
         remarks: formData.remarks
       }));
@@ -327,14 +320,24 @@ export default function NewVehicleRegistrationPage() {
                   </div>
 
                   <div className="admin-form-group" style={{ margin: 0 }}>
-                    <label style={{ fontWeight: '600' }}>Assign Driver (Optional)</label>
-                    <select className="admin-input" value={formData.driverId} onChange={(e) => setFormData({...formData, driverId: e.target.value})} style={{ backgroundColor: 'var(--surface-base)' }}>
-                      <option value="">-- No Default Driver --</option>
-                      {drivers.map(d => (
-                        <option key={d._id} value={d._id}>{d.formData?.name || d.registrationCode}</option>
-                      ))}
-                    </select>
+                    <label style={{ fontWeight: '600' }}>Vehicle Type</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <select className="admin-input" value={formData.typeId} onChange={(e) => setFormData({...formData, typeId: e.target.value})} style={{ backgroundColor: 'var(--surface-base)', flex: 1 }}>
+                        <option value="">-- Select Type --</option>
+                        {types.map(t => (
+                          <option key={t._id} value={t._id}>{t.name}</option>
+                        ))}
+                      </select>
+                      <button type="button" className="admin-btn admin-btn--secondary" onClick={() => setIsAddingNewType(true)}>+</button>
+                    </div>
                   </div>
+                  {isAddingNewType && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', padding: '1rem', backgroundColor: 'rgba(0,0,0,0.02)', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                      <input type="text" className="admin-input" placeholder="New Type Name" value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} style={{ flex: 1 }} />
+                      <button type="button" className="admin-btn admin-btn--primary" onClick={handleAddNewType}>Add</button>
+                      <button type="button" className="admin-btn admin-btn--ghost" onClick={() => { setIsAddingNewType(false); setNewTypeName(''); }}>Cancel</button>
+                    </div>
+                  )}
 
                   
                   <div className="admin-form-group" style={{ margin: 0 }}>

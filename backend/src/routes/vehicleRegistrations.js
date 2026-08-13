@@ -325,11 +325,19 @@ router.post(
 
     let finalTypeId = typeId || registration.data?.typeId;
     let finalCategoryId = categoryId || registration.data?.categoryId;
-    let finalDriverId = registration.data?.driverId || null;
-
-    if (!finalCategoryId) {
+    if (!finalCategoryId || finalCategoryId === "") {
       const defaultCat = await VehicleCategory.findOne();
-      if (defaultCat) finalCategoryId = defaultCat._id;
+      finalCategoryId = defaultCat ? defaultCat._id : undefined;
+    }
+
+    let finalDriverId = registration.data?.driverId;
+    if (!finalDriverId || finalDriverId === "") {
+      finalDriverId = undefined;
+    }
+    
+    let finalDepartmentId = departmentId || registration.data?.departmentId;
+    if (!finalDepartmentId || finalDepartmentId === "") {
+      finalDepartmentId = undefined;
     }
 
     // Duplicate check
@@ -345,7 +353,7 @@ router.post(
       typeId: finalTypeId,
       categoryId: finalCategoryId,
       driverId: finalDriverId,
-      departmentId,
+      departmentId: finalDepartmentId,
       allowedGates,
       expiryDate,
       ownerId: registration._id,

@@ -100,6 +100,9 @@ router.get(
       limit: req.query.limit || 50,
       page: req.query.page || 1,
       divisionIds,
+      payFrequency: req.query.payFrequency || '',
+      shiftName: req.query.shiftName || '',
+      selectionFilters: req.query.selectionFilters || '{}',
     });
     res.json(data);
   })
@@ -123,6 +126,10 @@ router.post(
       limit: body.limit || req.query.limit || 50,
       page: body.page || req.query.page || 1,
       divisionIds,
+      registrationIds: body.registrationIds || null,
+      payFrequency: body.payFrequency || req.query.payFrequency || '',
+      shiftName: body.shiftName || req.query.shiftName || '',
+      selectionFilters: body.selectionFilters || req.query.selectionFilters || '{}',
     });
     res.json(data);
   })

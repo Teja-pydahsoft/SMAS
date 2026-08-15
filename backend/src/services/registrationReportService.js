@@ -134,7 +134,7 @@ function isWithinAssignedShiftWindow(value, workDate, pass) {
   if (!window) return true;
   const at = new Date(value);
   if (Number.isNaN(at.getTime())) return false;
-  
+
   // If log falls inherently within the same calendar day, it belongs here.
   // We strictly enforce window.end to prevent stealing from the next day.
   // But enforcing window.start strictly can falsely discard morning logs 
@@ -142,7 +142,7 @@ function isWithinAssignedShiftWindow(value, workDate, pass) {
   if (logDateKey(value) === workDate) {
     return at <= window.end;
   }
-  
+
   return at >= window.start && at <= window.end;
 }
 
@@ -201,7 +201,7 @@ function buildOvernightRebucketMap(logs, passByDate) {
           console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) belongs to NEW shift on ${wallDate} (window start: ${wallWindow.start})`);
         }
       }
-      
+
       if (!belongsToNewShift) {
         console.log(`[DEBUG REBUCKET] Rebucketing log ${log._id} (${log.createdAt}) from ${wallDate} to ${prevDate}!`);
         rebucket.set(log._id.toString(), prevDate);
@@ -254,7 +254,7 @@ function buildOvernightRebucketMapByReg(logs, passByRegDate) {
           console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) belongs to NEW shift on ${wallDate} (window start: ${wallWindow.start})`);
         }
       }
-      
+
       if (!belongsToNewShift) {
         console.log(`[DEBUG REBUCKET] Rebucketing log ${log._id} (${log.createdAt}) from ${wallDate} to ${prevDate}!`);
         rebucket.set(log._id.toString(), prevDate);
@@ -956,11 +956,11 @@ export async function listRegistrationReports({ search = '', limit = 100, divisi
   const normalizedSearch = search.trim().toLowerCase();
   const filtered = normalizedSearch
     ? items.filter(
-        (item) =>
-          item.displayName?.toLowerCase().includes(normalizedSearch) ||
-          item.registrationCode?.toLowerCase().includes(normalizedSearch) ||
-          item.roleName?.toLowerCase().includes(normalizedSearch)
-      )
+      (item) =>
+        item.displayName?.toLowerCase().includes(normalizedSearch) ||
+        item.registrationCode?.toLowerCase().includes(normalizedSearch) ||
+        item.roleName?.toLowerCase().includes(normalizedSearch)
+    )
     : items;
 
   return filtered.sort(
@@ -1017,12 +1017,12 @@ export async function getRegistrationReport(
   const todayEntries = hasDateRange
     ? []
     : logs
-        .filter((log) => logDateKey(log.createdAt) === today)
-        .map((entry) => ({
-          ...formatLogEntry(entry),
-          label: scanLabel(formatLogEntry(entry)),
-        }))
-        .sort((a, b) => new Date(b.at) - new Date(a.at));
+      .filter((log) => logDateKey(log.createdAt) === today)
+      .map((entry) => ({
+        ...formatLogEntry(entry),
+        label: scanLabel(formatLogEntry(entry)),
+      }))
+      .sort((a, b) => new Date(b.at) - new Date(a.at));
 
   // Activity-monitor sightings for today (even without gate entry).
   if (!hasDateRange) {
@@ -1081,10 +1081,10 @@ export async function getRegistrationReport(
       }
     }
 
-    // Prefer the first pass carrying the assigned shift snapshot.
+    // Prefer the latest pass carrying the assigned shift snapshot to stretch the window for double-duties.
     shiftPassByDateForRange = new Map();
     for (const date of dates) {
-      const shiftPass = initialShiftPassByDate.get(date) || passByDate.get(date);
+      const shiftPass = passByDate.get(date) || initialShiftPassByDate.get(date);
       if (shiftPass?.qrPayload?.shiftId) {
         shiftPassByDateForRange.set(date, shiftPass);
       }
@@ -1201,10 +1201,10 @@ export async function getRegistrationReport(
     for (const sighting of sightings) {
       const date = hasDateRange
         ? assignedWorkDateForTimestamp(
-            sighting.createdAt,
-            sighting.sightingDate || logDateKey(sighting.createdAt),
-            shiftPassByDateForRange
-          )
+          sighting.createdAt,
+          sighting.sightingDate || logDateKey(sighting.createdAt),
+          shiftPassByDateForRange
+        )
         : sighting.sightingDate || logDateKey(sighting.createdAt);
       if (hasDateRange && (date < dateFrom || date > dateTo)) continue;
       const shiftPass = shiftPassByDateForRange?.get(date);
@@ -1533,10 +1533,10 @@ export async function getAttendanceHistoryGrid({
       ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {})
     });
     if (regQuery._id) {
-       const existingIds = new Set(regQuery._id.$in.map(id => id.toString()));
-       regQuery._id.$in = shiftRegIds.filter(id => existingIds.has(id.toString())).map(id => new mongoose.Types.ObjectId(id));
+      const existingIds = new Set(regQuery._id.$in.map(id => id.toString()));
+      regQuery._id.$in = shiftRegIds.filter(id => existingIds.has(id.toString())).map(id => new mongoose.Types.ObjectId(id));
     } else {
-       regQuery._id = { $in: shiftRegIds.map(id => new mongoose.Types.ObjectId(id)) };
+      regQuery._id = { $in: shiftRegIds.map(id => new mongoose.Types.ObjectId(id)) };
     }
   }
 
@@ -1550,7 +1550,7 @@ export async function getAttendanceHistoryGrid({
 
   const normalizedSearch = search.trim().toLowerCase();
   let parsedSelectionFilters = {};
-  try { parsedSelectionFilters = JSON.parse(selectionFilters || '{}'); } catch (e) {}
+  try { parsedSelectionFilters = JSON.parse(selectionFilters || '{}'); } catch (e) { }
 
   let shiftNoneRegIds = null;
   if (shiftName === '__none__') {
@@ -1564,27 +1564,27 @@ export async function getAttendanceHistoryGrid({
 
   const filteredRegs = allRegDocs.filter(reg => {
     if (payFrequency && reg.payFrequency !== payFrequency) return false;
-    
+
     if (shiftNoneRegIds && shiftNoneRegIds.has(reg._id.toString())) return false;
-    
+
     const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
-    
+
     for (const [label, val] of Object.entries(parsedSelectionFilters)) {
       if (val && val !== 'all') {
         const sel = (display.selections || []).find((s) => s.label === label);
         if (!sel || sel.value !== val) return false;
       }
     }
-    
+
     if (normalizedSearch) {
-      const match = 
+      const match =
         (display.displayName || '').toLowerCase().includes(normalizedSearch) ||
         (reg.registrationCode || '').toLowerCase().includes(normalizedSearch) ||
         (reg.roleId?.name || '').toLowerCase().includes(normalizedSearch) ||
         (display.displayPhone || '').toLowerCase().includes(normalizedSearch);
       if (!match) return false;
     }
-    
+
     reg._display = display; // cache it
     return true;
   });
@@ -1685,7 +1685,7 @@ export async function getAttendanceHistoryGrid({
     const date = overnightRebucket.get(log._id.toString()) || wallDate;
     const key = `${regId}|${date}`;
     const shiftPass =
-      initialShiftPassByRegDate.get(key) || passByRegDate.get(key);
+      passByRegDate.get(key) || initialShiftPassByRegDate.get(key);
     if (
       shiftPass?.qrPayload?.shiftId &&
       !isWithinAssignedShiftWindow(log.createdAt, date, shiftPass)

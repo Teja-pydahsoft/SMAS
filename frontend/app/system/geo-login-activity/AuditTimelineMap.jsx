@@ -68,7 +68,7 @@ export default function AuditTimelineMap({ logs, selectedLog, onSelectLog, locat
       const pos = [log.latitude, log.longitude];
       
       const isSelected = selectedLog?._id === log._id;
-      const color = log.decision === 'granted' || log.decision === 'allowed' ? '#10b981' : 
+      const color = log.decision === 'granted' || log.decision === 'allowed' || log.decision === 'verified' ? '#10b981' : 
                    log.decision === 'denied' ? '#ef4444' : '#64748b';
 
       const iconHtml = `
@@ -301,7 +301,7 @@ export default function AuditTimelineMap({ logs, selectedLog, onSelectLog, locat
           margin-right: 12px;
           flex-shrink: 0;
         }
-        .bg-allowed, .bg-granted { background: #10b981; }
+        .bg-allowed, .bg-granted, .bg-verified { background: #10b981; }
         .bg-denied { background: #ef4444; }
         .bg-bypassed { background: #8b5cf6; }
         .bg-unknown, .bg-error { background: #64748b; }
@@ -330,7 +330,7 @@ export default function AuditTimelineMap({ logs, selectedLog, onSelectLog, locat
           border-radius: 4px;
           letter-spacing: 0.05em;
         }
-        .badge-allowed, .badge-granted { background: #dcfce7; color: #166534; }
+        .badge-allowed, .badge-granted, .badge-verified { background: #dcfce7; color: #166534; }
         .badge-denied { background: #fee2e2; color: #991b1b; }
         .badge-bypassed { background: #f3e8ff; color: #6b21a8; }
         

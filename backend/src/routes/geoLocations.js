@@ -72,7 +72,7 @@ router.get(
 router.post(
   '/verify',
   asyncHandler(async (req, res) => {
-    const { latitude, longitude } = req.body;
+    const { latitude, longitude, isContinuous } = req.body;
 
     if (latitude === undefined || longitude === undefined) {
       return res.status(400).json({ error: 'latitude and longitude are required' });
@@ -88,7 +88,7 @@ router.post(
       return res.status(401).json({ error: 'User not found' });
     }
 
-    const result = await verifyGeoAccess({ user, latitude, longitude, req });
+    const result = await verifyGeoAccess({ user, latitude, longitude, req, isContinuous });
 
     if (!result.ok) {
       return res.status(403).json({

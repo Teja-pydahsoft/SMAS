@@ -99,7 +99,7 @@ export function AuthProvider({ children }) {
             
             try {
               lastCheckTime = now;
-              await api.geoLocations.verify(position.coords.latitude, position.coords.longitude);
+              await api.geoLocations.verify(position.coords.latitude, position.coords.longitude, true);
             } catch (err) {
               if (err.status === 403) {
                 logout('location_blocked');

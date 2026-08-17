@@ -25,9 +25,10 @@ export default function AuditMiniMap({ log }) {
       scrollWheelZoom: false,
     }).setView([centerLat, centerLng], 14);
 
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
-      attribution: 'Tiles &copy; Esri'
+    L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+      maxZoom: 22,
+      maxNativeZoom: 21,
+      attribution: '&copy; Google'
     }).addTo(map);
 
     // Permitted Location Circle

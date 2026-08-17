@@ -34,9 +34,10 @@ export default function AuditTimelineMap({ logs, selectedLog, onSelectLog, locat
       attributionControl: false,
     }).setView([20, 0], 2);
 
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
-      attribution: 'Tiles &copy; Esri'
+    L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+      maxZoom: 22,
+      maxNativeZoom: 21,
+      attribution: '&copy; Google'
     }).addTo(mapRef.current);
 
     setMapReady(true);
@@ -167,16 +168,32 @@ export default function AuditTimelineMap({ logs, selectedLog, onSelectLog, locat
       });
     }
 
-    if (addedCount > 0 || (locations && locations.length > 0)) {
+    if (selectedLog && selectedLog.latitude && selectedLog.longitude) {
+      const pos = [selectedLog.latitude, selectedLog.longitude];
+      mapRef.current.flyTo(pos, 21, { duration: 1.5 });
+      
+      const log = selectedLog;
+      const popupContent = `
+        <div style="font-family: inherit; min-width: 180px; padding: 4px;">
+          <h4 style="margin: 0 0 4px 0; font-size: 14px; color: #0f172a;">${log.userDisplayName || log.userUsername}</h4>
+          <p style="margin: 0 0 8px 0; font-size: 12px; color: #64748b;">${new Date(log.createdAt).toLocaleString()}</p>
+          <div style="font-size: 12px; color: #334155; line-height: 1.4;">
+            <div><strong>Decision:</strong> <span style="text-transform: uppercase;">${log.decision || log.result || 'Unknown'}</span></div>
+            <div><strong>Device:</strong> ${log.operatingSystem || 'Unknown'} ${log.browser ? `(${log.browser})` : ''}</div>
+            ${log.calculatedDistance !== null && log.calculatedDistance !== undefined ? `<div><strong>Distance:</strong> ${log.calculatedDistance}m</div>` : ''}
+          </div>
+        </div>
+      `;
+      const markerObj = markersRef.current[log._id];
+      if (markerObj && markerObj.marker) {
+        markerObj.marker.bindPopup(popupContent, { autoClose: false }).openPopup();
+      }
+    } else if (addedCount > 0 || (locations && locations.length > 0)) {
       if (bounds.isValid()) {
         mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
       }
     }
   }, [logs, locations, mapReady, selectedLog, onSelectLog]);
-
-  useEffect(() => {
-    // Only fly if a specific marker was clicked, but we already fitBounds in the main effect
-  }, [selectedLog, mapReady]);
 
   return (
     <div className="timeline-map-container">

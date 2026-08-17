@@ -237,8 +237,7 @@ export default function AuditTimelineMap({ logs, selectedLog, onSelectLog, locat
         .timeline-map-container {
           display: flex;
           width: 100%;
-          height: calc(100vh - 200px);
-          min-height: 500px;
+          height: 100%;
           background: #ffffff;
           border: 1px solid #e2e8f0;
           border-radius: 8px;

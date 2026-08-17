@@ -359,9 +359,10 @@ export default function GeoLoginActivityPage() {
           display: flex;
           flex-direction: column;
           gap: 16px;
-          height: calc(100vh - 64px);
+          height: calc(100vh - 180px);
           padding: 16px;
           background: #f1f5f9;
+          overflow: hidden;
         }
 
         /* Header */

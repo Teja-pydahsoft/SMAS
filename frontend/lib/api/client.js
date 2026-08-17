@@ -543,6 +543,8 @@ export const api = {
     publicSettings: () => requestOnce('/geo-locations/settings/public', {}, { timeoutMs: 15_000 }),
     assignUserLocations: (userId, locationIds) => 
       request(`/geo-locations/users/${userId}/locations`, { method: 'PUT', body: JSON.stringify({ locationIds }) }),
+    verify: (latitude, longitude) =>
+      request('/geo-locations/verify', { method: 'POST', body: JSON.stringify({ latitude, longitude }) }),
   },
 
   projectReports: {

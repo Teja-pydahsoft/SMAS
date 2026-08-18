@@ -48,6 +48,7 @@ import vehicleRegistrationFormsRouter from './routes/vehicleRegistrationForms.js
 import vehicleRegistrationsRouter from './routes/vehicleRegistrations.js';
 import equipmentMovementsRouter from './routes/equipmentMovements.js';
 import idleMonitoringRouter from './routes/idleMonitoring.js';
+import payrollRouter from './routes/payroll.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -210,6 +211,7 @@ app.use('/api/vehicles/registrations', vehicleRegistrationsRouter);
 app.use('/api/vehicles', vehiclesRouter);
 app.use('/api/equipment/movements', equipmentMovementsRouter);
 app.use('/api/equipment/idle-monitoring', idleMonitoringRouter);
+app.use('/api/payroll', payrollRouter);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -144,29 +144,7 @@ export default function CreateRolePage() {
               placeholder="Optional description for this role"
             />
           </div>
-          <div className="form-group">
-            <label>Shift Breakdown Selection</label>
-            <label className="checkbox-option">
-              <input
-                type="checkbox"
-                checked={isShiftBased}
-                onChange={(e) => setIsShiftBased(e.target.checked)}
-              />
-              <span>Shift breakdown required for this role</span>
-            </label>
           </div>
-          <div className="form-group role-form-settings-grid__full">
-            <PayFrequencySettings
-              payFrequencies={payFrequencies}
-              customPayDaysOptions={customPayDaysOptions}
-              customDayInput={customDayInput}
-              onTogglePayFrequency={togglePayFrequency}
-              onCustomDayInputChange={setCustomDayInput}
-              onAddCustomDayOption={addCustomDayOption}
-              onRemoveCustomDayOption={removeCustomDayOption}
-            />
-          </div>
-        </div>
       </div>
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>

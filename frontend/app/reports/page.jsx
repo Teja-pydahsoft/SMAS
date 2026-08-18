@@ -23,6 +23,84 @@ function PortalWrapper({ children }) {
   return createPortal(children, document.body);
 }
 
+function uniqueEmployeesById(list) {
+  const seen = new Set();
+  const out = [];
+  for (const emp of list || []) {
+    const id = emp?.registrationId;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(emp);
+  }
+  return out;
+}
+
+function paySlipOverlapsRange(slip, fromDate, toDate) {
+  return Boolean(
+    slip?.status === 'Locked' &&
+    slip.fromDate &&
+    slip.toDate &&
+    slip.fromDate <= toDate &&
+    slip.toDate >= fromDate
+  );
+}
+
+function PayLockMark({ className = '', size = 12 }) {
+  return (
+    <span className={`rc-pay-lock-mark ${className}`.trim()} title="Pay locked" aria-label="Pay locked">
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <rect x="5" y="11" width="14" height="10" rx="2" />
+        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      </svg>
+    </span>
+  );
+}
+
+function statusCodeClass(code, status) {
+  const raw = String(code || status || '').toLowerCase();
+  return raw.replace(/[^a-z0-9]+/g, '') || 'unknown';
+}
+
+function ConfirmActionDialog({
+  open,
+  title,
+  message,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  onConfirm,
+  onClose,
+  confirmDisabled = false,
+}) {
+  if (!open) return null;
+  return (
+    <PortalWrapper>
+      <div className="rc-dialog-overlay" onClick={onClose}>
+        <div className="rc-dialog" style={{ maxWidth: '420px' }} onClick={(e) => e.stopPropagation()}>
+          <div className="rc-dialog__header">
+            <h2 className="rc-dialog__title" style={{ marginTop: 0 }}>{title}</h2>
+            <button className="rc-dialog__close" onClick={onClose} aria-label="Close">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div className="rc-dialog__body">
+            <p style={{ marginTop: 0, whiteSpace: 'pre-line' }}>{message}</p>
+            <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn-secondary" onClick={onClose} disabled={confirmDisabled}>
+                {cancelLabel}
+              </button>
+              <button type="button" className="btn-primary" onClick={onConfirm} disabled={confirmDisabled}>
+                {confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </PortalWrapper>
+  );
+}
+
 /** Print helper — Daily / History download professional PDFs; others use browser print */
 function printReportCenterFallback() {
   document.body.classList.add('report-printing');
@@ -80,6 +158,17 @@ function selectionValueOptions(people = [], label) {
     if (sel && sel.value) set.add(sel.value);
   }
   return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function selectionFilterHasActiveValue(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(value && value !== 'all');
+}
+
+function selectionFilterMatches(value, selectedValue) {
+  if (!selectionFilterHasActiveValue(selectedValue)) return true;
+  if (Array.isArray(selectedValue)) return selectedValue.includes(value);
+  return value === selectedValue;
 }
 
 /** Value used to sort a daily-activity person for a given column key */
@@ -161,7 +250,12 @@ function formatShortDate(value) {
   if (!value) return '';
   const d = new Date(value);
   if (isNaN(d)) return '';
-  return d.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
 }
 
 /**
@@ -765,14 +859,18 @@ function AttendanceStatusEditPopup({ registrationId, day, onClose, onSaved }) {
 }
 
 function AttendanceStatusEditor({ day, canEdit, onEdit }) {
-  const badgeTitle = day.overridden
-    ? `Manually set${day.overrideBy ? ` by ${day.overrideBy}` : ''}${day.overrideNote ? ` — ${day.overrideNote}` : ''}`
-    : (day.label || day.code);
+  const locked = Boolean(day?.payLocked);
+  const codeClass = statusCodeClass(day.code, day.status);
+  const badgeTitle = locked
+    ? 'Pay locked — attendance cannot be changed'
+    : day.overridden
+      ? `Manually set${day.overrideBy ? ` by ${day.overrideBy}` : ''}${day.overrideNote ? ` — ${day.overrideNote}` : ''}`
+      : (day.label || day.code);
 
   return (
-    <div className={`rc-status-edit ${day.overridden ? 'rc-status-edit--overridden' : ''}`}>
+    <div className={`rc-status-edit ${day.overridden ? 'rc-status-edit--overridden' : ''} ${locked ? 'rc-status-edit--locked' : ''}`.trim()}>
       <span
-        className={`rc-period-sessions-table__status rc-period-sessions-table__status--${day.status?.toLowerCase()}`}
+        className={`rc-period-sessions-table__status rc-period-sessions-table__status--${day.status?.toLowerCase() || 'unknown'} rc-period-sessions-table__status--${codeClass}`}
         title={badgeTitle}
       >
         {day.code}
@@ -783,8 +881,9 @@ function AttendanceStatusEditor({ day, canEdit, onEdit }) {
           type="button"
           className="rc-status-edit__btn"
           onClick={() => onEdit?.(day)}
-          title="Edit status"
-          aria-label={`Edit attendance status for ${day.date}`}
+          disabled={locked}
+          title={locked ? 'Pay locked — attendance cannot be changed' : 'Edit status'}
+          aria-label={locked ? `Pay locked for ${day.date}` : `Edit attendance status for ${day.date}`}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M12 20h9" />
@@ -850,14 +949,16 @@ function PeriodDaySessionsTable({
                 <Fragment key={day.date}>
                   <tr className="rc-period-sessions-table__meta">
                     <td className="rc-period-sessions-table__date">
-                      {overnight ? (
-                        <span className="rc-period-sessions-table__date-overnight">
-                          {formatDate(day.date)}
-                          <span className="rc-period-sessions-table__date-next"> – {formatDate(nextIstDateStr(day.date))}</span>
-                        </span>
-                      ) : (
-                        formatDate(day.date)
-                      )}
+                      <span className="rc-period-sessions-table__date-inner">
+                        {overnight ? (
+                          <span className="rc-period-sessions-table__date-overnight">
+                            {formatDate(day.date)}
+                            <span className="rc-period-sessions-table__date-next"> – {formatDate(nextIstDateStr(day.date))}</span>
+                          </span>
+                        ) : (
+                          formatDate(day.date)
+                        )}
+                      </span>
                     </td>
                     <td className="rc-period-sessions-table__time">
                       <TimeWithOptionalDate at={day.checkIn} workDate={day.date} />
@@ -977,6 +1078,8 @@ function DownloadIcon() {
 function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onClose }) {
   const { can } = useAuth();
   const canEditStatus = can('reports', 'write');
+  const canManagePayroll = can('payroll_rate_master', 'write');
+  const canReadPayroll = can('payroll_rate_master', 'read') || canManagePayroll;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1001,6 +1104,13 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
   const [dayPassError, setDayPassError] = useState('');
   const [showDayPass, setShowDayPass] = useState(false);
   const [detailEntry, setDetailEntry] = useState(null);
+  const [paySlipHistory, setPaySlipHistory] = useState([]);
+  const [paySlipHistoryLoading, setPaySlipHistoryLoading] = useState(false);
+  const [periodPaySlipLocked, setPeriodPaySlipLocked] = useState(false);
+  const [paySlipStatusLoading, setPaySlipStatusLoading] = useState(false);
+  const [generatingPaySlip, setGeneratingPaySlip] = useState(false);
+  const [paySlipConfirmOpen, setPaySlipConfirmOpen] = useState(false);
+  const [paySlipSuccess, setPaySlipSuccess] = useState('');
 
   const reloadReport = useCallback(async () => {
     if (!registrationId) return;
@@ -1049,6 +1159,45 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
     return () => { cancelled = true; };
   }, [registrationId, canShowDayPass, singleDayDate, isDayPassToday]);
 
+  useEffect(() => {
+    if (!registrationId || !canReadPayroll) {
+      setPaySlipHistory([]);
+      setPeriodPaySlipLocked(false);
+      setPaySlipHistoryLoading(false);
+      setPaySlipStatusLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setPaySlipHistoryLoading(true);
+    setPaySlipStatusLoading(true);
+    api.payroll.getPaySlips({ registrationId })
+      .then((paySlips) => {
+        if (cancelled) return;
+        const history = Array.isArray(paySlips) ? paySlips : [];
+        setPaySlipHistory(history);
+        const hasLockedSlip = Boolean(dateFrom && dateTo) && history.some((slip) =>
+          slip?.status === 'Locked' &&
+          slip?.fromDate <= dateFrom &&
+          slip?.toDate >= dateTo);
+        setPeriodPaySlipLocked(hasLockedSlip);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPaySlipHistory([]);
+          setPeriodPaySlipLocked(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPaySlipHistoryLoading(false);
+          setPaySlipStatusLoading(false);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [registrationId, dateFrom, dateTo, canReadPayroll]);
+
   if (!registrationId) return null;
 
   const details = data?.details || {};
@@ -1063,6 +1212,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
   // (previously Absent-with-scans were hidden → false "No activity in selected period").
   const periodDays = (data?.attendanceRange?.days || []).filter((day) => {
     if (day.status === 'blank') return false;
+    if (day.payLocked) return true;
     if (day.status === 'P' || day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT') {
       return true;
     }
@@ -1074,6 +1224,60 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
     : null;
 
   const exportOptions = { dateFrom, dateTo };
+  const overlappingLockedSlips = hasDateRange
+    ? paySlipHistory.filter((slip) => paySlipOverlapsRange(slip, dateFrom, dateTo))
+    : [];
+  const lockedDayCount = data?.attendanceRange?.lockedDayCount
+    || (data?.attendanceRange?.days || []).filter((day) => day.payLocked).length;
+  const paySlipAlreadyGenerated = hasDateRange && (
+    Boolean(data?.attendanceRange?.payPeriodLocked) || periodPaySlipLocked
+  );
+  const paySlipPartiallyLocked = hasDateRange && !paySlipAlreadyGenerated && lockedDayCount > 0;
+
+  const handleGeneratePaySlip = () => {
+    if (!dateFrom || !dateTo) {
+      setError('Cannot generate pay slip without a valid date range.');
+      return;
+    }
+    if (paySlipAlreadyGenerated) {
+      setError('Pay slip already generated for this period.');
+      return;
+    }
+    setPaySlipConfirmOpen(true);
+  };
+
+  const executeGeneratePaySlip = async () => {
+    setGeneratingPaySlip(true);
+    setPaySlipConfirmOpen(false);
+    setError('');
+    setPaySlipSuccess('');
+    try {
+      const unlockedDays = (data?.attendanceRange?.days || []).filter((day) => !day.payLocked);
+      const totalHours = Math.round(
+        unlockedDays.reduce((sum, day) => sum + (Number(day?.activityHours) || 0), 0) * 100
+      ) / 100;
+      await api.payroll.generatePaySlips({
+        fromDate: dateFrom,
+        toDate: dateTo,
+        registrations: [{
+          registrationId,
+          totalHours,
+          amount: data?.attendanceRange?.unlockedPayment?.totalAmount || paymentSummary?.totalAmount || 0,
+        }]
+      });
+      setPaySlipSuccess(paySlipPartiallyLocked
+        ? 'Pay slip generated for remaining unlocked days.'
+        : 'Pay slip generated successfully.');
+      setPeriodPaySlipLocked(true);
+      api.payroll.getPaySlips({ registrationId })
+        .then((history) => setPaySlipHistory(Array.isArray(history) ? history : []))
+        .catch(() => {});
+    } catch (e) {
+      setError(e.message || 'Failed to generate pay slip.');
+    } finally {
+      setGeneratingPaySlip(false);
+    }
+  };
 
   const handleExportExcel = async () => {
     if (!data) return;
@@ -1127,11 +1331,13 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
     ? [
       { id: 'history', label: 'Period History' },
       { id: 'details', label: 'Details' },
+      ...(canReadPayroll ? [{ id: 'paySlips', label: 'Pay Slip History' }] : []),
     ]
     : [
       { id: 'today', label: "Today's Timeline" },
       { id: 'history', label: 'Date History' },
       { id: 'details', label: 'Details' },
+      ...(canReadPayroll ? [{ id: 'paySlips', label: 'Pay Slip History' }] : []),
     ];
 
   return (
@@ -1420,12 +1626,77 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                   ))}
                 </div>
               )}
+
+              {activeInnerTab === 'paySlips' && (
+                <div>
+                  {paySlipHistoryLoading ? (
+                    <div className="rc-center-load"><Spinner size={28} /><span>Loading pay slip history…</span></div>
+                  ) : paySlipHistory.length === 0 ? (
+                    <EmptyState
+                      icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>}
+                      title="No pay slips found"
+                      desc="No generated pay slips are available for this person yet."
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      {paySlipHistory.map((slip) => {
+                        const isCurrentPeriod = Boolean(dateFrom && dateTo && slip?.fromDate === dateFrom && slip?.toDate === dateTo);
+                        const overlapsSelected = Boolean(dateFrom && dateTo && paySlipOverlapsRange(slip, dateFrom, dateTo));
+                        return (
+                          <div
+                            key={slip._id || slip.id}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: '1rem',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '14px',
+                              padding: '1rem 1.1rem',
+                              background: isCurrentPeriod || overlapsSelected ? 'var(--surface-secondary)' : 'var(--surface-base)',
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                                <strong>{formatDate(slip.fromDate)} to {formatDate(slip.toDate)}</strong>
+                                <span className={`badge ${slip.status === 'Locked' ? 'badge-warning' : 'badge-info'}`}>{slip.status || 'Unknown'}</span>
+                                {isCurrentPeriod && <span className="badge badge-info">Current Period</span>}
+                                {!isCurrentPeriod && overlapsSelected && <span className="badge badge-warning">Overlaps selected period</span>}
+                              </div>
+                              <div className="rc-table__muted" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                                <span>Hours: <strong>{slip.totalHours || 0}</strong></span>
+                                <span>Amount: <strong>{formatCurrency(slip.amount || 0)}</strong></span>
+                                <span>Generated: <strong>{formatDateTime(slip.createdAt)}</strong></span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
 
         {dayPassError && !showDayPass && (
           <p className="error-msg" style={{ margin: '0 1.5rem' }}>{dayPassError}</p>
+        )}
+        {paySlipSuccess && !showDayPass && (
+          <p className="success-msg" style={{ margin: '0 1.5rem' }}>{paySlipSuccess}</p>
+        )}
+        {paySlipAlreadyGenerated && !showDayPass && !paySlipSuccess && (
+          <p className="success-msg" style={{ margin: '0 1.5rem' }}>
+            Pay slip already generated for this selected period.
+          </p>
+        )}
+        {paySlipPartiallyLocked && !showDayPass && !paySlipSuccess && (
+          <p className="success-msg" style={{ margin: '0 1.5rem' }}>
+            {lockedDayCount} day{lockedDayCount === 1 ? '' : 's'} already locked from earlier pay slips
+            {overlappingLockedSlips.length > 0
+              ? ` (${overlappingLockedSlips.map((slip) => `${formatDate(slip.fromDate)} – ${formatDate(slip.toDate)}`).join(', ')})`
+              : ''}. Generate will pay only the remaining unlocked days.
+          </p>
         )}
 
         <div className="rc-dialog__footer">
@@ -1459,16 +1730,40 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                 <DownloadIcon />
                 <span>{exporting === 'excel' ? 'Exporting…' : 'Download Excel'}</span>
               </button>
-              <button
-                type="button"
-                className="btn-secondary rc-download-btn"
-                onClick={handleExportPdf}
-                disabled={Boolean(exporting)}
-              >
-                <DownloadIcon />
-                <span>{exporting === 'pdf' ? 'Exporting…' : 'Download PDF'}</span>
-              </button>
-            </>
+                <button
+                  type="button"
+                  className="btn-secondary rc-download-btn"
+                  onClick={handleExportPdf}
+                  disabled={Boolean(exporting)}
+                >
+                  <DownloadIcon />
+                  <span>{exporting === 'pdf' ? 'Exporting…' : 'Download PDF'}</span>
+                </button>
+                {canManagePayroll && hasDateRange && (
+                  <button
+                    type="button"
+                    className="btn-enterprise-primary rc-download-btn"
+                    onClick={handleGeneratePaySlip}
+                    disabled={generatingPaySlip || paySlipStatusLoading || paySlipAlreadyGenerated}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <rect x="2" y="5" width="20" height="14" rx="2" />
+                      <line x1="2" y1="10" x2="22" y2="10" />
+                    </svg>
+                    <span>
+                      {generatingPaySlip
+                        ? 'Generating…'
+                        : paySlipStatusLoading
+                          ? 'Checking Pay Slip…'
+                          : paySlipAlreadyGenerated
+                            ? 'Pay Slip Generated'
+                            : paySlipPartiallyLocked
+                              ? 'Generate Remaining Days'
+                              : 'Generate Pay Slip'}
+                    </span>
+                  </button>
+                )}
+              </>
           )}
           <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
         </div>
@@ -1519,6 +1814,17 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
           />
         </PortalWrapper>
       )}
+      <ConfirmActionDialog
+        open={paySlipConfirmOpen}
+        title="Generate Pay Slip"
+        message={paySlipPartiallyLocked
+          ? `This period includes ${lockedDayCount} already locked day${lockedDayCount === 1 ? '' : 's'}. Generate a pay slip for the remaining unlocked days only?\n\nPeriod: ${formatDate(dateFrom)} to ${formatDate(dateTo)}`
+          : `Generate a pay slip for this person for the selected period?\n\nPeriod: ${formatDate(dateFrom)} to ${formatDate(dateTo)}`}
+        confirmLabel={generatingPaySlip ? 'Generating...' : 'Generate Pay Slip'}
+        onConfirm={executeGeneratePaySlip}
+        onClose={() => !generatingPaySlip && setPaySlipConfirmOpen(false)}
+        confirmDisabled={generatingPaySlip}
+      />
     </div>
   );
 }
@@ -1542,9 +1848,14 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [printing, setPrinting] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
+  const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
   const intervalRef = useRef(null);
 
   const activityDate = selectedDate || todayDateStringIst();
+  const effectiveFrom = divisionRequired ? (rangeFrom || activityDate) : activityDate;
+  const effectiveTo = divisionRequired ? (rangeTo || activityDate) : activityDate;
+  const periodLabel = `${formatDate(effectiveFrom)} — ${formatDate(effectiveTo)}`;
   const isToday = activityDate === todayDateStringIst();
   const dayLabel = isToday ? 'Today' : formatDate(activityDate);
 
@@ -1574,7 +1885,15 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     if (!silent) setLoading(true);
     setError('');
     try {
-      const params = { date: activityDate };
+      if (divisionRequired && effectiveFrom > effectiveTo) {
+        setError('From date cannot be after To date.');
+        setData(null);
+        setLoading(false);
+        return;
+      }
+      const params = divisionRequired
+        ? { dateFrom: effectiveFrom, dateTo: effectiveTo }
+        : { date: activityDate };
       if (divisionFilter !== 'all') params.divisionId = divisionFilter;
       const result = await api.reports.dailyPasses(params);
       setData(result);
@@ -1583,7 +1902,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     } finally {
       setLoading(false);
     }
-  }, [divisionFilter, divisionRequired, activityDate]);
+  }, [divisionFilter, divisionRequired, activityDate, effectiveFrom, effectiveTo]);
 
   useEffect(() => {
     if (divisionRequired && !divisionFilter) {
@@ -1593,8 +1912,8 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     }
     setData(null);
     load();
-    // Live refresh only when viewing today
-    if (isToday) {
+    // Live refresh only on true "today" single-date dashboard
+    if (!divisionRequired && isToday) {
       intervalRef.current = setInterval(() => load(true), 30000);
     }
     return () => clearInterval(intervalRef.current);
@@ -1632,8 +1951,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       (shiftFilter === 'none' ? !p.shiftName : p.shiftName === shiftFilter);
     const matchSelections = selectionColumns.every(label => {
       const wanted = selectionFilters[label];
-      if (!wanted || wanted === 'all') return true;
-      return selectionValueFor(p, label) === wanted;
+      return selectionFilterMatches(selectionValueFor(p, label), wanted);
     });
     return matchSearch && matchStatus && matchPayFreq && matchRole && matchShift && matchSelections;
   }).sort((a, b) => {
@@ -1671,10 +1989,10 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
 
   const openPerson = (registrationId) => {
     const divisionId = divisionFilter !== 'all' ? divisionFilter : '';
-    if (isToday) {
+    if (!divisionRequired && isToday) {
       onViewPerson(registrationId, divisionId);
     } else {
-      onViewPerson(registrationId, divisionId, activityDate, activityDate);
+      onViewPerson(registrationId, divisionId, effectiveFrom, effectiveTo);
     }
   };
 
@@ -1720,6 +2038,12 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
             displayLabel={isToday ? `Today · ${formatDate(activityDate)}` : formatDate(activityDate)}
             className="rc-activity-date--filter"
           />
+          {divisionRequired && (
+            <>
+              <input type="date" className="rc-select" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} aria-label="From date" />
+              <input type="date" className="rc-select" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} aria-label="To date" />
+            </>
+          )}
           <div className="rc-search-wrap hide-on-mobile">
             <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -1800,6 +2124,9 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
             <span className="daily-pass-dot daily-pass-dot--inside" />{insideCount} Inside
           </span>
           <span className="rc-filter-pill rc-filter-pill--muted">{activeCount} Active {isToday ? 'Today' : 'This Day'}</span>
+          {divisionRequired && (
+            <span className="rc-filter-pill rc-filter-pill--muted">{periodLabel}</span>
+          )}
           <button className="btn-secondary btn-sm" onClick={() => load()} disabled={loading || printing}>
             {loading ? <Spinner size={14} /> : (
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1827,7 +2154,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || shiftFilter !== 'all' || Object.values(selectionFilters).some(v => v && v !== 'all') ? 'No matching people' : `No attendance ${isToday ? 'today' : `on ${dayLabel}`}`}
+          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || shiftFilter !== 'all' || Object.values(selectionFilters).some(selectionFilterHasActiveValue) ? 'No matching people' : `No attendance ${isToday ? 'today' : `on ${dayLabel}`}`}
           desc={search ? 'Try adjusting your search or filters.' : `No gate activity recorded ${isToday ? 'today' : 'for this date'} yet.`}
         />
       ) : (
@@ -1926,11 +2253,16 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
   const [departments, setDepartments] = useState([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
   const [sort, setSort] = useState({ key: 'entry', dir: 'desc' });
+  const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
+  const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
   const intervalRef = useRef(null);
 
   const activityDate = selectedDate || todayDateStringIst();
   const isToday = activityDate === todayDateStringIst();
   const dayLabel = isToday ? 'Today' : formatDate(activityDate);
+  const effectiveFrom = rangeFrom || activityDate;
+  const effectiveTo = rangeTo || activityDate;
+  const periodLabel = `${formatDate(effectiveFrom)} — ${formatDate(effectiveTo)}`;
 
   const handleSort = useCallback((key) => {
     setSort((prev) => (
@@ -1977,8 +2309,15 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
     if (!silent) setLoading(true);
     setError('');
     try {
+      if (effectiveFrom > effectiveTo) {
+        setError('From date cannot be after To date.');
+        setData(null);
+        setLoading(false);
+        return;
+      }
       const result = await api.reports.departmentActivity({
-        date: activityDate,
+        dateFrom: effectiveFrom,
+        dateTo: effectiveTo,
         divisionId: divisionFilter,
         departmentId: departmentFilter,
       });
@@ -1988,7 +2327,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
     } finally {
       setLoading(false);
     }
-  }, [divisionFilter, departmentFilter, activityDate]);
+  }, [divisionFilter, departmentFilter, activityDate, effectiveFrom, effectiveTo]);
 
   useEffect(() => {
     if (!divisionFilter || !departmentFilter) {
@@ -1998,11 +2337,11 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
     }
     setData(null);
     load();
-    if (isToday) {
+    if (effectiveFrom === todayDateStringIst() && effectiveTo === todayDateStringIst()) {
       intervalRef.current = setInterval(() => load(true), 30000);
     }
     return () => clearInterval(intervalRef.current);
-  }, [load, divisionFilter, departmentFilter, isToday]);
+  }, [load, divisionFilter, departmentFilter, isToday, effectiveFrom, effectiveTo]);
 
   const allPeople = data?.people || [];
   const selectedDivision = divisions.find((d) => d._id === divisionFilter);
@@ -2043,10 +2382,10 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
   const ready = Boolean(divisionFilter && departmentFilter);
 
   const openPerson = (registrationId) => {
-    if (isToday) {
+    if (effectiveFrom === todayDateStringIst() && effectiveTo === todayDateStringIst()) {
       onViewPerson(registrationId, divisionFilter);
     } else {
-      onViewPerson(registrationId, divisionFilter, activityDate, activityDate);
+      onViewPerson(registrationId, divisionFilter, effectiveFrom, effectiveTo);
     }
   };
 
@@ -2060,6 +2399,8 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
             displayLabel={isToday ? `Today · ${formatDate(activityDate)}` : formatDate(activityDate)}
             className="rc-activity-date--filter"
           />
+          <input type="date" className="rc-select" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} aria-label="From date" />
+          <input type="date" className="rc-select" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} aria-label="To date" />
           <div className="rc-search-wrap">
             <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -2130,6 +2471,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
               <span className="rc-filter-pill rc-filter-pill--muted">
                 {exitCount} Exit
               </span>
+              <span className="rc-filter-pill rc-filter-pill--muted">{periodLabel}</span>
             </>
           )}
           <button
@@ -2382,15 +2724,22 @@ function getWeekRange(weekValue) {
   const monday = new Date(weekOneMonday);
   monday.setUTCDate(weekOneMonday.getUTCDate() + (week - 1) * 7);
 
-  const sunday = new Date(monday);
-  sunday.setUTCDate(monday.getUTCDate() + 6);
+  // Shift to start on Saturday instead of Monday
+  const saturday = new Date(monday);
+  saturday.setUTCDate(monday.getUTCDate() - 2);
+
+  const friday = new Date(saturday);
+  friday.setUTCDate(saturday.getUTCDate() + 6);
 
   const toIso = (d) => d.toISOString().slice(0, 10);
-  return { dateFrom: toIso(monday), dateTo: toIso(sunday) };
+  return { dateFrom: toIso(saturday), dateTo: toIso(friday) };
 }
 
 function isoWeekFromDate(date) {
-  const local = date instanceof Date ? date : new Date(date);
+  const local = date instanceof Date ? new Date(date) : new Date(date);
+  // Shift the date forward by 2 days so that Saturday and Sunday fall into the next ISO week,
+  // matching our custom Saturday-to-Friday getWeekRange calculation.
+  local.setDate(local.getDate() + 2);
   const utc = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate()));
   const day = utc.getUTCDay() || 7;
   const monday = new Date(utc);
@@ -2449,6 +2798,7 @@ function WeekRangePicker({ value, onChange }) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <polyline points="15 18 9 12 15 6" />
         </svg>
+        <span>Prev</span>
       </button>
       <label className="rc-week-picker__display">
         <span className="rc-week-picker__title">
@@ -2475,6 +2825,7 @@ function WeekRangePicker({ value, onChange }) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <polyline points="9 18 15 12 9 6" />
         </svg>
+        <span>Next</span>
       </button>
       <button
         type="button"
@@ -2527,12 +2878,21 @@ function isOvernightDay(day) {
 }
 
 function AttendanceCell({ day, onSelect }) {
+  const lockedClass = day?.payLocked ? ' rc-att-cell--pay-locked' : '';
   if (!day || day.status === 'blank') {
-    return <td className="rc-att-cell rc-att-cell--blank" aria-label="Not registered" />;
+    return (
+      <td
+        className={`rc-att-cell rc-att-cell--blank${lockedClass}`}
+        aria-label={day?.payLocked ? 'Pay locked' : 'Not registered'}
+      >
+        {day?.payLocked ? <PayLockMark /> : null}
+      </td>
+    );
   }
 
-  const cls = `rc-att-cell rc-att-cell--${day.status.toLowerCase()} rc-att-cell--clickable`;
+  const cls = `rc-att-cell rc-att-cell--${day.status.toLowerCase()} rc-att-cell--clickable${lockedClass}`;
   const hoursLabel = formatCellHours(day.activityHours);
+  const lockedLabel = day.payLocked ? ', pay locked' : '';
 
   const handleClick = (e) => {
     e.stopPropagation();
@@ -2541,9 +2901,10 @@ function AttendanceCell({ day, onSelect }) {
 
   if (day.status === 'A') {
     return (
-      <td className={cls} aria-label="Absent" onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`Absent${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
         <span className="rc-att-cell__code rc-att-cell__code--plain">A</span>
+        {day.payLocked && <PayLockMark />}
       </td>
     );
   }
@@ -2552,39 +2913,43 @@ function AttendanceCell({ day, onSelect }) {
     const halfLabel =
       day.status === 'FH' ? 'First Half' : day.status === 'SH' ? 'Second Half' : 'Half Day';
     return (
-      <td className={cls} aria-label={`${halfLabel}${hoursLabel ? `, ${hoursLabel}` : ''}`} onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`${halfLabel}${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
         <span className="rc-att-cell__badge">{day.code || day.status}</span>
         {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
+        {day.payLocked && <PayLockMark />}
       </td>
     );
   }
 
   if (day.status === 'PT') {
     return (
-      <td className={cls} aria-label={`Hours Worked${hoursLabel ? `, ${hoursLabel}` : ''}`} onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`Hours Worked${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
         <span className="rc-att-cell__badge">PT</span>
         {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
+        {day.payLocked && <PayLockMark />}
       </td>
     );
   }
 
   if (day.status === 'P') {
     return (
-      <td className={cls} aria-label={`Present${hoursLabel ? `, ${hoursLabel}` : ''}`} onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`Present${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
         <span className="rc-att-cell__badge">P</span>
         {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
+        {day.payLocked && <PayLockMark />}
       </td>
     );
   }
 
   return (
-    <td className={cls} aria-label={day.label || day.code} onClick={handleClick} role="button" tabIndex={0}
+    <td className={cls} aria-label={`${day.label || day.code || ''}${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
       <span className="rc-att-cell__badge">{day.code}</span>
       {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
+      {day.payLocked && <PayLockMark />}
     </td>
   );
 }
@@ -2629,6 +2994,7 @@ function AttendanceDayDialog({ employee, day, onClose }) {
               <h2 className="rc-dialog__title">{employee.displayName || '—'}</h2>
               <p className="rc-dialog__subtitle">
                 {formatDate(day.date)} · {statusLabel}
+                {day.payLocked ? ' · Pay locked' : ''}
               </p>
             </div>
           </div>
@@ -2645,7 +3011,13 @@ function AttendanceDayDialog({ employee, day, onClose }) {
                 {day.code}
               </span>
               <span className="rc-att-day-detail__status-label">{statusLabel}</span>
+              {day.payLocked && <span className="rc-pay-lock-chip">Pay locked</span>}
             </div>
+            {day.payLocked && (
+              <p className="rc-att-day-detail__empty" style={{ marginTop: 0, marginBottom: '0.75rem' }}>
+                This day is included in a generated pay slip and will not be paid again.
+              </p>
+            )}
             {hasPresence || day.checkIn ? (
               <div className="rc-att-day-detail__grid rc-att-day-detail__grid--two">
                 <div className="rc-att-day-detail__item">
@@ -2795,7 +3167,7 @@ function AttendanceAbstractTable({
         </thead>
         <tbody>
           {employees.map((emp, idx) => (
-            <tr key={emp.registrationId} className="rc-table__row"
+            <tr key={`${emp.registrationId || 'emp'}-${idx}`} className="rc-table__row"
               onClick={() => onViewPerson(emp.registrationId)}
               tabIndex={0} role="button"
               aria-label={`View history for ${emp.displayName || 'Unnamed'}`}
@@ -2805,7 +3177,10 @@ function AttendanceAbstractTable({
                 <div className="rc-table__person">
                   <Avatar url={emp.photoUrl} name={emp.displayName} size={38} />
                   <div className="rc-table__person-info">
-                    <span className="rc-table__name">{emp.displayName || 'Unnamed'}</span>
+                    <span className="rc-table__name">
+                      {emp.displayName || 'Unnamed'}
+                      {emp.lockedDayCount > 0 && <PayLockMark className="rc-pay-lock-mark--inline" />}
+                    </span>
                     <span className="rc-table__mobile-pin hide-on-desktop">{emp.registrationCode}</span>
                   </div>
                 </div>
@@ -2825,6 +3200,9 @@ function AttendanceAbstractTable({
               <td data-label="Payment Days" className="rc-att-abstract-table__num">{emp.payment?.paymentDays ?? '—'}</td>
               <td data-label="Calculated Amount" className="rc-att-abstract-table__num rc-att-abstract-table__num--pay">
                 {emp.payment ? formatCurrency(emp.payment.totalAmount) : '—'}
+                {emp.lockedDayCount > 0 && emp.unlockedPayment != null && (
+                  <div className="rc-table__muted">Remaining {formatCurrency(emp.unlockedPayment.totalAmount)}</div>
+                )}
               </td>
             </tr>
           ))}
@@ -2851,6 +3229,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [viewMode, setViewMode] = useState('abstract');
   const [selectedDay, setSelectedDay] = useState(null);
   const [printing, setPrinting] = useState(false);
+  const [showBulkPaySlips, setShowBulkPaySlips] = useState(false);
   const [search, setSearch] = useState('');
   const [pinSortDir, setPinSortDir] = useState('asc');
   const [showFilters, setShowFilters] = useState(false);
@@ -2868,6 +3247,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const [renderPage, setRenderPage] = useState(1);
   const [recalcConfirmOpen, setRecalcConfirmOpen] = useState(false);
   const loaderRef = useRef(null);
+  const loadingMoreRef = useRef(false);
 
   useEffect(() => {
     setRenderPage(1);
@@ -2932,6 +3312,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
         setLoading(true);
         setError('');
         setSuccess('');
+        loadingMoreRef.current = false;
       }
 
       try {
@@ -2972,6 +3353,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
       setLoading(true);
       setError('');
       setSuccess('');
+      loadingMoreRef.current = false;
     }
 
     try {
@@ -2998,7 +3380,8 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   }, [resolveDateRange, filters, selectionFilters, search, fetchHistoryPage]);
 
   const handleLoadMore = useCallback(async () => {
-    if (!data?.hasMore || loadingMore) return;
+    if (!data?.hasMore || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const nextPage = (data.page || 1) + 1;
@@ -3014,16 +3397,22 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
         search,
         page: nextPage,
       });
-      setData(prev => ({
-        ...nextData,
-        employees: [...(prev?.employees || []), ...(nextData.employees || [])]
-      }));
+      setData((prev) => {
+        const existing = prev?.employees || [];
+        const seen = new Set(existing.map((emp) => emp.registrationId));
+        const appended = (nextData.employees || []).filter((emp) => emp?.registrationId && !seen.has(emp.registrationId));
+        return {
+          ...nextData,
+          employees: [...existing, ...appended],
+        };
+      });
     } catch (e) {
       setError(e.message || 'Failed to load more');
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [data, loadingMore, fetchHistoryPage, resolveDateRange, filters, selectionFilters, search]);
+  }, [data, fetchHistoryPage, resolveDateRange, filters, selectionFilters, search]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -3043,8 +3432,8 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     };
   }, [data?.hasMore, loadingMore, handleLoadMore]);
 
-  const allEmployees = data?.employees || [];
-  const selectionColumns = collectSelectionColumns(allEmployees);
+  const allEmployees = uniqueEmployeesById(data?.employees || []);
+  const selectionColumns = data?.selectionOptions ? Object.keys(data.selectionOptions) : collectSelectionColumns(allEmployees);
   // Union of configured shifts and shift names seen in the loaded range (covers deleted shifts)
   const shiftNameOptions = [...new Set([
     ...shiftOptions.map((s) => s.name),
@@ -3053,9 +3442,9 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   const searchQ = search.trim().toLowerCase();
   const employees = allEmployees.filter((emp) => {
     for (const [label, val] of Object.entries(selectionFilters)) {
-      if (val && val !== 'all') {
+      if (selectionFilterHasActiveValue(val)) {
         const sel = (emp.selections || []).find((s) => s.label === label);
-        if (!sel || sel.value !== val) return false;
+        if (!sel || !selectionFilterMatches(sel.value, val)) return false;
       }
     }
     if (filters.payFrequency && emp.payFrequency !== filters.payFrequency) return false;
@@ -3158,6 +3547,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
 
   const displayedEmployees = employees.slice(0, renderPage * 50);
   const dates = data?.dates || [];
+  const hasLockedDays = employees.some((emp) => (emp.lockedDayCount || 0) > 0);
 
   const handlePinSort = useCallback(() => {
     setPinSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
@@ -3341,16 +3731,18 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
           </div>
 
           {selectionColumns.map((label) => {
-            const options = selectionValueOptions(allEmployees, label);
+            const options = data?.selectionOptions?.[label] || selectionValueOptions(allEmployees, label);
             const val = selectionFilters[label] || 'all';
+            const allowMultiple = options.length > 1;
 
             return (
               <div key={label} className="form-group rc-filter-inline__item">
                 <label>{label}</label>
-                {options.length > 10 ? (
+                {allowMultiple ? (
                   <SearchableSelect
                     options={options}
                     value={val}
+                    multiple={true}
                     onChange={(newVal) => setSelectionFilters({ ...selectionFilters, [label]: newVal })}
                     placeholder={`All ${label}s`}
                     disabled={busy}
@@ -3371,17 +3763,32 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
             );
           })}
 
-          <div className="form-group rc-filter-inline__item rc-filter-inline__item--action">
-            <label>&nbsp;</label>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={handleRecalculate}
-              disabled={busy}
-              title="Recalculate attendance and payroll from current shift timings and minimum hours"
-            >
-              {recalculating ? 'Recalculating…' : 'Recalculate'}
-            </button>
+          <div className="form-group rc-filter-inline__item rc-filter-inline__item--action" style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <label>&nbsp;</label>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleRecalculate}
+                disabled={busy}
+                title="Recalculate attendance and payroll from current shift timings and minimum hours"
+              >
+                {recalculating ? 'Recalculating…' : 'Recalculate'}
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <label>&nbsp;</label>
+              <button
+                type="button"
+                className="btn-enterprise-primary"
+                onClick={() => setShowBulkPaySlips(true)}
+                disabled={busy}
+                title="Print generated pay slips for the current date range"
+              >
+                Pay Slips
+              </button>
+            </div>
           </div>
 
           {(loading || loadingMore || recalculating) && (
@@ -3432,11 +3839,14 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
         <div className="rc-att-abstract-wrap">
           <div className="rc-table-meta rc-att-grid-meta">
             <span>{fmt(employees.length)} employees</span>
-            {data?.dateFrom && data?.dateTo && (
-              <span className="rc-att-grid-meta__range">
-                {formatDate(data.dateFrom)} — {formatDate(data.dateTo)}
-              </span>
-            )}
+            <span className="rc-att-grid-meta__legend">
+              {hasLockedDays && <span className="rc-pay-lock-legend">Amber highlight = pay locked</span>}
+              {data?.dateFrom && data?.dateTo && (
+                <span className="rc-att-grid-meta__range">
+                  {formatDate(data.dateFrom)} — {formatDate(data.dateTo)}
+                </span>
+              )}
+            </span>
           </div>
           <AttendanceAbstractTable
             employees={employees}
@@ -3450,11 +3860,14 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
         <div className="rc-att-grid-wrap">
           <div className="rc-table-meta rc-att-grid-meta">
             <span>{fmt(employees.length)} employees</span>
-            {data?.dateFrom && data?.dateTo && (
-              <span className="rc-att-grid-meta__range">
-                {formatDate(data.dateFrom)} — {formatDate(data.dateTo)}
-              </span>
-            )}
+            <span className="rc-att-grid-meta__legend">
+              {hasLockedDays && <span className="rc-pay-lock-legend">Amber highlight = pay locked</span>}
+              {data?.dateFrom && data?.dateTo && (
+                <span className="rc-att-grid-meta__range">
+                  {formatDate(data.dateFrom)} — {formatDate(data.dateTo)}
+                </span>
+              )}
+            </span>
           </div>
           <div className="rc-att-grid-scroll">
             <table className="rc-att-grid">
@@ -3485,7 +3898,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
               </thead>
               <tbody>
                 {displayedEmployees.map((emp, idx) => (
-                  <tr key={emp.registrationId} className="rc-att-grid__row">
+                  <tr key={`${emp.registrationId || 'emp'}-${idx}`} className="rc-att-grid__row">
                     <td className="rc-att-grid__sticky rc-att-grid__index">{idx + 1}</td>
                     <td className="rc-att-grid__sticky rc-att-grid__employee rc-att-grid__employee--clickable"
                       onClick={() => handleViewPerson(emp.registrationId)}
@@ -3495,7 +3908,10 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
                       <div className="rc-att-grid__person">
                         <Avatar url={emp.photoUrl} name={emp.displayName} size={32} />
                         <div className="rc-att-grid__person-info">
-                          <span className="rc-att-grid__person-name">{emp.displayName || 'Unnamed'}</span>
+                          <span className="rc-att-grid__person-name">
+                            {emp.displayName || 'Unnamed'}
+                            {emp.lockedDayCount > 0 && <PayLockMark className="rc-pay-lock-mark--inline" />}
+                          </span>
                           <span className="rc-att-grid__person-code">#{emp.registrationCode}</span>
                           {emp.registeredAt && (
                             <span className="rc-att-grid__person-joined">Joined {formatDate(emp.registeredAt)}</span>
@@ -3530,6 +3946,9 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
                     </td>
                     <td className="rc-att-grid__total rc-att-grid__total--pay">
                       {emp.payment ? formatCurrency(emp.payment.totalAmount) : '—'}
+                      {emp.lockedDayCount > 0 && emp.unlockedPayment != null && (
+                        <div className="rc-table__muted">Rem. {formatCurrency(emp.unlockedPayment.totalAmount)}</div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -3584,6 +4003,15 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
               </div>
             </div>
           </div>
+        </PortalWrapper>
+      )}
+      {showBulkPaySlips && (
+        <PortalWrapper>
+          <BulkPaySlipsDialog
+            dateFrom={resolveDateRange().dateFrom}
+            dateTo={resolveDateRange().dateTo}
+            onClose={() => setShowBulkPaySlips(false)}
+          />
         </PortalWrapper>
       )}
     </div>
@@ -3998,8 +4426,8 @@ function ReportsContent() {
   }, [tab]);
 
   const displayDate = dateSelectable ? selectedDate : todayDateStringIst(now);
-  const dateStr = parseDateForPdf(displayDate).toLocaleDateString('en-US', {
-    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+  const dateStr = parseDateForPdf(displayDate).toLocaleDateString('en-GB', {
+    weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit',
     timeZone: 'Asia/Kolkata',
   });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -4110,6 +4538,178 @@ function ReportsContent() {
           />
         </PortalWrapper>
       )}
+    </div>
+  );
+}
+
+function BulkPaySlipsDialog({ dateFrom, dateTo, onClose }) {
+  const [paySlips, setPaySlips] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [printing, setPrinting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+
+  const loadPaySlips = useCallback(async () => {
+    if (!dateFrom || !dateTo) {
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const res = await api.payroll.getPaySlips({ fromDate: dateFrom, toDate: dateTo });
+      const list = Array.isArray(res) ? res : [];
+      setPaySlips(list);
+      setSelectedIds(new Set());
+    } catch (e) {
+      setError(e.message || 'Failed to load pay slips');
+    } finally {
+      setLoading(false);
+    }
+  }, [dateFrom, dateTo]);
+
+  useEffect(() => {
+    loadPaySlips();
+  }, [loadPaySlips]);
+
+  const slipId = (ps) => String(ps?._id || ps?.id || '');
+  const allIds = paySlips.map(slipId).filter(Boolean);
+  const selectedCount = selectedIds.size;
+  const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.has(id));
+
+  const toggleSlip = (id) => {
+    if (!id) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelectedIds((prev) => {
+      if (allIds.length > 0 && allIds.every((id) => prev.has(id))) return new Set();
+      return new Set(allIds);
+    });
+  };
+
+  const handlePrint = async () => {
+    const selected = paySlips.filter((ps) => selectedIds.has(slipId(ps)));
+    if (!selected.length) {
+      setError('Select at least one person to print.');
+      return;
+    }
+    setPrinting(true);
+    setError('');
+    try {
+      const detailsList = [];
+      for (const slip of selected) {
+        const details = await api.payroll.getPaySlipDetails(slipId(slip));
+        detailsList.push(details);
+      }
+      const { downloadPaySlipsPdf } = await import('@/lib/pdfPaySlips');
+      await downloadPaySlipsPdf(detailsList, { dateFrom, dateTo });
+    } catch (e) {
+      setError(e.message || 'Failed to print pay slips.');
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  return (
+    <div className="rc-dialog-overlay" onClick={onClose} role="dialog" aria-modal>
+      <div className="rc-dialog rc-dialog--person-wide" onClick={e => e.stopPropagation()}>
+        <div className="rc-dialog__header">
+          <div className="rc-dialog__header-info">
+            <h2 className="rc-dialog__title">Print Pay Slips</h2>
+            <p className="rc-dialog__subtitle">{formatDate(dateFrom)} — {formatDate(dateTo)}</p>
+          </div>
+          <button className="rc-dialog__close" onClick={onClose} aria-label="Close dialog">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div className="rc-dialog__body" style={{ padding: '1rem' }}>
+          {error && <p className="error-msg">{error}</p>}
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '2rem' }}><Spinner size={24} /></div>
+          ) : paySlips.length === 0 ? (
+            <EmptyState
+              title="No generated pay slips"
+              desc="No pay slips have been generated for this date range yet."
+            />
+          ) : (
+            <div style={{ maxHeight: '420px', overflowY: 'auto', overflowX: 'hidden' }}>
+              <table className="rc-att-grid">
+                <thead>
+                  <tr>
+                    <th style={{ width: 42, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        aria-label="Select all people"
+                      />
+                    </th>
+                    <th className="rc-att-grid__sticky">Employee</th>
+                    <th>Period</th>
+                    <th className="rc-att-grid__summary--pay">Hours</th>
+                    <th className="rc-att-grid__summary--pay">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paySlips.map((ps) => {
+                    const id = slipId(ps);
+                    const checked = selectedIds.has(id);
+                    return (
+                      <tr
+                        key={id}
+                        onClick={() => toggleSlip(id)}
+                        style={{ cursor: 'pointer', background: checked ? 'rgba(37, 99, 235, 0.06)' : undefined }}
+                      >
+                        <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSlip(id)}
+                            aria-label={`Select ${ps.registrationName || ps.registrationCode || 'person'}`}
+                          />
+                        </td>
+                        <td className="rc-att-grid__sticky">
+                          <div>
+                            <strong>{ps.registrationName}</strong>
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            {ps.registrationCode}
+                          </div>
+                        </td>
+                        <td>{formatDate(ps.fromDate)} to {formatDate(ps.toDate)}</td>
+                        <td className="rc-att-grid__summary--pay">{ps.totalHours || 0}</td>
+                        <td className="rc-att-grid__summary--pay">{formatCurrency(ps.amount || 0)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="rc-dialog__footer">
+          <span className="rc-table__muted" style={{ marginRight: 'auto' }}>
+            {paySlips.length > 0 ? `${selectedCount} of ${paySlips.length} selected` : ''}
+          </span>
+          <button
+            type="button"
+            className="btn-enterprise-primary"
+            onClick={handlePrint}
+            disabled={printing || selectedCount === 0}
+          >
+            {printing ? 'Preparing PDF…' : `Print Pay Slips (${selectedCount})`}
+          </button>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={printing}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }

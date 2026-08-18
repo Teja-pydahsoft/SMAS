@@ -18,7 +18,6 @@ export const APP_NAV_ITEMS = [
     children: [
       { path: '/organization?tab=divisions', label: 'Divisions', module: 'divisions' },
       { path: '/organization?tab=departments', label: 'Departments', module: 'departments' },
-      { path: '/organization?tab=shifts', label: 'Shifts', module: 'shifts' },
     ],
   },
   {
@@ -62,6 +61,18 @@ export const APP_NAV_ITEMS = [
       { path: '/reports?tab=history', label: 'Attendance History', module: 'reports' },
       { path: '/reports?tab=analytics', label: 'Analytics', module: 'reports' },
       { path: '/reports?tab=export', label: 'Export Center', module: 'reports' },
+    ],
+  },
+  {
+    path: '/payroll/rate-master',
+    label: 'Payroll Calculation',
+    icon: 'reports', // reusing an icon
+    module: 'payroll_rate_master',
+    section: 'MANAGEMENT',
+    children: [
+      { path: '/payroll/rate-master', label: 'Rate Master Setup', module: 'payroll_rate_master' },
+      { path: '/payroll/pay-slips', label: 'Pay Slips & Locks', module: 'payroll_rate_master' },
+      { path: '/payroll/attendance-changes', label: 'Attendance Change History', module: 'payroll_rate_master' },
     ],
   },
   {

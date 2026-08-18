@@ -6,6 +6,8 @@ import { PERMISSION_MODULES, emptyPermissions } from '@/lib/auth/permissions';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
 import PermissionMatrix from '@/components/PermissionMatrix';
 import GateAccessPicker, { gateModeBadgeLabel } from '@/components/GateAccessPicker';
+import ScopeOverflowCell from '@/components/ScopeOverflowCell';
+import DepartmentPicker from '@/components/DepartmentPicker';
 
 function normalizePermissions(source) {
   const base = emptyPermissions();
@@ -17,18 +19,37 @@ function normalizePermissions(source) {
   return base;
 }
 
-/* View-mode scope list — shows nothing when empty */
-function ScopeList({ title, items, badgeClass = 'badge-info', renderBadge }) {
-  if (items.length === 0) return null;
+function initialsFromName(name) {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return 'U';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function ScopeBlock({ title, items, badgeClass = 'badge-info', renderBadge }) {
+  if (!items.length) return null;
   return (
-    <div className="system-user-scope-block">
-      <p className="system-user-scope-block__title">{title}</p>
-      <div className="scope-badges">
-        {items.map((item) => (
-          <span key={item._id} className={`badge ${badgeClass}`}>
-            {renderBadge ? renderBadge(item) : item.name}
-          </span>
-        ))}
+    <div className="su-scope-block">
+      <p className="su-scope-block__title">{title}</p>
+      <div className="su-scope-block__pills">
+        {items.length > 6 ? (
+          <ScopeOverflowCell
+            items={items}
+            badgeClass={badgeClass}
+            renderLabel={renderBadge}
+            title={title}
+            maxVisible={3}
+          />
+        ) : (
+          items.map((item) => (
+            <span key={item._id} className={`badge ${badgeClass}`}>
+              {renderBadge ? renderBadge(item) : item.name}
+            </span>
+          ))
+        )}
       </div>
     </div>
   );
@@ -41,13 +62,13 @@ function PermissionSummary({ permissions }) {
   });
   if (entries.length === 0) return null;
   return (
-    <ul className="system-user-permission-list">
+    <ul className="su-permission-list">
       {entries.map(({ key, label }) => {
         const v = permissions[key] || {};
         return (
           <li key={key}>
-            <span className="system-user-permission-list__label">{label}</span>
-            <span className="system-user-permission-list__access">{v.write ? 'Read & write' : 'Read only'}</span>
+            <span className="su-permission-list__label">{label}</span>
+            <span className="su-permission-list__access">{v.write ? 'Read & write' : 'Read only'}</span>
           </li>
         );
       })}
@@ -55,7 +76,6 @@ function PermissionSummary({ permissions }) {
   );
 }
 
-/* Edit-mode checkbox list */
 function CheckboxList({ items, selected, onToggle, renderLabel }) {
   if (items.length === 0) return null;
   return (
@@ -71,6 +91,24 @@ function CheckboxList({ items, selected, onToggle, renderLabel }) {
         </label>
       ))}
     </div>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
   );
 }
 
@@ -100,7 +138,6 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
   const roleId           = user?.systemRoleId?._id || null;
   const canEditPrivileges = canEditRole && !user?.isSuperAdmin && Boolean(roleId);
 
-  /* Reset when user changes */
   useEffect(() => {
     if (!user) return;
     setEditing(false);
@@ -118,7 +155,6 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
   }, [user]);
 
-  /* Load dropdowns when editing starts */
   useEffect(() => {
     if (!editing) return;
     Promise.all([
@@ -218,59 +254,84 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     }
   }
 
-  /* ── Render ─────────────────────────────── */
-  return (
-    <div className="pass-modal-overlay" onClick={onClose}>
-      <div className="details-modal system-user-modal" onClick={(e) => e.stopPropagation()}>
+  const roleName = user.isSuperAdmin ? 'Unrestricted' : user.systemRoleId?.name || '—';
+  const hasScope = Boolean(user.divisionIds?.length || user.gateIds?.length || user.departmentIds?.length);
 
-        {/* Header */}
-        <div className="details-modal-header">
-          <div>
-            <h3>{editing ? 'Edit System User' : 'System User Details'}</h3>
-            <p className="details-modal-sub">
-              {user.displayName} · {user.username}
-              {user.isSuperAdmin && <span className="badge badge-info" style={{ marginLeft: '0.5rem' }}>Super Admin</span>}
-            </p>
+  return (
+    <div className="pass-modal-overlay reg-details-overlay" onClick={onClose}>
+      <div
+        className={`reg-details-modal su-modal${editing ? ' su-modal--edit' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={editing ? 'Edit System User' : 'System User Details'}
+      >
+        <div className="reg-details-modal__header no-print">
+          <div className="reg-details-modal__title-wrap">
+            <span className="reg-details-modal__icon">
+              <UserIcon />
+            </span>
+            <div>
+              <h3 className="reg-details-modal__title">{editing ? 'Edit System User' : 'System User Details'}</h3>
+              <p className="reg-details-modal__sub">
+                {user.displayName} · {user.username}
+                {user.isSuperAdmin ? ' · Super Admin' : ''}
+              </p>
+            </div>
           </div>
-          <button type="button" className="icon-btn" onClick={onClose} title="Close" aria-label="Close">✕</button>
+          <button type="button" className="reg-details-modal__close" onClick={onClose} title="Close" aria-label="Close">
+            <CloseIcon />
+          </button>
         </div>
 
         <form onSubmit={handleSave}>
-          <div className="details-modal-body">
+          <div className="reg-details-modal__body">
+            <div className="su-modal__identity">
+              <div className="su-modal__identity-main">
+                <span className="su-modal__avatar">{initialsFromName(user.displayName)}</span>
+                <div className="su-modal__identity-text">
+                  <p className="su-modal__identity-name">{user.displayName}</p>
+                  <p className="su-modal__identity-meta">{user.username} · {roleName}</p>
+                </div>
+              </div>
+              <div className="su-modal__identity-flags">
+                <span className={`badge ${user.isActive ? 'badge-success' : 'badge-danger'}`}>
+                  {user.isActive ? 'Active' : 'Inactive'}
+                </span>
+                {user.isSuperAdmin && <span className="badge badge-info">Super Admin</span>}
+              </div>
+            </div>
 
-            {/* ══════════════════════════════
-                VIEW MODE
-            ══════════════════════════════ */}
             {!editing && (
-              <div className="system-user-modal-grid">
-
-                {/* Panel 1 — User Details */}
-                <section className="system-user-modal-panel card">
-                  <h4 className="system-user-modal-panel__title">User Details</h4>
-                  <dl className="profile-dl">
-                    <div><dt>Display Name</dt><dd>{user.displayName}</dd></div>
-                    <div><dt>Username</dt><dd>{user.username}</dd></div>
-                    <div><dt>Email</dt><dd>{user.email || '—'}</dd></div>
-                    <div><dt>System Role</dt><dd>{user.isSuperAdmin ? 'Unrestricted (Super Admin)' : user.systemRoleId?.name || '—'}</dd></div>
-                    <div>
-                      <dt>Status</dt>
-                      <dd><span className={`badge ${user.isActive ? 'badge-success' : 'badge-danger'}`}>{user.isActive ? 'Active' : 'Inactive'}</span></dd>
-                    </div>
-                    <div><dt>Last Login</dt><dd>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : '—'}</dd></div>
-                    <div><dt>Created</dt><dd>{user.createdAt ? formatDate(user.createdAt) : '—'}</dd></div>
-                    <div><dt>Updated</dt><dd>{user.updatedAt ? formatDate(user.updatedAt) : '—'}</dd></div>
+              <div className="su-view-grid">
+                <section className="su-panel">
+                  <h4 className="su-panel__title">Account</h4>
+                  <dl className="su-kv">
+                    <dt>Display Name</dt>
+                    <dd>{user.displayName}</dd>
+                    <dt>Username</dt>
+                    <dd>{user.username}</dd>
+                    <dt>Email</dt>
+                    <dd>{user.email || '—'}</dd>
+                    <dt>System Role</dt>
+                    <dd>{user.isSuperAdmin ? 'Unrestricted (Super Admin)' : user.systemRoleId?.name || '—'}</dd>
+                    <dt>Last Login</dt>
+                    <dd>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : '—'}</dd>
+                    <dt>Created</dt>
+                    <dd>{user.createdAt ? formatDate(user.createdAt) : '—'}</dd>
+                    <dt>Updated</dt>
+                    <dd>{user.updatedAt ? formatDate(user.updatedAt) : '—'}</dd>
                   </dl>
                 </section>
 
-                {/* Panel 2 — Access Scope */}
-                <section className="system-user-modal-panel card">
-                  <h4 className="system-user-modal-panel__title">Access Scope</h4>
+                <section className="su-panel">
+                  <h4 className="su-panel__title">Access Scope</h4>
                   {user.isSuperAdmin ? (
                     <span className="badge badge-success">All divisions, gates &amp; departments</span>
                   ) : (
                     <>
-                      <ScopeList title="Divisions"   items={user.divisionIds   || []} badgeClass="badge-info"    />
-                      <ScopeList
+                      <ScopeBlock title="Divisions" items={user.divisionIds || []} badgeClass="badge-info" />
+                      <ScopeBlock
                         title="Gates"
                         items={user.gateIds || []}
                         badgeClass="badge-success"
@@ -282,95 +343,74 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                           )})`;
                         }}
                       />
-                      <ScopeList title="Departments" items={user.departmentIds || []} badgeClass="badge-warning" />
-                      {!(user.divisionIds?.length || user.gateIds?.length || user.departmentIds?.length) && (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>—</span>
-                      )}
+                      <ScopeBlock title="Departments" items={user.departmentIds || []} badgeClass="badge-warning" />
+                      {!hasScope && <span className="scope-empty">No access scope assigned</span>}
                     </>
                   )}
                 </section>
 
-                {/* Panel 3 — Role Privileges */}
-                <section className="system-user-modal-panel card">
-                  <h4 className="system-user-modal-panel__title">Role Privileges</h4>
+                <section className="su-panel">
+                  <h4 className="su-panel__title">Role Privileges</h4>
                   {user.isSuperAdmin ? (
                     <span className="badge badge-success">Full access</span>
                   ) : !roleId ? (
-                    <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>—</span>
+                    <span className="scope-empty">—</span>
                   ) : (
                     <PermissionSummary permissions={user.systemRoleId?.permissions} />
                   )}
                 </section>
-
               </div>
             )}
 
-            {/* ══════════════════════════════
-                EDIT MODE  — 2-column layout
-                Left : User Details
-                Right: Access Scope (3 cols) + Role Privileges
-            ══════════════════════════════ */}
             {editing && (
-              <div className="suedit-grid">
+              <>
+                <div className="su-edit-grid">
+                  <section className="su-panel">
+                    <h4 className="su-panel__title">Account</h4>
+                    <div className="form-group">
+                      <label htmlFor="su-display-name">Display Name *</label>
+                      <input id="su-display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required autoFocus />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="su-email">Email</label>
+                      <input id="su-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Optional" />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="su-username">Username</label>
+                      <input id="su-username" value={user.username} disabled />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="su-password">New Password</label>
+                      <input id="su-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep current" autoComplete="new-password" />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="su-role">System Role *</label>
+                      <select id="su-role" value={systemRoleId} onChange={(e) => setSystemRoleId(e.target.value)} required>
+                        <option value="">Select role...</option>
+                        {roles.map((r) => <option key={r._id} value={r._id}>{r.name}</option>)}
+                      </select>
+                    </div>
+                    <label className="checkbox-option">
+                      <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+                      <span>Active user account</span>
+                    </label>
+                  </section>
 
-                {/* LEFT — User Details */}
-                <section className="system-user-modal-panel card suedit-left">
-                  <h4 className="system-user-modal-panel__title">User Details</h4>
-
-                  <div className="form-group">
-                    <label>Display Name *</label>
-                    <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required autoFocus />
-                  </div>
-                  <div className="form-group">
-                    <label>Email</label>
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Optional" />
-                  </div>
-                  <div className="form-group">
-                    <label>Username</label>
-                    <input value={user.username} disabled />
-                  </div>
-                  <div className="form-group">
-                    <label>New Password</label>
-                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep current" autoComplete="new-password" />
-                  </div>
-                  <div className="form-group">
-                    <label>System Role *</label>
-                    <select value={systemRoleId} onChange={(e) => setSystemRoleId(e.target.value)} required>
-                      <option value="">Select role...</option>
-                      {roles.map((r) => <option key={r._id} value={r._id}>{r.name}</option>)}
-                    </select>
-                  </div>
-                  <label className="checkbox-option">
-                    <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-                    <span>Active user account</span>
-                  </label>
-                </section>
-
-                {/* RIGHT — Access Scope + Role Privileges */}
-                <div className="suedit-right">
-
-                  {/* Access Scope */}
-                  <section className="system-user-modal-panel card">
-                    <h4 className="system-user-modal-panel__title">Access Scope</h4>
+                  <section className="su-panel">
+                    <h4 className="su-panel__title">Access Scope</h4>
                     {user.isSuperAdmin ? (
                       <span className="badge badge-success">All divisions, gates &amp; departments</span>
                     ) : (
-                      <div className="suedit-scope-grid">
-
-                        <div className="suedit-scope-col">
-                          <p className="system-user-scope-block__title">Divisions</p>
-                          <CheckboxList
-                            items={divisions}
-                            selected={divisionIds}
-                            onToggle={toggleDivision}
-                          />
+                      <div className="su-scope-grid">
+                        <div className="su-scope-col">
+                          <p className="su-scope-block__title">Divisions</p>
+                          <p className="su-hint">Leave empty for no division restriction.</p>
+                          <CheckboxList items={divisions} selected={divisionIds} onToggle={toggleDivision} />
                         </div>
 
-                        <div className="suedit-scope-col">
-                          <p className="system-user-scope-block__title">Gates</p>
-                          <p className="field-hint" style={{ marginTop: 0, marginBottom: '0.35rem' }}>
-                            For combined gates, choose entry only, exit only, or both.
-                          </p>
+                        <div className="su-scope-col">
+                          <p className="su-scope-block__title">Gates</p>
+                          <p className="su-hint">Optional. Combined gates can be entry, exit, or both.</p>
                           <GateAccessPicker
                             gates={scopedGates}
                             selectedIds={gateIds}
@@ -378,7 +418,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                             showDivision={true}
                             emptyMessage={
                               divisionIds.length === 0
-                                ? 'Select divisions to filter gates, or leave empty.'
+                                ? 'Select divisions to filter gates.'
                                 : 'No gates in the selected divisions.'
                             }
                             onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
@@ -388,42 +428,42 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                           />
                         </div>
 
-                        <div className="suedit-scope-col">
-                          <p className="system-user-scope-block__title">Departments</p>
-                          <CheckboxList
-                            items={scopedDepartments}
-                            selected={departmentIds}
-                            onToggle={(id) => setDepartmentIds((p) => p.includes(id) ? p.filter((d) => d !== id) : [...p, id])}
+                        <div className="su-scope-col">
+                          <p className="su-scope-block__title">Departments</p>
+                          <p className="su-hint">Search and assign departments for check-in / check-out.</p>
+                          <DepartmentPicker
+                            departments={scopedDepartments}
+                            selectedIds={departmentIds}
+                            onToggle={(id) => setDepartmentIds((p) => (p.includes(id) ? p.filter((d) => d !== id) : [...p, id]))}
+                            emptyMessage={
+                              divisionIds.length === 0
+                                ? 'No departments available.'
+                                : 'No departments in the selected divisions.'
+                            }
                           />
                         </div>
-
                       </div>
                     )}
                   </section>
-
-                  {/* Role Privileges */}
-                  {canEditPrivileges && (
-                    <section className="system-user-modal-panel card">
-                      <h4 className="system-user-modal-panel__title">
-                        Role Privileges
-                        <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 'var(--text-13)', marginLeft: '0.5rem' }}>
-                          — {user.systemRoleId?.name}
-                        </span>
-                      </h4>
-                      <PermissionMatrix permissions={rolePerms} onChange={setRolePerms} />
-                    </section>
-                  )}
-
                 </div>
-              </div>
+
+                {canEditPrivileges && (
+                  <section className="su-panel">
+                    <h4 className="su-panel__title">
+                      Role Privileges
+                      {user.systemRoleId?.name ? ` · ${user.systemRoleId.name}` : ''}
+                    </h4>
+                    <PermissionMatrix permissions={rolePerms} onChange={setRolePerms} />
+                  </section>
+                )}
+              </>
             )}
 
-            {error   && <p className="error-msg"   style={{ marginTop: '1rem' }}>{error}</p>}
-            {success && <p className="success-msg" style={{ marginTop: '1rem' }}>{success}</p>}
+            {error && <p className="error-msg">{error}</p>}
+            {success && <p className="success-msg">{success}</p>}
           </div>
 
-          {/* Footer */}
-          <div className="details-modal-footer">
+          <div className="reg-details-modal__footer">
             {editing ? (
               <>
                 <button type="button" className="btn-secondary" onClick={handleCancel} disabled={saving}>Cancel</button>

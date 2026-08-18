@@ -59,6 +59,8 @@ router.get(
     const data = await getDailyPassByRole({
       divisionIds,
       date: req.query.date || null,
+      dateFrom: req.query.dateFrom || null,
+      dateTo: req.query.dateTo || null,
     });
     res.json(data);
   })
@@ -82,6 +84,8 @@ router.get(
       divisionId: requestedDivisionId,
       departmentId: req.query.departmentId || null,
       date: req.query.date || null,
+      dateFrom: req.query.dateFrom || null,
+      dateTo: req.query.dateTo || null,
     });
     res.json(data);
   })

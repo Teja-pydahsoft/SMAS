@@ -6,7 +6,9 @@ import RegistrationForm from '../models/RegistrationForm.js';
 import Shift from '../models/Shift.js';
 import ActivitySighting from '../models/ActivitySighting.js';
 import AttendanceOverride from '../models/AttendanceOverride.js';
+import AttendanceOverrideAuditLog from '../models/AttendanceOverrideAuditLog.js';
 import Department from '../models/Department.js';
+import PaySlip from '../models/PaySlip.js';
 import mongoose from 'mongoose';
 import {
   REGISTRATION_STATUS,
@@ -24,6 +26,10 @@ import {
   todayDateString,
 } from './attendanceService.js';
 import { calculatePaymentSummary, formatPayFrequencyLabel } from '../utils/paymentCalculation.js';
+import {
+  buildLockedDateSet,
+  overlappingLockedSlipFilter,
+} from '../utils/paySlipLock.js';
 import { grantedGateLogFilter, filterGrantedLogs } from '../utils/gateLogFilters.js';
 import {
   computeActivityWindow,
@@ -198,16 +204,12 @@ function buildOvernightRebucketMap(logs, passByDate) {
         const wallWindow = assignedShiftWindow(wallDate, wallPass);
         if (wallWindow && new Date(log.createdAt) >= wallWindow.start) {
           belongsToNewShift = true;
-          console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) belongs to NEW shift on ${wallDate} (window start: ${wallWindow.start})`);
         }
       }
 
       if (!belongsToNewShift) {
-        console.log(`[DEBUG REBUCKET] Rebucketing log ${log._id} (${log.createdAt}) from ${wallDate} to ${prevDate}!`);
         rebucket.set(log._id.toString(), prevDate);
       }
-    } else {
-      console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) is NOT within prev shift window for ${prevDate}`);
     }
   }
   return rebucket;
@@ -251,16 +253,12 @@ function buildOvernightRebucketMapByReg(logs, passByRegDate) {
         const wallWindow = assignedShiftWindow(wallDate, wallPass);
         if (wallWindow && new Date(log.createdAt) >= wallWindow.start) {
           belongsToNewShift = true;
-          console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) belongs to NEW shift on ${wallDate} (window start: ${wallWindow.start})`);
         }
       }
 
       if (!belongsToNewShift) {
-        console.log(`[DEBUG REBUCKET] Rebucketing log ${log._id} (${log.createdAt}) from ${wallDate} to ${prevDate}!`);
         rebucket.set(log._id.toString(), prevDate);
       }
-    } else {
-      console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) is NOT within prev shift window for ${prevDate}`);
     }
   }
   return rebucket;
@@ -483,6 +481,7 @@ function resolveDayAttendance({
   dayLogs,
   session,
   shift = null,
+  workingHours = null,
   today = null,
 }) {
   const joinDate = logDateKey(registeredAt);
@@ -517,6 +516,7 @@ function resolveDayAttendance({
   const shiftTotalHours =
     getShiftDurationHours(shift) ??
     (session?.totalHours != null ? Number(session.totalHours) : null) ??
+    workingHours ??
     getShiftDurationHours({
       startTime: shift?.startTime || session?.shiftStartTime || null,
       endTime: shift?.endTime || session?.shiftEndTime || null,
@@ -635,6 +635,36 @@ async function loadOverrideMapForRegistrations(registrationIds, dateFrom, dateTo
   return map;
 }
 
+function applyPayLocksToDays(days, lockedDateSet) {
+  if (!days?.length) return days || [];
+  const locked = lockedDateSet instanceof Set ? lockedDateSet : new Set();
+  return days.map((day) => ({
+    ...day,
+    payLocked: Boolean(day?.date && locked.has(day.date)),
+  }));
+}
+
+async function loadLockedDateSetsByRegistration(registrationIds, from, toDate) {
+  const map = new Map();
+  if (!registrationIds?.length || !from || !toDate) return map;
+  const slips = await PaySlip.find(
+    overlappingLockedSlipFilter(registrationIds, from, toDate)
+  )
+    .select({ registrationId: 1, fromDate: 1, toDate: 1 })
+    .lean();
+
+  const slipsByReg = new Map();
+  for (const slip of slips) {
+    const id = String(slip.registrationId);
+    if (!slipsByReg.has(id)) slipsByReg.set(id, []);
+    slipsByReg.get(id).push(slip);
+  }
+  for (const [id, list] of slipsByReg) {
+    map.set(id, buildLockedDateSet(list, from, toDate));
+  }
+  return map;
+}
+
 /**
  * Create/update/clear a manual attendance status override for one
  * registration + work-date, then return the refreshed registration report.
@@ -664,9 +694,34 @@ export async function setAttendanceStatusOverride({
     throw err;
   }
 
+  const lockedSlip = await PaySlip.findOne(
+    overlappingLockedSlipFilter(registrationId, date, date)
+  )
+    .select({ _id: 1 })
+    .lean();
+  if (lockedSlip) {
+    const err = new Error('This day is locked in a generated pay slip and cannot be changed.');
+    err.status = 409;
+    throw err;
+  }
+
   const normalized = String(status || '').toUpperCase();
+  const existingOverride = await AttendanceOverride.findOne({ registrationId, date }).lean();
   if (normalized === 'AUTO' || normalized === '') {
     await AttendanceOverride.deleteOne({ registrationId, date });
+    if (existingOverride) {
+      await AttendanceOverrideAuditLog.create({
+        registrationId,
+        date,
+        action: 'clear',
+        previousStatus: existingOverride.status || '',
+        previousNote: existingOverride.note || '',
+        nextStatus: 'AUTO',
+        nextNote: '',
+        changedByName: user?.name || user?.username || '',
+        changedById: user?._id || null,
+      });
+    }
     return { registrationId: registrationId.toString(), date, status: 'AUTO', cleared: true };
   }
 
@@ -688,6 +743,18 @@ export async function setAttendanceStatusOverride({
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).lean();
+
+  await AttendanceOverrideAuditLog.create({
+    registrationId,
+    date,
+    action: 'set',
+    previousStatus: existingOverride?.status || '',
+    previousNote: existingOverride?.note || '',
+    nextStatus: saved.status,
+    nextNote: saved.note || '',
+    changedByName: user?.name || user?.username || '',
+    changedById: user?._id || null,
+  });
 
   return {
     registrationId: registrationId.toString(),
@@ -1153,22 +1220,40 @@ export async function getRegistrationReport(
           dayLogs,
           session,
           shift,
+          workingHours: registration.workingHours,
         }),
       };
       return applyDayOverride(day, overrideMap.get(date));
     });
 
+    const lockedDateSets = await loadLockedDateSetsByRegistration(
+      [registration._id],
+      dateFrom,
+      dateTo
+    );
+    const lockedDates = lockedDateSets.get(registration._id.toString()) || new Set();
+    const lockedDays = applyPayLocksToDays(days, lockedDates);
+    const unlockedDays = lockedDays.filter((day) => !day.payLocked);
+
     attendanceRange = {
       dateFrom,
       dateTo,
-      days,
-      summary: summarizeAttendanceDays(days),
+      days: lockedDays,
+      summary: summarizeAttendanceDays(lockedDays),
       payment: calculatePaymentSummary({
         payFrequency: registration.payFrequency,
         customPayDays: registration.customPayDays,
         payAmount: registration.payAmount,
-        days,
+        days: lockedDays,
       }),
+      unlockedPayment: calculatePaymentSummary({
+        payFrequency: registration.payFrequency,
+        customPayDays: registration.customPayDays,
+        payAmount: registration.payAmount,
+        days: unlockedDays,
+      }),
+      payPeriodLocked: lockedDays.length > 0 && lockedDays.every((day) => day.payLocked),
+      lockedDayCount: lockedDates.size,
     };
   }
 
@@ -1304,10 +1389,15 @@ export async function getRegistrationReport(
  * Returns all active roles, each with their verified registrations and
  * day-pass status for every person on the given date (defaults to today IST).
  */
-export async function getDailyPassByRole({ divisionIds = null, date = null } = {}) {
+export async function getDailyPassByRole({ divisionIds = null, date = null, dateFrom = null, dateTo = null } = {}) {
   const today = todayDateString();
   const validDate =
     typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
+  const from =
+    typeof dateFrom === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) ? dateFrom : validDate;
+  const to =
+    typeof dateTo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateTo) ? dateTo : validDate;
+  const [rangeFrom, rangeTo] = from <= to ? [from, to] : [to, from];
 
   // 1. All active roles
   const roles = await Role.find({ isActive: true }).sort({ name: 1 }).lean();
@@ -1315,17 +1405,17 @@ export async function getDailyPassByRole({ divisionIds = null, date = null } = {
   const divisionScoped = Array.isArray(divisionIds);
   const divisionObjIds = divisionScoped ? toObjectIdArray(divisionIds) : [];
   if (divisionScoped && divisionObjIds.length === 0) {
-    return { date: validDate, roles: [] };
+    return { date: validDate, dateFrom: rangeFrom, dateTo: rangeTo, roles: [] };
   }
 
   // 2. Day passes for the selected date (one per registration+division), scoped when applicable
-  const passQuery = { passType: PASS_TYPES.DAY_PASS, validDate };
+  const passQuery = { passType: PASS_TYPES.DAY_PASS, validDate: { $gte: rangeFrom, $lte: rangeTo } };
   if (divisionScoped) passQuery.divisionId = { $in: divisionObjIds };
   const todayPasses = await Pass.find(passQuery).lean();
 
-  // 2b. Activity-monitor sightings for the date (matched people only)
+  // 2b. Activity-monitor sightings for the selected range (matched people only)
   const daySightings = await ActivitySighting.find({
-    sightingDate: validDate,
+    sightingDate: { $gte: rangeFrom, $lte: rangeTo },
     matched: true,
     registrationId: { $ne: null },
   })
@@ -1352,7 +1442,7 @@ export async function getDailyPassByRole({ divisionIds = null, date = null } = {
       ]),
     ];
     if (scopedRegIds.length === 0) {
-      return { date: validDate, roles: [] };
+      return { date: validDate, dateFrom: rangeFrom, dateTo: rangeTo, roles: [] };
     }
     regQuery._id = { $in: scopedRegIds.map((id) => new mongoose.Types.ObjectId(id)) };
   }
@@ -1455,7 +1545,7 @@ export async function getDailyPassByRole({ divisionIds = null, date = null } = {
       };
     });
 
-  return { date: validDate, roles: result };
+  return { date: validDate, dateFrom: rangeFrom, dateTo: rangeTo, roles: result };
 }
 
 /**
@@ -1562,6 +1652,8 @@ export async function getAttendanceHistoryGrid({
     shiftNoneRegIds = new Set(withShiftIds.map(id => id.toString()));
   }
 
+  const globalSelectionOptions = {};
+
   const filteredRegs = allRegDocs.filter(reg => {
     if (payFrequency && reg.payFrequency !== payFrequency) return false;
 
@@ -1569,10 +1661,20 @@ export async function getAttendanceHistoryGrid({
 
     const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
 
+    for (const sel of display.selections || []) {
+      if (sel.label && sel.value) {
+        if (!globalSelectionOptions[sel.label]) globalSelectionOptions[sel.label] = new Set();
+        globalSelectionOptions[sel.label].add(sel.value);
+      }
+    }
+
     for (const [label, val] of Object.entries(parsedSelectionFilters)) {
-      if (val && val !== 'all') {
+      const wantedValues = Array.isArray(val)
+        ? val.filter(Boolean)
+        : (val && val !== 'all' ? [val] : []);
+      if (wantedValues.length > 0) {
         const sel = (display.selections || []).find((s) => s.label === label);
-        if (!sel || sel.value !== val) return false;
+        if (!sel || !wantedValues.includes(sel.value)) return false;
       }
     }
 
@@ -1708,6 +1810,12 @@ export async function getAttendanceHistoryGrid({
     toDate
   );
 
+  const lockedDateSets = await loadLockedDateSetsByRegistration(
+    orderedRegs.map((reg) => reg._id),
+    from,
+    toDate
+  );
+
   const employees = orderedRegs
     .map((reg) => {
       const display = reg._display;
@@ -1715,8 +1823,9 @@ export async function getAttendanceHistoryGrid({
       const regId = reg._id.toString();
       const registeredAt = reg.createdAt;
       const absorbedDates = absorbedByReg.get(regId) || new Set();
+      const lockedDates = lockedDateSets.get(regId) || new Set();
 
-      const days = dates.map((date) => {
+      const days = applyPayLocksToDays(dates.map((date) => {
         // Suppress dates absorbed into the previous overnight shift row
         if (absorbedDates.has(date)) {
           return {
@@ -1745,11 +1854,14 @@ export async function getAttendanceHistoryGrid({
             dayLogs,
             session,
             shift,
+            workingHours: reg.workingHours,
             today,
           }),
         };
         return applyDayOverride(day, overrideMap.get(`${regId}|${date}`));
-      });
+      }), lockedDates);
+
+      const unlockedDays = days.filter((day) => !day.payLocked);
 
       return {
         registrationId: regId,
@@ -1771,6 +1883,14 @@ export async function getAttendanceHistoryGrid({
           payAmount: reg.payAmount,
           days,
         }),
+        unlockedPayment: calculatePaymentSummary({
+          payFrequency: reg.payFrequency,
+          customPayDays: reg.customPayDays,
+          payAmount: reg.payAmount,
+          days: unlockedDays,
+        }),
+        payPeriodLocked: days.length > 0 && days.every((day) => day.payLocked),
+        lockedDayCount: lockedDates.size,
         days,
       };
     })
@@ -1783,11 +1903,17 @@ export async function getAttendanceHistoryGrid({
       );
     });
 
+  const formattedSelectionOptions = {};
+  for (const [label, valSet] of Object.entries(globalSelectionOptions || {})) {
+    formattedSelectionOptions[label] = [...valSet].sort((a, b) => a.localeCompare(b));
+  }
+
   return {
     dateFrom: from,
     dateTo: toDate,
     dates: dates.map((date) => ({ date, day: dayNumber(date), weekday: dayAbbrev(date) })),
     employees,
+    selectionOptions: formattedSelectionOptions,
     page: pageN,
     limit: limitN,
     total,
@@ -1987,10 +2113,17 @@ export async function getDepartmentActivity({
   divisionId = null,
   departmentId = null,
   date = null,
+  dateFrom = null,
+  dateTo = null,
 } = {}) {
   const today = todayDateString();
   const validDate =
     typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
+  const from =
+    typeof dateFrom === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) ? dateFrom : validDate;
+  const to =
+    typeof dateTo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateTo) ? dateTo : validDate;
+  const [rangeFrom, rangeTo] = from <= to ? [from, to] : [to, from];
 
   if (!divisionId || !mongoose.Types.ObjectId.isValid(divisionId)) {
     const err = new Error('divisionId is required');
@@ -2019,8 +2152,8 @@ export async function getDepartmentActivity({
     throw err;
   }
 
-  const dayStart = startOfDayIst(validDate);
-  const dayEnd = endOfDayIst(validDate);
+  const dayStart = startOfDayIst(rangeFrom);
+  const dayEnd = endOfDayIst(rangeTo);
 
   const logs = await GateLog.find(
     grantedGateLogFilter({
@@ -2046,6 +2179,8 @@ export async function getDepartmentActivity({
   if (regIds.length === 0) {
     return {
       date: validDate,
+      dateFrom: rangeFrom,
+      dateTo: rangeTo,
       divisionId: String(divisionId),
       departmentId: String(departmentId),
       departmentName: department.name,
@@ -2126,6 +2261,8 @@ export async function getDepartmentActivity({
 
   return {
     date: validDate,
+    dateFrom: rangeFrom,
+    dateTo: rangeTo,
     divisionId: String(divisionId),
     departmentId: String(departmentId),
     departmentName: department.name,

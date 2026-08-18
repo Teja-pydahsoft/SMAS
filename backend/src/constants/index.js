@@ -225,6 +225,7 @@ export const PERMISSION_MODULES = {
   IDLE_MONITORING: 'idle_monitoring',
   IDLE_REPORTS: 'idle_reports',
   IDLE_DASHBOARD: 'idle_dashboard',
+  PAYROLL_RATE_MASTER: 'payroll_rate_master',
 };
 
 export const PERMISSION_MODULE_LIST = Object.values(PERMISSION_MODULES);
@@ -254,6 +255,7 @@ export const PERMISSION_LABELS = {
   idle_monitoring: 'Idle Monitoring',
   idle_reports: 'Idle Reports',
   idle_dashboard: 'Idle Dashboard',
+  payroll_rate_master: 'Payroll Rate Master',
 };
 
 export function emptyPermissions() {

@@ -923,6 +923,7 @@
 .rc-dialog__body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1.5rem;
   -webkit-overflow-scrolling: touch;
   display: flex;
@@ -2270,8 +2271,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
+  gap: 0.3rem;
+  min-width: 30px;
   height: 30px;
+  padding: 0 0.55rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   background: var(--surface-secondary);
@@ -2285,6 +2288,12 @@
   background: var(--color-primary-subtle);
   border-color: rgba(37, 99, 235, 0.25);
   color: var(--color-primary);
+}
+
+.rc-week-picker__btn span {
+  font-size: var(--text-11);
+  font-weight: 700;
+  line-height: 1;
 }
 
 .rc-week-picker__display {
@@ -2415,9 +2424,41 @@
   background: var(--surface-raised);
 }
 
+.rc-att-grid-meta__legend {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .rc-att-grid-meta__range {
   font-size: var(--text-12);
   color: var(--text-secondary);
+}
+
+.rc-pay-lock-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--text-12);
+  font-weight: 600;
+  color: #b45309;
+}
+
+.rc-pay-lock-legend::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.55),
+    rgba(245, 158, 11, 0.55) 3px,
+    #fff7ed 3px,
+    #fff7ed 6px
+  );
+  box-shadow: inset 0 0 0 1px #d97706;
 }
 
 .rc-att-grid-scroll {
@@ -2694,6 +2735,65 @@
   outline-offset: -2px;
 }
 
+.rc-att-cell--pay-locked {
+  position: relative;
+  box-shadow: inset 0 0 0 2px #d97706;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.22),
+    rgba(245, 158, 11, 0.22) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+.rc-pay-lock-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #b45309;
+  line-height: 0;
+  flex-shrink: 0;
+}
+
+.rc-pay-lock-mark svg {
+  display: block;
+}
+
+.rc-att-cell .rc-pay-lock-mark {
+  display: flex;
+  margin: 1px auto 0;
+}
+
+.rc-att-cell .rc-pay-lock-mark svg {
+  width: 10px;
+  height: 10px;
+}
+
+.rc-pay-lock-mark--inline {
+  margin-left: 0.3rem;
+  vertical-align: middle;
+}
+
+.rc-pay-lock-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  height: 20px;
+  margin-left: 0;
+  padding: 0 0.5rem 0 0.35rem;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .rc-att-grid__employee--clickable {
   cursor: pointer;
 }
@@ -2712,7 +2812,8 @@
 
 .rc-period-sessions-table-wrap {
   width: 100%;
-  overflow-x: auto;
+  max-width: 100%;
+  overflow-x: hidden;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--surface-base);
@@ -2720,12 +2821,14 @@
 
 .rc-period-sessions-table {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  table-layout: fixed;
   border-collapse: collapse;
-  min-width: 720px;
 }
 
 .rc-period-sessions-table thead th {
-  padding: 0.625rem 0.875rem;
+  padding: 0.625rem 0.6rem;
   font-size: var(--text-11);
   font-weight: 700;
   text-transform: uppercase;
@@ -2739,14 +2842,14 @@
 
 .rc-period-sessions-table thead th:last-child {
   text-align: center;
-  width: 90px;
 }
 
 .rc-period-sessions-table__meta td {
-  padding: 0.75rem 0.875rem;
+  padding: 0.75rem 0.6rem;
   border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
   font-size: var(--text-13);
+  overflow: hidden;
 }
 
 .rc-period-sessions-table__meta {
@@ -2755,14 +2858,16 @@
 
 .rc-period-sessions-table__date {
   font-weight: 700;
-  white-space: nowrap;
+  overflow: hidden;
+}
+
+.rc-period-sessions-table__date-inner {
+  display: block;
+  min-width: 0;
 }
 
 .rc-period-sessions-table__date-overnight {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0;
-  white-space: nowrap;
+  display: inline;
   font-weight: 700;
 }
 
@@ -2791,8 +2896,7 @@
 }
 
 .rc-period-sessions-table__shift {
-  min-width: 7.5rem;
-  max-width: 11rem;
+  min-width: 0;
 }
 
 .rc-period-sessions-table__shift-cell {
@@ -2812,12 +2916,11 @@
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   color: var(--text-muted, #6b7280);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .rc-period-sessions-table__break {
-  min-width: 6.5rem;
-  max-width: 10rem;
+  min-width: 0;
 }
 
 .rc-period-sessions-table__break-cell {
@@ -2851,55 +2954,81 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  font-size: var(--text-11);
+  min-width: 32px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 11px;
   font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
 }
 
 .rc-period-sessions-table__status--p {
   background: #d1fae5;
   color: #047857;
+  border-color: #6ee7b7;
 }
 
-.rc-period-sessions-table__status--hd {
-  background: #ecfdf5;
-  color: #047857;
-  border: 1px solid #a7f3d0;
-}
-
+.rc-period-sessions-table__status--hd,
 .rc-period-sessions-table__status--fh {
   background: #ecfdf5;
   color: #047857;
-  border: 1px solid #a7f3d0;
+  border-color: #a7f3d0;
 }
 
 .rc-period-sessions-table__status--sh {
   background: #dbeafe;
   color: #1d4ed8;
-  border: 1px solid #93c5fd;
+  border-color: #93c5fd;
 }
 
 .rc-period-sessions-table__status--pt {
   background: #ede9fe;
   color: #6d28d9;
-  border: 1px solid #ddd6fe;
+  border-color: #ddd6fe;
 }
 
 .rc-period-sessions-table__status--a {
   background: #f3f4f6;
-  color: #6b7280;
+  color: #4b5563;
+  border-color: #e5e7eb;
+}
+
+.rc-period-sessions-table__status--ds {
+  background: #d1fae5;
+  color: #047857;
+  border-color: #6ee7b7;
+}
+
+.rc-period-sessions-table__status--ot {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fdba74;
+}
+
+.rc-period-sessions-table__status--15s {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border-color: #c4b5fd;
 }
 
 /* Editable status cell (moved to the end of each session row) */
 .rc-period-sessions-table__status-cell {
   white-space: nowrap;
+  text-align: center;
+}
+
+.rc-period-sessions-table__meta td.rc-period-sessions-table__status-cell {
+  overflow: visible;
 }
 
 .rc-status-edit {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
 }
 
@@ -2907,7 +3036,7 @@
   color: #d97706;
   font-size: 14px;
   line-height: 1;
-  margin-left: 2px;
+  margin-left: 3px;
 }
 
 .rc-status-edit__btn {
@@ -2929,6 +3058,19 @@
   border-color: #93c5fd;
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.rc-status-edit__btn:disabled,
+.rc-status-edit--locked .rc-status-edit__btn {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rc-status-edit__btn:disabled:hover,
+.rc-status-edit--locked .rc-status-edit__btn:hover {
+  border-color: var(--border-color, #e5e7eb);
+  background: #fff;
+  color: var(--text-secondary, #4b5563);
 }
 
 .rc-status-edit--overridden .rc-status-edit__btn {

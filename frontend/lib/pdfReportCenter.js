@@ -28,11 +28,11 @@ function formatPdfDate(value) {
   if (!value) return '—';
   const d = value instanceof Date ? value : parsePdfDateValue(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', {
+  return d.toLocaleDateString('en-GB', {
     timeZone: IST_TIMEZONE,
     year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   });
 }
 
@@ -40,12 +40,12 @@ function formatPdfDateLong(value) {
   if (!value) return '—';
   const d = value instanceof Date ? value : parsePdfDateValue(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', {
+  return d.toLocaleDateString('en-GB', {
     timeZone: IST_TIMEZONE,
     weekday: 'short',
     year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   });
 }
 
@@ -64,13 +64,14 @@ function formatPdfDateTime(value) {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('en-US', {
+  return d.toLocaleString('en-GB', {
     timeZone: IST_TIMEZONE,
     year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
   });
 }
 

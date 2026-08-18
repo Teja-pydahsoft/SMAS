@@ -8,9 +8,21 @@
  * - selectedIds: string[] of selected gate ids
  * - modes: { [gateId]: 'entry' | 'exit' | 'both' }
  * - onChange({ gateIds, gateAccessModes })
- * - showDivision?: boolean — append division name in the label
+ * - showDivision?: boolean — show division as secondary meta
  * - emptyMessage?: string
  */
+const MODE_OPTIONS = [
+  { value: 'entry', label: 'Entry' },
+  { value: 'exit', label: 'Exit' },
+  { value: 'both', label: 'Both' },
+];
+
+function typeLabel(gateType) {
+  if (gateType === 'entry') return 'Entry';
+  if (gateType === 'exit') return 'Exit';
+  return 'Combined';
+}
+
 export default function GateAccessPicker({
   gates = [],
   selectedIds = [],
@@ -54,55 +66,45 @@ export default function GateAccessPicker({
     emit(selectedIds, nextModes);
   }
 
-  function modeLabel(gateType) {
-    if (gateType === 'entry') return 'entry';
-    if (gateType === 'exit') return 'exit';
-    return 'both';
-  }
-
   if (gates.length === 0) {
-    return <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{emptyMessage}</p>;
+    return <p className="scope-empty">{emptyMessage}</p>;
   }
 
   return (
-    <div className="checkbox-group gate-access-picker">
+    <div className="gate-access-picker">
       {gates.map((gate) => {
         const id = gate._id;
         const checked = selected.has(id);
         const isBoth = gate.gateType === 'both';
-        const mode = modes[id] || (isBoth ? 'both' : modeLabel(gate.gateType));
+        const mode = modes[id] || (isBoth ? 'both' : gate.gateType === 'exit' ? 'exit' : 'entry');
         const divisionName = gate.divisionId?.name;
+        const showDiv = showDivision && divisionName && divisionName !== gate.name;
 
         return (
           <div key={id} className={`gate-access-picker__item${checked ? ' is-selected' : ''}`}>
-            <label className="checkbox-option gate-access-picker__gate">
+            <label className="gate-access-picker__gate">
               <input type="checkbox" checked={checked} onChange={() => toggleGate(gate)} />
-              <span>
-                {gate.name}
+              <span className="gate-access-picker__text">
+                <span className="gate-access-picker__name">{gate.name}</span>
                 <span className="gate-access-picker__meta">
-                  ({modeLabel(gate.gateType)}
-                  {showDivision && divisionName ? ` · ${divisionName}` : ''})
+                  {typeLabel(gate.gateType)}
+                  {showDiv ? ` · ${divisionName}` : ''}
                 </span>
               </span>
             </label>
 
             {isBoth && checked && (
               <div className="gate-access-picker__modes" role="group" aria-label={`${gate.name} access mode`}>
-                {[
-                  { value: 'entry', label: 'Entry only' },
-                  { value: 'exit', label: 'Exit only' },
-                  { value: 'both', label: 'Entry & exit' },
-                ].map((opt) => (
-                  <label key={opt.value} className="gate-access-picker__mode">
-                    <input
-                      type="radio"
-                      name={`gate-mode-${id}`}
-                      value={opt.value}
-                      checked={mode === opt.value}
-                      onChange={() => setMode(gate, opt.value)}
-                    />
-                    <span>{opt.label}</span>
-                  </label>
+                {MODE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`gate-access-picker__mode${mode === opt.value ? ' is-active' : ''}`}
+                    onClick={() => setMode(gate, opt.value)}
+                    aria-pressed={mode === opt.value}
+                  >
+                    {opt.label}
+                  </button>
                 ))}
               </div>
             )}

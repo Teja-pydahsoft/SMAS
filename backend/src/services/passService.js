@@ -255,6 +255,7 @@ export async function createRegistrationPass(registrationId) {
     registrationId: registration._id.toString(),
     holderName: display.displayName,
     role: role.name,
+    totalHours: registration.workingHours || (registration.shiftId ? registration.shiftId.totalHours : null),
     issuedAt: new Date().toISOString(),
   };
 
@@ -295,6 +296,7 @@ export async function createDayPass(registrationId, gateLogId) {
     gateLogId: gateLogId?.toString(),
     holderName: display.displayName,
     role: role.name,
+    totalHours: registration.workingHours || (registration.shiftId ? registration.shiftId.totalHours : null),
     validDate,
     validUntil: validUntil.toISOString(),
     issuedAt: now.toISOString(),

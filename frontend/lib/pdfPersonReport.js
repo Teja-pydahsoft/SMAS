@@ -52,19 +52,20 @@ function formatExportDate(value) {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
 function formatExportDateTime(value) {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('en-US', {
+  return d.toLocaleString('en-GB', {
     year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
   });
 }
 
@@ -72,9 +73,10 @@ function formatShortDate(value) {
   if (!value) return '—';
   const d = new Date(`${value}T12:00:00.000Z`);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
+  return d.toLocaleDateString('en-GB', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     timeZone: 'UTC',
   });
 }

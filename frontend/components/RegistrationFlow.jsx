@@ -341,10 +341,6 @@ export default function RegistrationFlow({
         return;
       }
     }
-    if (role?.isShiftBased && !shiftId) {
-      setError('Please select a shift');
-      return;
-    }
     setLoading(true);
     setError('');
     setSuccess('');
@@ -360,7 +356,6 @@ export default function RegistrationFlow({
             : undefined,
         payAmount: role?.payFrequencies?.length ? Number(payAmount) : undefined,
         gender: role?.payFrequencies?.length ? gender : undefined,
-        shiftId: role?.isShiftBased ? shiftId : null,
       };
       let reg = registration;
       if (reg) {
@@ -506,7 +501,7 @@ export default function RegistrationFlow({
     role?.payFrequencies || [],
     role?.customPayDaysOptions || []
   );
-  const showPayFrequency = payFrequencyOptions.length > 0;
+  const showPayFrequency = false; // Hide this since we use Rate Master now
   const currentStageIndex = stage === 'edit' ? STAGES.length : STAGES.findIndex((s) => s.key === stage);
   const existingPhotoUrl = registration?.photoUrl || photoUrlFromPath(registration?.photoPath);
 
@@ -517,29 +512,32 @@ export default function RegistrationFlow({
     <div className={inModal ? 'reg-flow-in-modal' : undefined}>
       {showFlowHeader && (
         <>
-          <div style={{ marginBottom: '1.25rem' }}>
-            <h3 style={{ marginBottom: '0.25rem' }}>
-              {isEditMode ? 'Update' : 'Register'} — {role?.name} — {form?.title}
-            </h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-              {isEditMode
-                ? `Editing registration ${registration?.registrationCode || `#${registration?._id?.slice(-6)}`}`
-                : form?.description || 'Complete all steps to register'}
-            </p>
-          </div>
-
-          {stage !== 'edit' && (
-            <div className="stage-indicator">
-              {STAGES.map((s, i) => (
-                <div
-                  key={s.key}
-                  className={`stage ${i === currentStageIndex ? 'active' : ''} ${i < currentStageIndex || stage === 'completed' ? 'done' : ''}`}
-                >
-                  {s.label}
-                </div>
-              ))}
+          <div style={{ marginBottom: '1.25rem', paddingBottom: '1.25rem', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{
+                width: '40px', height: '40px', borderRadius: '8px', 
+                background: '#f8fafc', border: '1px solid #e2e8f0', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f172a'
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.125rem', color: '#1e293b' }}>
+                  {isEditMode ? 'Update' : 'New Labour Registration'}
+                </h3>
+                <p style={{ margin: 0, marginTop: '2px', color: '#64748b', fontSize: '0.875rem' }}>
+                  {isEditMode
+                    ? `Editing registration ${registration?.registrationCode || `#${registration?._id?.slice(-6)}`}`
+                    : 'Capture identity details and assign workforce access'}
+                </p>
+              </div>
             </div>
-          )}
+          </div>
         </>
       )}
 
@@ -550,7 +548,7 @@ export default function RegistrationFlow({
               <div className="reg-flow-layout__camera">
                 {stage === 'form' ? (
                   <>
-                    <h4 className="reg-flow-section-title">Photo Capture</h4>
+                    <h4 className="reg-flow-section-title">Identity Capture</h4>
                     {fromGate && gatePhotoLoaded && photoBlob && (
                       <div className="gate-result gate-result--not-found" style={{ marginBottom: '1rem' }}>
                         <p className="gate-not-found__title">Gate photo loaded</p>
@@ -602,138 +600,59 @@ export default function RegistrationFlow({
             )}
 
             <div className="reg-flow-layout__fields">
-              <h4 className="reg-flow-section-title">
-                {stage === 'edit' ? 'Edit Details' : 'Registration Details'}
-              </h4>
+              <div className="reg-flow-group">
+                {form && (
+                  <DynamicFormFields
+                    fields={form.fields.filter(f => ['name', 'fullname', 'aadhaar', 'aadhaarnumber', 'phone', 'mobile'].includes(f.fieldId.toLowerCase()))}
+                    values={formData}
+                    onChange={setFormData}
+                    pendingMediaFiles={pendingMediaFiles}
+                    onMediaChange={handleMediaChange}
+                  />
+                )}
+              </div>
 
-              {/* Role selector — only when availableRoles is provided (modal mode) */}
-              {stage === 'form' && availableRoles && (
-                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-                  <label htmlFor="reg-flow-role-select">Role</label>
-                  <select
-                    id="reg-flow-role-select"
-                    value={selectedRoleId}
-                    onChange={(e) => {
-                      setSelectedRoleId(e.target.value);
-                      setFormData({});
-                      setPayFrequencySelection('');
-                      setPayAmount('');
-                      setGender('');
-                      setShiftId('');
-                      setPendingMediaFiles({});
-                      setError('');
-                    }}
-                  >
-                    <option value="">Choose a role…</option>
-                    {activeRoles.map((r) => (
-                      <option key={r._id} value={r._id}>{r.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div className="reg-flow-group">
 
-              {form && role?.isShiftBased && (
-                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-                  <label htmlFor="reg-flow-shift">
-                    Shift <span style={{ color: 'var(--danger)' }}>*</span>
-                  </label>
-                  <select
-                    id="reg-flow-shift"
-                    value={shiftId}
-                    onChange={(e) => setShiftId(e.target.value)}
-                  >
-                    <option value="">Choose shift…</option>
-                    {shifts.map((s) => {
-                      const hours = formatShiftHoursLabel(s) || `${getShiftDurationHours(s) ?? '—'}h`;
-                      return (
-                        <option key={s._id} value={s._id}>
-                          {s.name} · {hours}
-                          {s.halfDayMinHours != null || s.fullDayMinHours != null
-                            ? ` (half ${s.halfDayMinHours ?? '—'} / full ${s.fullDayMinHours ?? '—'})`
-                            : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <p className="field-hint" style={{ marginTop: '0.35rem', marginBottom: 0 }}>
-                    Working hours for this employee — used on day passes and attendance.
-                  </p>
-                </div>
-              )}
-
-              {/* Form fields — only once a role is loaded */}
-              {form && showPayFrequency && (
-                <div className="reg-flow-pay-section">
-                  <div className="form-group" style={{ marginBottom: '1rem' }}>
-                    <label htmlFor="reg-flow-pay-frequency">
-                      Pay Frequency <span style={{ color: 'var(--danger)' }}>*</span>
-                    </label>
-                    <select
-                      id="reg-flow-pay-frequency"
-                      value={payFrequencySelection}
-                      onChange={(e) => setPayFrequencySelection(e.target.value)}
-                    >
-                      <option value="">Choose pay frequency…</option>
-                      {payFrequencyOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {payFrequencySelection && (
-                    <>
-                      <div className="form-group" style={{ marginBottom: '1rem' }}>
-                        <label htmlFor="reg-flow-gender">
-                          Gender <span style={{ color: 'var(--danger)' }}>*</span>
-                        </label>
-                        <select
-                          id="reg-flow-gender"
-                          value={gender}
-                          onChange={(e) => setGender(e.target.value)}
-                        >
-                          <option value="">Choose gender…</option>
-                          {GENDERS.map((value) => (
-                            <option key={value} value={value}>
-                              {GENDER_LABELS[value]}
-                            </option>
-                          ))}
-                        </select>
-                        <p className="field-hint" style={{ marginTop: '0.35rem', marginBottom: 0 }}>
-                          Used with pay frequency to generate codes like DM0001, DF0001, WM0001, WF0001.
-                        </p>
-                      </div>
-                      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-                        <label htmlFor="reg-flow-pay-amount">
-                          Pay Amount (per day) <span style={{ color: 'var(--danger)' }}>*</span>
-                        </label>
-                        <input
-                          id="reg-flow-pay-amount"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={payAmount}
-                          onChange={(e) => setPayAmount(e.target.value)}
-                          placeholder="Enter amount per present day"
-                        />
-                        <p className="field-hint" style={{ marginTop: '0.35rem', marginBottom: 0 }}>
-                          This amount is multiplied by present days on the attendance report.
-                        </p>
-                      </div>
-                    </>
+                <div className="reg-flow-grid">
+                  {/* Role selector — only when availableRoles is provided (modal mode) */}
+                  {stage === 'form' && availableRoles && (
+                    <div className="form-group">
+                      <label htmlFor="reg-flow-role-select">Role</label>
+                      <select
+                        id="reg-flow-role-select"
+                        value={selectedRoleId}
+                        onChange={(e) => {
+                          setSelectedRoleId(e.target.value);
+                          setFormData({});
+                          setPayFrequencySelection('');
+                          setPayAmount('');
+                          setGender('');
+                          setPendingMediaFiles({});
+                          setError('');
+                        }}
+                      >
+                        <option value="">Choose a role…</option>
+                        {activeRoles.map((r) => (
+                          <option key={r._id} value={r._id}>{r.name}</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
-                </div>
-              )}
 
-              {form && (
-                <DynamicFormFields
-                  fields={form.fields}
-                  values={formData}
-                  onChange={setFormData}
-                  pendingMediaFiles={pendingMediaFiles}
-                  onMediaChange={handleMediaChange}
-                />
-              )}
+                  {/* Shift picker removed as part of Rate Master integration */}
+                </div>
+
+                {form && (
+                  <DynamicFormFields
+                    fields={form.fields.filter(f => !['name', 'fullname', 'aadhaar', 'aadhaarnumber', 'phone', 'mobile'].includes(f.fieldId.toLowerCase()))}
+                    values={formData}
+                    onChange={setFormData}
+                    pendingMediaFiles={pendingMediaFiles}
+                    onMediaChange={handleMediaChange}
+                  />
+                )}
+              </div>
 
               {duplicateWarning && (
                 <div className="reg-duplicate-warning">
@@ -770,15 +689,15 @@ export default function RegistrationFlow({
               {error && <p className="error-msg">{error}</p>}
               {success && <p className="success-msg">{success}</p>}
               {!duplicateWarning && (
-                <div className="reg-flow-form__actions">
-                  <button type="submit" className="btn-primary" disabled={loading}>
-                    {loading ? 'Saving...' : stage === 'edit' ? 'Save Details' : 'Continue to Review'}
-                  </button>
+                <div className="reg-flow-footer">
                   {onCancel && (
-                    <button type="button" className="btn-secondary" onClick={onCancel}>
+                    <button type="button" className="btn-enterprise-secondary" onClick={onCancel}>
                       Close
                     </button>
                   )}
+                  <button type="submit" className="btn-enterprise-primary" disabled={loading}>
+                    {loading ? 'Processing...' : stage === 'edit' ? 'Save Details' : 'Continue to Review'}
+                  </button>
                 </div>
               )}
             </div>
@@ -788,42 +707,12 @@ export default function RegistrationFlow({
 
       {stage === 'review' && registration && (
         <div>
-          {(role?.isShiftBased || registration.shiftId) && (
+          {/* Pay frequency is now hidden from the UI */}
+          {registration.payAmount != null && (
             <div className="form-group" style={{ marginBottom: '1rem' }}>
-              <label>Shift</label>
-              <p style={{ margin: 0 }}>
-                {registration.shiftId?.name
-                  || shifts.find((s) => s._id === (registration.shiftId?._id || registration.shiftId))?.name
-                  || '—'}
-                {(() => {
-                  const s = registration.shiftId?.name
-                    ? registration.shiftId
-                    : shifts.find((x) => x._id === (registration.shiftId?._id || registration.shiftId));
-                  const label = s ? formatShiftHoursLabel(s) : null;
-                  return label ? ` · ${label}` : '';
-                })()}
-              </p>
+              <label>Pay Amount (per day)</label>
+              <p style={{ margin: 0 }}>{registration.payAmount}</p>
             </div>
-          )}
-          {showPayFrequency && (
-            <>
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>Pay Frequency</label>
-                <p style={{ margin: 0 }}>
-                  {formatPayFrequency(registration.payFrequency, registration.customPayDays)}
-                </p>
-              </div>
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>Gender</label>
-                <p style={{ margin: 0 }}>{formatGender(registration.gender)}</p>
-              </div>
-              {registration.payAmount != null && (
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label>Pay Amount (per day)</label>
-                  <p style={{ margin: 0 }}>{registration.payAmount}</p>
-                </div>
-              )}
-            </>
           )}
           <DynamicFormFields fields={form.fields} values={registration.formData} onChange={() => {}} readOnly />
           {registration.photoPath && (
@@ -871,12 +760,12 @@ export default function RegistrationFlow({
             </div>
           )}
           {error && <p className="error-msg">{error}</p>}
-          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
-            <button type="button" className="btn-success" onClick={() => handleVerify(true)} disabled={loading}>
-              Approve & Complete
-            </button>
-            <button type="button" className="btn-danger" onClick={() => handleVerify(false)} disabled={loading}>
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'flex-end', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
+            <button type="button" className="btn-enterprise-secondary" onClick={() => handleVerify(false)} disabled={loading}>
               Reject
+            </button>
+            <button type="button" className="btn-enterprise-primary" style={{ background: '#10b981', color: '#fff' }} onClick={() => handleVerify(true)} disabled={loading}>
+              Approve & Complete
             </button>
           </div>
         </div>

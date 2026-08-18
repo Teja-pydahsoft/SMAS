@@ -23,6 +23,7 @@ export default function RoleFormBuilderPage() {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [usedOptions, setUsedOptions] = useState({});
 
   useEffect(() => {
     if (roleId) loadData();
@@ -42,6 +43,13 @@ export default function RoleFormBuilderPage() {
         setTitle(form.title);
         setDescription(form.description);
         setFields(form.fields.length ? form.fields : [emptyFormField(0)]);
+        
+        try {
+          const used = await api.forms.getUsedOptions(form._id);
+          setUsedOptions(used);
+        } catch (err) {
+          console.error('Failed to load used options:', err);
+        }
       } catch {
         setTitle(`${r.name} Registration`);
       }
@@ -123,6 +131,21 @@ export default function RoleFormBuilderPage() {
     }
   }
 
+  async function handleMigrateOption(fieldId, oldValue, newValue) {
+    if (!formId) return;
+    try {
+      setLoading(true);
+      await api.forms.migrateOption(formId, { fieldId, oldValue, newValue });
+      const used = await api.forms.getUsedOptions(formId);
+      setUsedOptions(used);
+      setSuccess('Option data successfully migrated.');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (initialLoading) return <p style={{ color: 'var(--text-muted)' }}>Loading...</p>;
   if (!role) return <p className="error-msg">{error || 'Role not found'}</p>;
 
@@ -146,34 +169,12 @@ export default function RoleFormBuilderPage() {
               <label>Description</label>
               <input value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
-            <div className="form-group role-form-settings-grid__full">
-              <label>Shift Breakdown Selection</label>
-              <label className="checkbox-option" style={{ marginTop: '0.4rem', maxWidth: '420px' }}>
-                <input
-                  type="checkbox"
-                  checked={isShiftBased}
-                  onChange={(e) => setIsShiftBased(e.target.checked)}
-                />
-                <span>Shift breakdown required for this role</span>
-              </label>
-            </div>
-            <div className="form-group role-form-settings-grid__full">
-              <PayFrequencySettings
-                payFrequencies={payFrequencies}
-                customPayDaysOptions={customPayDaysOptions}
-                customDayInput={customDayInput}
-                onTogglePayFrequency={togglePayFrequency}
-                onCustomDayInputChange={setCustomDayInput}
-                onAddCustomDayOption={addCustomDayOption}
-                onRemoveCustomDayOption={removeCustomDayOption}
-              />
-            </div>
           </div>
         </div>
 
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <h3 className="section-title">Form Fields</h3>
-          <FormFieldsEditor fields={fields} onChange={setFields} />
+          <FormFieldsEditor fields={fields} onChange={setFields} usedOptions={usedOptions} onMigrateOption={handleMigrateOption} />
         </div>
 
         {error && <p className="error-msg">{error}</p>}

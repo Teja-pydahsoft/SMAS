@@ -267,6 +267,8 @@ export const api = {
   forms: {
     getByRole: (roleId) => request(`/forms/role/${roleId}`),
     get: (id) => request(`/forms/${id}`),
+    getUsedOptions: (id) => request(`/forms/${id}/used-options`),
+    migrateOption: (id, data) => request(`/forms/${id}/migrate-option`, { method: 'POST', body: JSON.stringify(data) }),
     create: (data) => request('/forms', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => request(`/forms/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   },
@@ -593,5 +595,34 @@ export const api = {
         return request(`/vehicles/registrations/${id}/photos/${photoKey}`, { method: 'PUT', body: form });
       }
     }
+  },
+  payroll: {
+    getCombinations: () => request('/payroll/rate-master/combinations'),
+    listRateMasters: () => request('/payroll/rate-master'),
+    getRateMasterView: (id) => request(`/payroll/rate-master/${id}/view`),
+    preview: (data) => request('/payroll/rate-master/preview', { method: 'POST', body: JSON.stringify(data) }),
+    apply: (id) => request(`/payroll/rate-master/${id}/apply`, { method: 'POST' }),
+    create: (data) => request('/payroll/rate-master', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/payroll/rate-master/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    getRateMasterLabourers: () => request('/payroll/rate-master/labourers'),
+    generatePaySlips: (data) => request('/payroll/pay-slips/generate', { method: 'POST', body: JSON.stringify(data) }),
+    unlockPaySlip: (id) => request(`/payroll/pay-slips/${id}/unlock`, { method: 'POST' }),
+    getPaySlipDetails: (id) => request(`/payroll/pay-slips/${id}/details`),
+    getPaySlips: (params) => {
+      const query = new URLSearchParams();
+      if (params?.fromDate) query.append('fromDate', params.fromDate);
+      if (params?.toDate) query.append('toDate', params.toDate);
+      if (params?.registrationId) query.append('registrationId', params.registrationId);
+      return request(`/payroll/pay-slips?${query.toString()}`);
+    },
+    getAttendanceChangeHistory: (params = {}) => {
+      const query = new URLSearchParams();
+      if (params?.search) query.append('search', params.search);
+      if (params?.dateFrom) query.append('dateFrom', params.dateFrom);
+      if (params?.dateTo) query.append('dateTo', params.dateTo);
+      if (params?.batch) query.append('batch', params.batch);
+      if (params?.limit) query.append('limit', String(params.limit));
+      return request(`/payroll/attendance-change-history?${query.toString()}`);
+    },
   }
 };

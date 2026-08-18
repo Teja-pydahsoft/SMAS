@@ -673,6 +673,151 @@
   font-size: var(--text-13);
 }
 
+.reg-table td.scope-col {
+  max-width: 168px;
+  width: 1%;
+  vertical-align: middle;
+}
+
+.scope-overflow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reg-table td.scope-col .scope-overflow {
+  max-width: 168px;
+}
+
+.scope-overflow__badge {
+  min-width: 0;
+  max-width: 118px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.scope-overflow__more {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  background: var(--surface-inset);
+  color: var(--color-primary);
+  font-size: var(--text-11);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: none;
+  overflow: visible;
+  min-height: 0;
+}
+
+.scope-overflow__more:hover {
+  background: var(--color-primary-light);
+  border-color: rgba(26, 86, 255, 0.22);
+  color: var(--color-primary-hover);
+  transform: none;
+}
+
+.scope-overflow__more:active:not(:disabled) {
+  transform: none;
+}
+
+.scope-overflow-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.scope-overflow-popup {
+  width: min(420px, 94vw);
+  max-height: min(72vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-base);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+.scope-overflow-popup__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--surface-secondary);
+}
+
+.scope-overflow-popup__title {
+  margin: 0;
+  font-size: var(--text-13);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scope-overflow-popup__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.scope-overflow-popup__close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: var(--surface-base);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.scope-overflow-popup__close:hover {
+  background: var(--color-danger-light);
+  color: var(--color-danger);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.scope-overflow-popup__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 14px;
+  overflow-y: auto;
+}
+
 /* ── Entry/exit ── */
 .entry-exit-selector { margin-bottom: var(--space-4); }
 .entry-exit-selector__type { margin-bottom: var(--space-4); }
@@ -1467,16 +1612,21 @@
   border-top: 1px solid var(--border-color);
 }
 
-/* ── Registration flow two-column layout (Step 1: camera left, form right) ── */
+/* ── Registration flow layout (Enterprise) ── */
 .reg-flow-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  grid-template-columns: 380px 1fr;
   gap: 1.5rem;
   align-items: start;
 }
 
 .reg-flow-layout__camera {
   min-width: 0;
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  padding: 1.25rem;
 }
 
 .reg-flow-layout__camera .camera-capture {
@@ -1486,28 +1636,67 @@
 
 .reg-flow-layout__fields {
   min-width: 0;
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  padding: 1.5rem;
 }
 
 .reg-flow-section-title {
-  font-size: var(--text-14);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-secondary);
-  margin-bottom: 0.75rem;
+  font-size: var(--text-15, 0.9375rem);
+  font-weight: 600;
+  color: var(--text-primary, #1e293b);
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+
+.reg-flow-group {
+  margin-bottom: 1.5rem;
+}
+
+.reg-flow-group:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Field Grids (Two-column layout) ── */
+.reg-flow-grid,
+.reg-flow-group .dynamic-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+  align-items: start;
+}
+
+.reg-flow-grid .form-group,
+.reg-flow-group .dynamic-form .form-group {
+  margin-bottom: 0 !important;
+}
+
+.reg-flow-group .dynamic-form:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .reg-flow-grid,
+  .reg-flow-group .dynamic-form {
+    grid-template-columns: 1fr;
+  }
 }
 
 .reg-flow-layout__photo-preview img {
   width: 100%;
-  border-radius: var(--radius);
-  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e2e8f0);
   margin-bottom: 0.75rem;
 }
 
 .reg-flow-hint {
-  color: var(--text-muted);
+  color: var(--text-muted, #64748b);
   margin-bottom: 0.75rem;
-  font-size: var(--text-13);
+  font-size: var(--text-13, 0.8125rem);
 }
 
 .reg-flow-edit-photo {
@@ -1516,9 +1705,9 @@
   max-width: 220px;
   aspect-ratio: 3 / 4;
   object-fit: cover;
-  border-radius: var(--radius);
-  border: 1px solid var(--border-color);
-  background: var(--surface-inset);
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: var(--surface-inset, #f8fafc);
 }
 
 .reg-flow-edit-photo--empty {
@@ -1526,14 +1715,14 @@
   align-items: center;
   justify-content: center;
   min-height: 160px;
-  color: var(--text-muted);
-  font-size: var(--text-12);
+  color: var(--text-muted, #64748b);
+  font-size: var(--text-13, 0.8125rem);
 }
 
 .reg-flow-current-photo label {
   display: block;
-  font-size: var(--text-12);
-  color: var(--text-muted);
+  font-size: var(--text-12, 0.75rem);
+  color: var(--text-muted, #64748b);
   margin-bottom: 0.4rem;
 }
 
@@ -1543,22 +1732,113 @@
   max-width: 220px;
 }
 
-.reg-flow-form__actions {
+.reg-flow-footer {
   display: flex;
+  justify-content: flex-end;
   gap: 0.75rem;
-  margin-top: 1.25rem;
-  flex-wrap: wrap;
-  padding-top: 0.25rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-color, #e2e8f0);
 }
 
+/* Step Indicator */
+.reg-flow-steps {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.reg-flow-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--text-13, 0.8125rem);
+  font-weight: 500;
+  color: #64748b;
+}
+
+.reg-flow-step.active {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.reg-flow-step.done {
+  color: #0f172a;
+}
+
+.reg-flow-step-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.reg-flow-step.active .reg-flow-step-icon {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.reg-flow-step.done .reg-flow-step-icon {
+  background: #10b981;
+  color: #ffffff;
+}
+
+/* Enterprise Buttons */
+.btn-enterprise-primary {
+  background: #1e293b;
+  color: #fff;
+  border: none;
+  padding: 0.55rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-enterprise-primary:hover {
+  background: #0f172a;
+  box-shadow: 0 4px 6px rgba(15, 23, 42, 0.2);
+}
+.btn-enterprise-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-enterprise-secondary {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  padding: 0.55rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-enterprise-secondary:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+/* Modal specific resets */
 .reg-flow-in-modal .reg-flow-layout {
   gap: 1.25rem;
 }
-
-.reg-flow-in-modal .reg-flow-form__actions {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 1rem;
-  margin-top: 1rem;
+.reg-flow-in-modal .reg-flow-layout__camera,
+.reg-flow-in-modal .reg-flow-layout__fields {
+  box-shadow: none;
+  border: 1px solid var(--border-color, #e2e8f0);
 }
 
 /* ── Registration duplicate warning ── */

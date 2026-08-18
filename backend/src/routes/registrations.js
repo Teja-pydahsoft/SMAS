@@ -28,6 +28,7 @@ import {
 import { generateRegistrationCode, shouldAssignRegistrationCode, syncPassRegistrationCode, isLegacySamsCode, buildRegistrationCodePrefix } from '../utils/registrationCode.js';
 import { getShiftDurationHours } from '../utils/shiftAttendance.js';
 import mongoose from 'mongoose';
+import RateMaster from '../models/RateMaster.js';
 
 const router = Router();
 
@@ -92,7 +93,8 @@ function validatePayFrequency(role, payFrequency, customPayDays) {
   const allowed = role?.payFrequencies || [];
   if (!allowed.length) return null;
 
-  if (!payFrequency) return 'Pay frequency is required';
+  // Make payFrequency optional since it's hidden in the UI
+  if (!payFrequency) return null;
 
   if (!allowed.includes(payFrequency)) {
     return 'Selected pay frequency is not allowed for this role';
@@ -115,9 +117,11 @@ function validatePayFrequency(role, payFrequency, customPayDays) {
 function validatePayAmount(role, payAmount) {
   const allowed = role?.payFrequencies || [];
   if (!allowed.length) return null;
+  // Make payAmount optional since it's hidden in the UI
+  if (payAmount == null || payAmount === '') return null;
   const amount = Number(payAmount);
   if (!Number.isFinite(amount) || amount < 0) {
-    return 'Pay amount is required and must be 0 or more';
+    return 'Pay amount must be 0 or more';
   }
   return null;
 }
@@ -137,9 +141,9 @@ function applyPayFrequency(registration, role, payFrequency, customPayDays, payA
   const amountError = validatePayAmount(role, payAmount);
   if (amountError) return amountError;
 
-  registration.payFrequency = payFrequency;
+  registration.payFrequency = payFrequency || null;
   registration.customPayDays = payFrequency === 'custom_days' ? Number(customPayDays) : null;
-  registration.payAmount = Number(payAmount);
+  registration.payAmount = payAmount != null && payAmount !== '' ? Number(payAmount) : null;
   return null;
 }
 
@@ -203,6 +207,14 @@ function buildListFilter(query = {}) {
   const filter = {};
   if (query.roleId) filter.roleId = query.roleId;
   if (query.status) filter.status = query.status;
+
+  // Support dynamic formData filters
+  const excludeKeys = ['roleId', 'status', 'search', 'page', 'limit'];
+  for (const [key, value] of Object.entries(query)) {
+    if (!excludeKeys.includes(key) && value !== undefined && value !== '') {
+      filter[`formData.${key}`] = value;
+    }
+  }
 
   const search = String(query.search || '').trim();
   if (!search) return filter;
@@ -270,10 +282,10 @@ router.get(
       wantsPagination ? Registration.countDocuments(filter) : Promise.resolve(null),
       wantsPagination
         ? Registration.countDocuments(
-            Object.keys(filter).length
-              ? { $and: [filter, { status: REGISTRATION_STATUS.VERIFIED }] }
-              : { status: REGISTRATION_STATUS.VERIFIED }
-          )
+          Object.keys(filter).length
+            ? { $and: [filter, { status: REGISTRATION_STATUS.VERIFIED }] }
+            : { status: REGISTRATION_STATUS.VERIFIED }
+        )
         : Promise.resolve(null),
     ]);
 
@@ -432,7 +444,7 @@ async function findUniqueFieldMatches(formData, fields, excludeId) {
 
   return existing.map((reg) => {
     const display = buildDisplayInfo(reg.formData || {}, fields);
-    
+
     // Figure out which unique field triggered the duplicate to construct an error message
     let matchedFieldLabel = null;
     for (const field of uniqueFields) {
@@ -440,10 +452,10 @@ async function findUniqueFieldMatches(formData, fields, excludeId) {
       if (submittedValue === undefined || submittedValue === null || String(submittedValue).trim() === '') continue;
       const existingValue = (reg.formData || {})[field.fieldId];
       if (existingValue === undefined || existingValue === null) continue;
-      
+
       const sValStr = String(submittedValue).trim();
       const eValStr = String(existingValue).trim();
-      
+
       if (field.type === 'text' || field.type === 'email' || field.type === 'textarea') {
         if (sValStr.toLowerCase() === eValStr.toLowerCase()) {
           matchedFieldLabel = field.label;
@@ -558,17 +570,83 @@ router.get(
   })
 );
 
+async function resolveAutoPayAmount(role, formData, payFrequency, gender) {
+  try {
+    if (!role.name || !role.name.match(/labour/i)) return null;
+
+    const form = await RegistrationForm.findOne({ roleId: role._id, isActive: true });
+    if (!form) return null;
+
+    let batchFieldId = null;
+    let workCategoryFieldId = null;
+
+    for (const field of form.fields) {
+      const labelLower = field.label.toLowerCase();
+      if (labelLower === 'batch' || labelLower === 'batch name') {
+        batchFieldId = field.fieldId;
+      }
+      if (labelLower === 'work category') {
+        workCategoryFieldId = field.fieldId;
+      }
+    }
+
+    if (!batchFieldId || !workCategoryFieldId) return null;
+
+    const batchName = formData[batchFieldId];
+    const workCategory = formData[workCategoryFieldId];
+
+    if (!batchName || !workCategory) return null;
+
+    let payFreqStr = 'Daily';
+    if (payFrequency === 'weekly') payFreqStr = 'Weekly';
+    else if (payFrequency === 'monthly') payFreqStr = 'Monthly';
+    else if (payFrequency === 'custom_days') payFreqStr = 'Custom';
+
+    let genderStr = 'Male';
+    if (gender === 'female') genderStr = 'Female';
+    else if (!gender) genderStr = 'Male';
+
+    const labourType = `${payFreqStr} ${genderStr}`;
+
+    const mostRecentRM = await RateMaster.findOne({
+      status: 'Applied',
+      'rules.batchName': batchName,
+      'rules.labourType': labourType,
+      'rules.workCategory': workCategory
+    }).sort({ appliedAt: -1, createdAt: -1 });
+
+    if (mostRecentRM) {
+      const matchedRule = mostRecentRM.rules.find(r =>
+        r.batchName === batchName &&
+        r.labourType === labourType &&
+        r.workCategory === workCategory
+      );
+      if (matchedRule && matchedRule.amount > 0) {
+        return matchedRule.amount;
+      }
+    }
+  } catch (err) {
+    console.error('Error auto-resolving pay amount:', err);
+  }
+  return null;
+}
+
 // Stage 1: Submit dynamic form data
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { roleId, formData, payFrequency, customPayDays, payAmount, gender, shiftId } = req.body;
+    let { roleId, formData, payFrequency, customPayDays, payAmount, gender, shiftId } = req.body;
 
     const role = await Role.findById(roleId);
     if (!role) return res.status(404).json({ error: 'Role not found' });
 
     const form = await RegistrationForm.findOne({ roleId, isActive: true });
     if (!form) return res.status(404).json({ error: 'No active registration form for this role' });
+
+    const autoAmount = await resolveAutoPayAmount(role, formData, payFrequency, gender);
+    if (autoAmount != null) {
+      payAmount = autoAmount;
+    }
 
     const validationError = validateFormData(form, formData, { skipMediaRequired: true });
     if (validationError) return res.status(400).json({ error: validationError });
@@ -627,6 +705,11 @@ router.put(
     if (uniqueMatches.length > 0) {
       const match = uniqueMatches[0];
       return res.status(400).json({ error: `A registration already exists with this ${match.matchedFieldLabel || 'Unique Field'}.` });
+    }
+
+    const autoAmount = await resolveAutoPayAmount(role, req.body.formData, req.body.payFrequency, req.body.gender);
+    if (autoAmount != null) {
+      req.body.payAmount = autoAmount;
     }
 
     const payFrequencyError = applyPayFrequency(

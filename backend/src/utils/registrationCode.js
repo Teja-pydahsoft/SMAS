@@ -11,14 +11,26 @@ export function isLegacySamsCode(code) {
 }
 
 /**
- * Build a sequential code like DM0001 from pay frequency + gender.
- * Daily+Male → DM0001, Daily+Female → DF0001, Weekly+Male → WM0001, etc.
+ * Build a sequential code like DM0001 from labour type.
+ * Daily Male → DM0001, Daily Female → DF0001, Weekly Male → WM0001, etc.
  */
-export function buildRegistrationCodePrefix(payFrequency, gender) {
-  const freqLetter = PAY_FREQUENCY_CODE_LETTERS[payFrequency];
-  const genderLetter = GENDER_CODE_LETTERS[gender];
-  if (!freqLetter || !genderLetter) return null;
-  return `${freqLetter}${genderLetter}`;
+export function buildRegistrationCodePrefix(labourType) {
+  if (!labourType || typeof labourType !== 'string') return null;
+  const parts = labourType.split(' ').map(w => w.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0].toUpperCase()}${parts[1][0].toUpperCase()}`;
+  }
+  return null;
+}
+
+function extractLabourType(registration) {
+  if (!registration || !registration.formData) return null;
+  for (const [key, value] of Object.entries(registration.formData)) {
+    if (/labour\s*type/i.test(key) && typeof value === 'string') {
+      return value;
+    }
+  }
+  return null;
 }
 
 async function nextSequentialCode(prefix) {
@@ -45,10 +57,11 @@ async function nextSequentialCode(prefix) {
  * Never returns the legacy SAMS-… format.
  */
 export async function generateRegistrationCode(registration, { maxAttempts = 8 } = {}) {
-  const prefix = buildRegistrationCodePrefix(registration?.payFrequency, registration?.gender);
+  const labourType = extractLabourType(registration);
+  const prefix = buildRegistrationCodePrefix(labourType);
   if (!prefix) {
     throw new Error(
-      'Pay frequency and gender are required to generate a registration code (e.g. DM0001)'
+      'A valid Labour Type (e.g. Daily Male) is required to generate a registration code (e.g. DM0001)'
     );
   }
 
@@ -63,10 +76,11 @@ export async function generateRegistrationCode(registration, { maxAttempts = 8 }
 
 /**
  * True when this registration should receive (or replace a legacy SAMS- code with)
- * a pay-frequency + gender code.
+ * a labour type code.
  */
 export function shouldAssignRegistrationCode(registration) {
-  if (!buildRegistrationCodePrefix(registration?.payFrequency, registration?.gender)) {
+  const labourType = extractLabourType(registration);
+  if (!buildRegistrationCodePrefix(labourType)) {
     return false;
   }
   if (!registration.registrationCode) return true;

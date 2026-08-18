@@ -159,14 +159,6 @@ export default function RegistrationDetailsModal({ registration, onClose, onView
                 </span>
               </div>
               <p className="reg-details-summary__role">{registration.roleId?.name || '—'}</p>
-              {registration.shiftId && (
-                <p className="reg-details-summary__role" style={{ marginTop: '0.15rem' }}>
-                  Shift: {registration.shiftId?.name || '—'}
-                  {formatShiftHoursLabel(registration.shiftId)
-                    ? ` · ${formatShiftHoursLabel(registration.shiftId)}`
-                    : ''}
-                </p>
-              )}
               <div className="reg-details-summary__chips">
                 {registration.registrationCode && (
                   <span className="reg-details-summary__chip">{registration.registrationCode}</span>

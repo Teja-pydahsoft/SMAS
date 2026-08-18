@@ -51,11 +51,23 @@ function RegistrationFlowModal({ title, subtitle, onClose, children, ariaLabel }
         className="reg-details-modal reg-details-modal--flow"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="reg-details-modal__header no-print">
-          <div className="reg-details-modal__title-wrap">
+        <div className="reg-details-modal__header no-print" style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
+          <div className="reg-details-modal__title-wrap" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{
+              width: '40px', height: '40px', borderRadius: '8px', 
+              background: '#f8fafc', border: '1px solid #e2e8f0', 
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f172a'
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
             <div>
-              <h3 className="reg-details-modal__title">{title}</h3>
-              {subtitle && <p className="reg-details-modal__sub">{subtitle}</p>}
+              <h3 className="reg-details-modal__title" style={{ margin: 0, fontSize: '1.125rem', color: '#1e293b' }}>{title}</h3>
+              {subtitle && <p className="reg-details-modal__sub" style={{ margin: 0, marginTop: '2px', color: '#64748b' }}>{subtitle}</p>}
             </div>
           </div>
           <button
@@ -94,8 +106,8 @@ function NewRegistrationModal({ roles, roleId, onClose, onComplete }) {
 
   return (
     <RegistrationFlowModal
-      title="New Registration"
-      subtitle="Select a role and complete the registration"
+      title="New Labour Registration"
+      subtitle="Capture identity details and assign workforce access"
       onClose={onClose}
       ariaLabel="New Registration"
     >
@@ -153,6 +165,8 @@ function ManageRegistrationsContent() {
   const [filterRoleId, setFilterRoleId] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [dynamicFilters, setDynamicFilters] = useState({});
+  const [roleFormFields, setRoleFormFields] = useState([]);
   const [editingRegistrationId, setEditingRegistrationId] = useState(preselectedEdit || null);
   const [reportRegistrationId, setReportRegistrationId] = useState(null);
   const [flowKey, setFlowKey] = useState(0);
@@ -187,6 +201,7 @@ function ManageRegistrationsContent() {
         limit: PAGE_SIZE,
         ...(roleId ? { roleId } : {}),
         ...(search ? { search } : {}),
+        ...dynamicFilters,
       };
       const data = await api.registrations.list(params);
 
@@ -224,7 +239,7 @@ function ManageRegistrationsContent() {
         setListLoading(false);
       }
     }
-  }, [filterRoleId, searchQuery]);
+  }, [filterRoleId, searchQuery, dynamicFilters]);
 
   useEffect(() => {
     api.roles.list().then((loadedRoles) => {
@@ -247,6 +262,21 @@ function ManageRegistrationsContent() {
     }).catch((e) => setError(e.message));
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!filterRoleId) {
+      setRoleFormFields([]);
+      setDynamicFilters({});
+      return;
+    }
+    api.forms.getByRole(filterRoleId).then((form) => {
+      setRoleFormFields(form?.fields || []);
+      setDynamicFilters({});
+    }).catch(() => {
+      setRoleFormFields([]);
+      setDynamicFilters({});
+    });
+  }, [filterRoleId]);
+
   // Debounce search input so typing doesn't hammer the API
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -260,7 +290,7 @@ function ManageRegistrationsContent() {
     setPage(1);
     setHasMore(false);
     loadRegistrations(filterRoleId, searchQuery, { page: 1, append: false });
-  }, [filterRoleId, searchQuery, loadRegistrations]);
+  }, [filterRoleId, searchQuery, dynamicFilters, loadRegistrations]);
 
   // Ensure missing registration passes exist once per session.
   // Only refresh the list when something was created — avoids the instant reload flash.
@@ -389,6 +419,21 @@ function ManageRegistrationsContent() {
                 ))}
               </select>
             </div>
+
+            {roleFormFields.filter(f => f.type === 'select').map(field => (
+              <div key={field.fieldId} className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+                <label>Filter by {field.label}</label>
+                <select 
+                  value={dynamicFilters[field.fieldId] || ''} 
+                  onChange={(e) => setDynamicFilters(prev => ({ ...prev, [field.fieldId]: e.target.value }))}
+                >
+                  <option value="">All</option>
+                  {(field.options || []).map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
 
             {canWrite && (
               <button

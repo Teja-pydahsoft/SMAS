@@ -7,6 +7,8 @@ import { formatDate } from '@/lib/formatDate';
 import { useAuth } from '@/components/AuthProvider';
 import SystemUserDetailsModal from '@/components/SystemUserDetailsModal';
 import GateAccessPicker, { gateModeBadgeLabel } from '@/components/GateAccessPicker';
+import ScopeOverflowCell from '@/components/ScopeOverflowCell';
+import DepartmentPicker from '@/components/DepartmentPicker';
 
 function PlusIcon() {
   return (
@@ -119,24 +121,6 @@ function NewUserModal({ onClose, onComplete }) {
     }
   }
 
-  const colStyle = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0',
-    minWidth: 0,
-  };
-
-  const colHeaderStyle = {
-    fontSize: '0.8rem',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    color: 'var(--text-muted)',
-    marginBottom: '0.75rem',
-    paddingBottom: '0.5rem',
-    borderBottom: '1px solid var(--border)',
-  };
-
   return (
     <div
       className="pass-modal-overlay reg-details-overlay"
@@ -146,13 +130,14 @@ function NewUserModal({ onClose, onComplete }) {
       aria-label="New System User"
     >
       <div
-        className="reg-details-modal"
-        style={{ maxWidth: 980, width: '96vw', maxHeight: 'none', overflowY: 'visible' }}
+        className="reg-details-modal su-modal su-modal--create"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="reg-details-modal__header no-print">
           <div className="reg-details-modal__title-wrap">
+            <span className="reg-details-modal__icon">
+              <PlusIcon />
+            </span>
             <div>
               <h3 className="reg-details-modal__title">New System User</h3>
               <p className="reg-details-modal__sub">Create a user, assign a role, and set access scope</p>
@@ -166,20 +151,11 @@ function NewUserModal({ onClose, onComplete }) {
           </button>
         </div>
 
-        {/* Body — 3-column layout */}
-        <div className="reg-details-modal__body" style={{ overflowY: 'visible' }}>
-          <form onSubmit={handleSubmit}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
-              gap: '0 1.5rem',
-              alignItems: 'start',
-            }}>
-
-              {/* ── Col 1: Role details ── */}
-              <div style={colStyle}>
-                <p style={colHeaderStyle}>Role Details</p>
-
+        <form onSubmit={handleSubmit}>
+          <div className="reg-details-modal__body">
+            <div className="su-account-panel">
+              <p className="su-create-col__title">Account</p>
+              <div className="su-account-grid">
                 <div className="form-group">
                   <label htmlFor="user-displayname">Display Name <span style={{ color: 'var(--danger)' }}>*</span></label>
                   <input id="user-displayname" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="e.g. John Smith" autoFocus />
@@ -209,88 +185,61 @@ function NewUserModal({ onClose, onComplete }) {
                   )}
                 </div>
               </div>
+            </div>
 
-              {/* ── Col 2: Divisions & Departments ── */}
-              <div style={colStyle}>
-                <p style={colHeaderStyle}>Divisions & Departments</p>
-
-                <div className="form-group">
-                  <label>Divisions</label>
-                  <p className="field-hint">Leave empty for no division scope restriction.</p>
-                  {divisions.length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No divisions available.</p>
-                  ) : (
-                    <div className="checkbox-group">
-                      {divisions.map((d) => (
-                        <label key={d._id} className="checkbox-option">
-                          <input type="checkbox" checked={divisionIds.includes(d._id)} onChange={() => toggleDivision(d._id)} />
-                          <span>{d.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="form-group">
-                  <label>Departments</label>
-                  <p className="field-hint">
-                    {divisionIds.length === 0
-                      ? 'Select divisions to filter departments, or assign departments only for check-in/check-out access.'
-                      : 'Select departments for check-in/check-out. Gate assignment is optional.'}
-                  </p>
-                  {scopedDepartments.length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                      {divisionIds.length === 0 ? 'No divisions selected.' : 'No departments in selected divisions.'}
-                    </p>
-                  ) : (
-                    <div className="checkbox-group">
-                      {scopedDepartments.map((dept) => (
-                        <label key={dept._id} className="checkbox-option">
-                          <input type="checkbox" checked={departmentIds.includes(dept._id)} onChange={() => toggleDepartment(dept._id)} />
-                          <span>{dept.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            <div className="su-create-grid">
+              <div className="su-create-col">
+                <p className="su-create-col__title">Divisions</p>
+                <p className="su-hint">Leave empty for no division restriction.</p>
+                {divisions.length === 0 ? (
+                  <p className="scope-empty">No divisions available.</p>
+                ) : (
+                  <div className="checkbox-group su-scroll-list su-scroll-list--dept">
+                    {divisions.map((d) => (
+                      <label key={d._id} className="checkbox-option">
+                        <input type="checkbox" checked={divisionIds.includes(d._id)} onChange={() => toggleDivision(d._id)} />
+                        <span>{d.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* ── Col 3: Gates (only when divisions selected) ── */}
-              <div style={colStyle}>
-                <p style={colHeaderStyle}>Gates</p>
+              <div className="su-create-col">
+                <p className="su-create-col__title">Departments</p>
+                <p className="su-hint">
+                  {divisionIds.length === 0
+                    ? 'Search and assign departments for check-in/check-out. Gate assignment is optional.'
+                    : 'Search and select departments for check-in/check-out.'}
+                </p>
+                <DepartmentPicker
+                  departments={scopedDepartments}
+                  selectedIds={departmentIds}
+                  onToggle={toggleDepartment}
+                  emptyMessage={divisionIds.length === 0 ? 'No departments available.' : 'No departments in selected divisions.'}
+                />
+              </div>
+
+              <div className="su-create-col">
+                <p className="su-create-col__title">Gates</p>
                 {divisionIds.length === 0 ? (
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '2rem 1rem',
-                    background: 'var(--bg-inset, #f9fafb)',
-                    borderRadius: 'var(--radius)',
-                    border: '1.5px dashed var(--border)',
-                    color: 'var(--text-muted)',
-                    textAlign: 'center',
-                    gap: '0.5rem',
-                  }}>
+                  <div className="su-empty-scope">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }} aria-hidden>
                       <rect x="3" y="11" width="18" height="11" rx="2" />
                       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                     </svg>
-                    <p style={{ fontSize: '0.85rem' }}>Select divisions to see available gates.</p>
+                    <p>Select divisions to see available gates.</p>
                   </div>
                 ) : scopedGates.length === 0 ? (
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                    No gates in the selected divisions.
-                  </p>
+                  <p className="scope-empty">No gates in the selected divisions.</p>
                 ) : (
                   <div className="form-group">
-                    <p className="field-hint">
-                      Optional — assign gates for entry/exit. For combined gates, choose entry only, exit only, or both.
-                    </p>
+                    <p className="su-hint">Optional. Combined gates can be entry, exit, or both.</p>
                     <GateAccessPicker
                       gates={scopedGates}
                       selectedIds={gateIds}
                       modes={gateAccessModes}
+                      showDivision={false}
                       onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
                         setGateIds(nextIds);
                         setGateAccessModes(nextModes);
@@ -299,19 +248,18 @@ function NewUserModal({ onClose, onComplete }) {
                   </div>
                 )}
               </div>
-
             </div>
 
-            {error && <p className="error-msg" style={{ marginTop: '1rem' }}>{error}</p>}
+            {error && <p className="error-msg">{error}</p>}
+          </div>
 
-            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border)' }}>
-              <button type="submit" className="btn-primary" disabled={loading || roles.length === 0}>
-                {loading ? 'Creating...' : 'Create System User'}
-              </button>
-              <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-            </div>
-          </form>
-        </div>
+          <div className="reg-details-modal__footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={loading || roles.length === 0}>
+              {loading ? 'Creating...' : 'Create System User'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -456,49 +404,42 @@ export default function ManageSystemUsersPage() {
                     <td>{user.isSuperAdmin ? 'Unrestricted' : user.systemRoleId?.name || '—'}</td>
 
                     {/* Divisions */}
-                    <td>
+                    <td className="scope-col">
                       {user.isSuperAdmin ? (
                         <span className="badge badge-success">All</span>
-                      ) : (user.divisionIds || []).length > 0 ? (
-                        <div className="scope-badges-col">
-                          {user.divisionIds.map((div) => (
-                            <span key={div._id} className="badge badge-info">{div.name}</span>
-                          ))}
-                        </div>
                       ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>null</span>
+                        <ScopeOverflowCell
+                          items={user.divisionIds || []}
+                          badgeClass="badge-info"
+                          title="Divisions"
+                        />
                       )}
                     </td>
 
                     {/* Gates */}
-                    <td>
+                    <td className="scope-col">
                       {user.isSuperAdmin ? (
                         <span className="badge badge-success">All</span>
-                      ) : (user.gateIds || []).length > 0 ? (
-                        <div className="scope-badges-col">
-                          {user.gateIds.map((gate) => (
-                            <span key={gate._id} className="badge badge-success">
-                              {gate.name} ({gateModeBadgeLabel(gate, user.gateAccessModes || {})})
-                            </span>
-                          ))}
-                        </div>
                       ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>null</span>
+                        <ScopeOverflowCell
+                          items={user.gateIds || []}
+                          badgeClass="badge-success"
+                          title="Gates"
+                          renderLabel={(gate) => `${gate.name} (${gateModeBadgeLabel(gate, user.gateAccessModes || {})})`}
+                        />
                       )}
                     </td>
 
                     {/* Departments */}
-                    <td>
+                    <td className="scope-col">
                       {user.isSuperAdmin ? (
                         <span className="badge badge-success">All</span>
-                      ) : (user.departmentIds || []).length > 0 ? (
-                        <div className="scope-badges-col">
-                          {user.departmentIds.map((dept) => (
-                            <span key={dept._id} className="badge badge-warning">{dept.name}</span>
-                          ))}
-                        </div>
                       ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-13)' }}>null</span>
+                        <ScopeOverflowCell
+                          items={user.departmentIds || []}
+                          badgeClass="badge-warning"
+                          title="Departments"
+                        />
                       )}
                     </td>
                     <td>

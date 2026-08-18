@@ -732,7 +732,6 @@ function ShiftsTab({ canWrite }) {
 const TABS = [
   { key: 'divisions', label: 'Divisions', module: 'divisions' },
   { key: 'departments', label: 'Departments', module: 'departments' },
-  { key: 'shifts', label: 'Shifts', module: 'shifts' },
 ];
 
 function OrganizationContent() {
@@ -756,7 +755,6 @@ function OrganizationContent() {
     >
       {activeTab === 'divisions' && <DivisionsTab canWrite={can('divisions', 'write')} />}
       {activeTab === 'departments' && <DepartmentsTab canWrite={can('departments', 'write')} />}
-      {activeTab === 'shifts' && <ShiftsTab canWrite={can('shifts', 'write')} />}
     </PageShell>
   );
 }

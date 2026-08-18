@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 
-export default function SearchableSelect({ options, value, onChange, placeholder, disabled, className, emptyValue = 'all' }) {
+export default function SearchableSelect({ options, value, onChange, placeholder, disabled, className, emptyValue = 'all', multiple = false }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef(null);
@@ -15,7 +15,34 @@ export default function SearchableSelect({ options, value, onChange, placeholder
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const selectedLabel = value === emptyValue ? placeholder : value;
+  const isArray = Array.isArray(value);
+  const selectedCount = isArray ? value.length : 0;
+  
+  const selectedLabel = multiple 
+    ? (selectedCount === 0 || value === emptyValue ? placeholder : (selectedCount === 1 ? value[0] : `${selectedCount} selected`))
+    : (value === emptyValue ? placeholder : value);
+
+  const isSelected = (opt) => multiple ? isArray && value.includes(opt) : value === opt;
+
+  const handleSelect = (opt) => {
+    if (!multiple) {
+      onChange(opt);
+      setOpen(false);
+      setSearch('');
+    } else {
+      if (opt === emptyValue) {
+        onChange(emptyValue);
+      } else {
+        const current = isArray ? value : [];
+        if (current.includes(opt)) {
+          const next = current.filter(v => v !== opt);
+          onChange(next.length ? next : emptyValue);
+        } else {
+          onChange([...current, opt]);
+        }
+      }
+    }
+  };
 
   const filtered = options.filter(opt => 
     opt.toLowerCase().includes(search.toLowerCase())
@@ -67,21 +94,27 @@ export default function SearchableSelect({ options, value, onChange, placeholder
           </div>
           <div style={{ overflowY: 'auto', flex: 1, padding: '4px 0' }}>
             <div 
-              style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: value === emptyValue ? '#f3f4f6' : 'transparent', fontSize: '0.875rem', color: '#111827' }}
-              onClick={() => { onChange(emptyValue); setOpen(false); setSearch(''); }}
+              style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: (!isArray && value === emptyValue) || (isArray && value.length === 0) ? '#f3f4f6' : 'transparent', fontSize: '0.875rem', color: '#111827', display: 'flex', alignItems: 'center', gap: '8px' }}
+              onClick={() => handleSelect(emptyValue)}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f3f4f6'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = value === emptyValue ? '#f3f4f6' : 'transparent'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = (!isArray && value === emptyValue) || (isArray && value.length === 0) ? '#f3f4f6' : 'transparent'}
             >
+              {multiple && (
+                <input type="checkbox" checked={!isArray || value.length === 0} readOnly style={{ margin: 0, cursor: 'pointer' }} />
+              )}
               {placeholder}
             </div>
             {filtered.map(opt => (
               <div 
                 key={opt}
-                style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: value === opt ? '#f3f4f6' : 'transparent', fontSize: '0.875rem', color: '#111827' }}
-                onClick={() => { onChange(opt); setOpen(false); setSearch(''); }}
+                style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: isSelected(opt) ? '#f3f4f6' : 'transparent', fontSize: '0.875rem', color: '#111827', display: 'flex', alignItems: 'center', gap: '8px' }}
+                onClick={() => handleSelect(opt)}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f3f4f6'}
-                onMouseLeave={e => e.currentTarget.style.backgroundColor = value === opt ? '#f3f4f6' : 'transparent'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = isSelected(opt) ? '#f3f4f6' : 'transparent'}
               >
+                {multiple && (
+                  <input type="checkbox" checked={isSelected(opt)} readOnly style={{ margin: 0, cursor: 'pointer' }} />
+                )}
                 {opt}
               </div>
             ))}

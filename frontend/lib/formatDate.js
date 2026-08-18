@@ -3,16 +3,17 @@ const IST_TIMEZONE = 'Asia/Kolkata';
 const DATE_OPTS = {
   timeZone: IST_TIMEZONE,
   year: 'numeric',
-  month: 'numeric',
-  day: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
 };
 const DATETIME_OPTS = {
   timeZone: IST_TIMEZONE,
   year: 'numeric',
-  month: 'numeric',
-  day: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
   hour: 'numeric',
   minute: '2-digit',
+  hour12: true,
 };
 
 function parseDateValue(value) {
@@ -42,12 +43,12 @@ export function formatDate(value) {
   if (!value) return '—';
   const date = parseDateValue(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString('en-US', DATE_OPTS);
+  return date.toLocaleDateString('en-GB', DATE_OPTS);
 }
 
 export function formatDateTime(value) {
   if (!value) return '—';
   const date = parseDateValue(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('en-US', DATETIME_OPTS);
+  return date.toLocaleString('en-GB', DATETIME_OPTS);
 }

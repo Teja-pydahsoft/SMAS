@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import useRequireWrite from '@/hooks/useRequireWrite';
 import GateAccessPicker from '@/components/GateAccessPicker';
+import DepartmentPicker from '@/components/DepartmentPicker';
 
 export default function CreateSystemUserPage() {
   const router = useRouter();
@@ -137,142 +138,150 @@ export default function CreateSystemUserPage() {
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="su-create-page">
       <div className="card">
-        <h3 className="section-title">System User Details</h3>
+        <h3 className="section-title">New System User</h3>
         <p className="section-desc">
-          Create a system user, assign a role, then limit access by divisions, gates, and departments below.
+          Create a system user, assign a role, then limit access by divisions, gates, and departments.
         </p>
 
-        <div className="form-group">
-          <label>Display Name <span style={{ color: 'var(--danger)' }}>*</span></label>
-          <input
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="e.g. John Smith"
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Optional email"
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Username <span style={{ color: 'var(--danger)' }}>*</span></label>
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Login username"
-            autoComplete="off"
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Password <span style={{ color: 'var(--danger)' }}>*</span></label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="At least 6 characters"
-            autoComplete="new-password"
-          />
-        </div>
-
-        <div className="form-group">
-          <label>System Role <span style={{ color: 'var(--danger)' }}>*</span></label>
-          <select value={systemRoleId} onChange={(e) => setSystemRoleId(e.target.value)}>
-            <option value="">Select role...</option>
-            {roles.map((role) => (
-              <option key={role._id} value={role._id}>{role.name}</option>
-            ))}
-          </select>
-          {roles.length === 0 && (
-            <p className="field-hint">Create a system role first, then assign privileges.</p>
-          )}
-        </div>
-
-        <div className="form-group">
-          <label>Access Scope — Divisions</label>
-          <p className="field-hint">Select divisions this user can access. Leave empty for no division scope.</p>
-          {divisions.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No divisions available.</p>
-          ) : (
-            <div className="checkbox-group">
-              {divisions.map((division) => (
-                <label key={division._id} className="checkbox-option">
-                  <input
-                    type="checkbox"
-                    checked={divisionIds.includes(division._id)}
-                    onChange={() => toggleDivision(division._id)}
-                  />
-                  <span>{division.name}</span>
-                </label>
-              ))}
+        <div className="su-create-grid" style={{ marginTop: '1rem' }}>
+          <section className="su-panel">
+            <h4 className="su-panel__title">Account</h4>
+            <div className="form-group">
+              <label htmlFor="create-displayname">Display Name <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <input
+                id="create-displayname"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="e.g. John Smith"
+              />
             </div>
-          )}
-        </div>
-
-        <div className="form-group">
-          <label>Access Scope — Gates</label>
-          <p className="field-hint">
-            Select division gates for gate entry/exit. For combined gates, choose entry only, exit only, or both.
-            Optional if this user only needs department check-in/check-out.
-          </p>
-          <GateAccessPicker
-            gates={scopedGates}
-            selectedIds={gateIds}
-            modes={gateAccessModes}
-            emptyMessage={
-              divisionIds.length === 0
-                ? 'Select divisions first to filter gates.'
-                : 'No gates in the selected divisions.'
-            }
-            onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
-              setGateIds(nextIds);
-              setGateAccessModes(nextModes);
-            }}
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Access Scope — Departments</label>
-          <p className="field-hint">
-            Select departments for check-in/check-out on the Gate Access page. Gate assignment is not required when only departments are selected.
-          </p>
-          {scopedDepartments.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-              {divisionIds.length === 0
-                ? 'Select divisions first to filter departments, or leave empty for all departments in scope.'
-                : 'No departments in the selected divisions.'}
-            </p>
-          ) : (
-            <div className="checkbox-group">
-              {scopedDepartments.map((dept) => (
-                <label key={dept._id} className="checkbox-option">
-                  <input
-                    type="checkbox"
-                    checked={departmentIds.includes(dept._id)}
-                    onChange={() => toggleDepartment(dept._id)}
-                  />
-                  <span>{dept.name}</span>
-                </label>
-              ))}
+            <div className="form-group">
+              <label htmlFor="create-email">Email</label>
+              <input
+                id="create-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Optional email"
+              />
             </div>
-          )}
+            <div className="form-group">
+              <label htmlFor="create-username">Username <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <input
+                id="create-username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Login username"
+                autoComplete="off"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="create-password">Password <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <input
+                id="create-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="create-role">System Role <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <select id="create-role" value={systemRoleId} onChange={(e) => setSystemRoleId(e.target.value)}>
+                <option value="">Select role...</option>
+                {roles.map((role) => (
+                  <option key={role._id} value={role._id}>{role.name}</option>
+                ))}
+              </select>
+              {roles.length === 0 && (
+                <p className="field-hint">Create a system role first, then assign privileges.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="su-panel">
+            <h4 className="su-panel__title">Divisions &amp; Departments</h4>
+            <div className="form-group">
+              <label>Divisions</label>
+              <p className="su-hint">Leave empty for no division restriction.</p>
+              {divisions.length === 0 ? (
+                <p className="scope-empty">No divisions available.</p>
+              ) : (
+                <div className="checkbox-group su-scroll-list">
+                  {divisions.map((division) => (
+                    <label key={division._id} className="checkbox-option">
+                      <input
+                        type="checkbox"
+                        checked={divisionIds.includes(division._id)}
+                        onChange={() => toggleDivision(division._id)}
+                      />
+                      <span>{division.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label>Departments</label>
+              <p className="su-hint">
+                Search and select departments for check-in/check-out. Gate assignment is optional.
+              </p>
+              <DepartmentPicker
+                departments={scopedDepartments}
+                selectedIds={departmentIds}
+                onToggle={toggleDepartment}
+                emptyMessage={
+                  divisionIds.length === 0
+                    ? 'Select divisions first to filter departments.'
+                    : 'No departments in the selected divisions.'
+                }
+              />
+            </div>
+          </section>
+
+          <section className="su-panel">
+            <h4 className="su-panel__title">Gates</h4>
+            {divisionIds.length === 0 ? (
+              <div className="su-empty-scope">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }} aria-hidden>
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                <p>Select divisions to see available gates.</p>
+              </div>
+            ) : (
+              <>
+                <p className="su-hint">Optional. Combined gates can be entry, exit, or both.</p>
+                <GateAccessPicker
+                  gates={scopedGates}
+                  selectedIds={gateIds}
+                  modes={gateAccessModes}
+                  emptyMessage="No gates in the selected divisions."
+                  onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
+                    setGateIds(nextIds);
+                    setGateAccessModes(nextModes);
+                  }}
+                />
+              </>
+            )}
+          </section>
         </div>
 
         {error && <p className="error-msg">{error}</p>}
         {success && <p className="success-msg">{success}</p>}
 
-        <button type="submit" className="btn-primary" disabled={loading || roles.length === 0}>
-          {loading ? 'Creating...' : 'Create System User'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
+          <button type="submit" className="btn-primary" disabled={loading || roles.length === 0}>
+            {loading ? 'Creating...' : 'Create System User'}
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => router.push('/system/users/manage')}>
+            Cancel
+          </button>
+        </div>
       </div>
     </form>
   );

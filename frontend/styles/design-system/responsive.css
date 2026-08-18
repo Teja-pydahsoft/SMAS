@@ -99,6 +99,10 @@
   .admin-quick-actions__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .system-user-modal-grid    { grid-template-columns: 1fr; }
   .suedit-grid               { grid-template-columns: 1fr; }
+  .su-view-grid              { grid-template-columns: 1fr; }
+  .su-edit-grid              { grid-template-columns: 1fr; }
+  .su-create-grid            { grid-template-columns: 1fr; }
+  .su-account-grid           { grid-template-columns: 1fr 1fr; }
 }
 
 /* ── 900px ── */
@@ -398,6 +402,12 @@
   .system-user-modal { max-width: 100%; }
   .suedit-grid               { grid-template-columns: 1fr; }
   .suedit-scope-grid         { grid-template-columns: repeat(2, 1fr); }
+  .su-view-grid              { grid-template-columns: 1fr; }
+  .su-edit-grid              { grid-template-columns: 1fr; }
+  .su-scope-grid             { grid-template-columns: 1fr 1fr; }
+  .su-create-grid            { grid-template-columns: 1fr; }
+  .su-account-grid           { grid-template-columns: 1fr; }
+  .su-kv                     { grid-template-columns: 92px minmax(0, 1fr); }
 
   /* Details modal */
   .details-modal-footer { padding-left: var(--space-4); padding-right: var(--space-4); }
@@ -552,6 +562,7 @@
   .pass-card__paper-size { flex: 1 1 auto; }
   .pass-card__paper-btn { flex: 1; text-align: center; }
   .pass-card__print-btn { width: 100%; justify-content: center; }
+  .su-scope-grid { grid-template-columns: 1fr; }
 }
 
 /* ── 480px ── */

@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { api, ensureBackendReady, warmBackend } from '@/lib/api/client';
 import { useAuth } from '@/components/AuthProvider';
 import GateScopePicker from '@/components/GateScopePicker';
@@ -689,6 +689,7 @@ function LoginCard({ wide, submitting, loaderMessage, title, subtitle, step, flo
 
 function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationEnabled = false }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, user, loading: authLoading } = useAuth();
   const [step, setStep] = useState('username');
   const [flow, setFlow] = useState('standard');
@@ -700,7 +701,12 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
   const [pendingGateSession, setPendingGateSession] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => {
+    if (searchParams?.get('error') === 'location_blocked') {
+      return 'Your session was terminated because you left the authorized location area.';
+    }
+    return '';
+  });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {

@@ -66,12 +66,64 @@ export function AuthProvider({ children }) {
     return result.user;
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback((reason) => {
     clearGateFlowState();
     clearSession();
     setUser(null);
-    router.push('/login');
+    if (reason === 'location_blocked') {
+      router.push('/login?error=location_blocked');
+    } else {
+      router.push('/login');
+    }
   }, [router]);
+
+  // Geolocation Continuous Tracking
+  useEffect(() => {
+    if (!user || user.isSuperAdmin) return;
+    
+    let watchId;
+    let lastCheckTime = 0;
+    const THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
+
+    const startTracking = async () => {
+      try {
+        const settings = await api.geoLocations.publicSettings();
+        if (!settings.geoLocationEnabled) return;
+
+        if (!navigator.geolocation) return;
+
+        watchId = navigator.geolocation.watchPosition(
+          async (position) => {
+            const now = Date.now();
+            if (now - lastCheckTime < THROTTLE_MS) return;
+            
+            try {
+              lastCheckTime = now;
+              await api.geoLocations.verify(position.coords.latitude, position.coords.longitude, true);
+            } catch (err) {
+              if (err.status === 403) {
+                logout('location_blocked');
+              }
+            }
+          },
+          (error) => {
+            console.warn('Geolocation tracking error:', error);
+          },
+          { enableHighAccuracy: true, maximumAge: 0 }
+        );
+      } catch (err) {
+        console.warn('Failed to load geo settings for tracking:', err);
+      }
+    };
+
+    startTracking();
+
+    return () => {
+      if (watchId !== undefined && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [user, logout]);
 
   const can = useCallback(
     (module, action = 'read') => hasPermission(user, module, action),

@@ -102,14 +102,14 @@ function assignedShiftWindow(workDate, pass) {
   if (!workDate || !pass) return null;
   const payload = pass.qrPayload || {};
   const totalHours = Number(payload.totalHours);
-  const entryRaw = payload.gateEntryAt || pass.validFrom || pass.createdAt || null;
+  const entryRaw = payload.gateEntryAt || null;
 
   if (Number.isFinite(totalHours) && totalHours > 0 && entryRaw) {
     const start = new Date(entryRaw);
     if (!Number.isNaN(start.getTime())) {
       return {
         start,
-        end: new Date(start.getTime() + totalHours * 60 * 60 * 1000 + SHIFT_OVERSTAY_GRACE_MS),
+        end: new Date(start.getTime() + (totalHours * 60 * 60 * 1000) + SHIFT_OVERSTAY_GRACE_MS),
       };
     }
   }
@@ -133,7 +133,17 @@ function isWithinAssignedShiftWindow(value, workDate, pass) {
   const window = assignedShiftWindow(workDate, pass);
   if (!window) return true;
   const at = new Date(value);
-  return !Number.isNaN(at.getTime()) && at >= window.start && at <= window.end;
+  if (Number.isNaN(at.getTime())) return false;
+
+  // If log falls inherently within the same calendar day, it belongs here.
+  // We strictly enforce window.end to prevent stealing from the next day.
+  // But enforcing window.start strictly can falsely discard morning logs 
+  // if the shift window's start was derived from a later re-entry.
+  if (logDateKey(value) === workDate) {
+    return at <= window.end;
+  }
+
+  return at >= window.start && at <= window.end;
 }
 
 /**
@@ -169,41 +179,35 @@ function assignedWorkDateForTimestamp(value, fallbackDate, shiftPassByDate) {
  * `logs`        — raw GateLog documents (createdAt available)
  */
 function buildOvernightRebucketMap(logs, passByDate) {
-  // Absorbed dates are passes created by a post-midnight re-entry inside a prior
-  // night shift — they must NOT be treated as a fresh overnight start, otherwise
-  // the rebucket condition `!overnightDates.has(wallDate)` would block re-keying
-  // the very logs that belong to the previous shift.
   const absorbedDates = buildAbsorbedDatesSet(passByDate);
-
-  // Collect overnight work-dates, excluding absorbed ones
-  const overnightDates = new Set();
-  for (const [validDate, pass] of passByDate) {
-    if (isOvernightPass(pass) && !absorbedDates.has(validDate)) {
-      overnightDates.add(validDate);
-    }
-  }
-  if (overnightDates.size === 0) return new Map();
-
   const rebucket = new Map(); // logId (string) → workDate to use instead
+
   for (const log of logs) {
     const wallDate = logDateKey(log.createdAt);
     const prevDate = prevDateIst(wallDate);
-    // Re-attribute only when:
-    //  - the log's wall-clock date is NOT itself a work-date with an overnight shift
-    //  - the previous calendar day IS a work-date with an overnight shift
-    //  - the log happened before shift end + overstay grace on wallDate
-    if (!overnightDates.has(wallDate) && overnightDates.has(prevDate)) {
-      const pass = passByDate.get(prevDate);
-      const endTime = pass?.qrPayload?.shiftEndTime;
-      if (endTime) {
-        const cutoff = overnightRebucketCutoff(wallDate, endTime);
-        const logAt = new Date(log.createdAt);
-        if (cutoff && logAt <= cutoff) {
-          rebucket.set(log._id.toString(), prevDate);
+
+    if (absorbedDates.has(prevDate)) continue;
+
+    const prevPass = passByDate.get(prevDate);
+    if (!prevPass) continue;
+
+    if (isWithinAssignedShiftWindow(log.createdAt, prevDate, prevPass)) {
+      const wallPass = passByDate.get(wallDate);
+      let belongsToNewShift = false;
+      if (wallPass && !absorbedDates.has(wallDate)) {
+        const wallWindow = assignedShiftWindow(wallDate, wallPass);
+        if (wallWindow && new Date(log.createdAt) >= wallWindow.start) {
+          belongsToNewShift = true;
+          console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) belongs to NEW shift on ${wallDate} (window start: ${wallWindow.start})`);
         }
-      } else {
+      }
+
+      if (!belongsToNewShift) {
+        console.log(`[DEBUG REBUCKET] Rebucketing log ${log._id} (${log.createdAt}) from ${wallDate} to ${prevDate}!`);
         rebucket.set(log._id.toString(), prevDate);
       }
+    } else {
+      console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) is NOT within prev shift window for ${prevDate}`);
     }
   }
   return rebucket;
@@ -223,39 +227,40 @@ function buildOvernightRebucketMapByReg(logs, passByRegDate) {
     passesByReg.get(regId).set(validDate, pass);
   }
 
-  // Build a per-registration map of overnight work-dates, excluding absorbed dates
-  // so they don't block rebucketing of logs that belong to the prior night shift.
-  const overnightByReg = new Map(); // regId → Map<validDate, pass>
-  for (const [regId, passMap] of passesByReg) {
-    const absorbedDates = buildAbsorbedDatesSet(passMap);
-    for (const [validDate, pass] of passMap) {
-      if (!isOvernightPass(pass) || absorbedDates.has(validDate)) continue;
-      if (!overnightByReg.has(regId)) overnightByReg.set(regId, new Map());
-      overnightByReg.get(regId).set(validDate, pass);
-    }
-  }
-  if (overnightByReg.size === 0) return new Map();
-
+  const absorbedDatesByReg = buildAbsorbedDatesByReg(passByRegDate);
   const rebucket = new Map(); // logId (string) → workDate to use instead
+
   for (const log of logs) {
     const regId = log.registrationId.toString();
-    const overnightDatesForReg = overnightByReg.get(regId);
-    if (!overnightDatesForReg) continue;
+    const passMap = passesByReg.get(regId);
+    if (!passMap) continue;
 
+    const absorbedDates = absorbedDatesByReg.get(regId) || new Set();
     const wallDate = logDateKey(log.createdAt);
     const prevDate = prevDateIst(wallDate);
-    if (!overnightDatesForReg.has(wallDate) && overnightDatesForReg.has(prevDate)) {
-      const pass = overnightDatesForReg.get(prevDate);
-      const endTime = pass?.qrPayload?.shiftEndTime;
-      if (endTime) {
-        const cutoff = overnightRebucketCutoff(wallDate, endTime);
-        const logAt = new Date(log.createdAt);
-        if (cutoff && logAt <= cutoff) {
-          rebucket.set(log._id.toString(), prevDate);
+
+    if (absorbedDates.has(prevDate)) continue;
+
+    const prevPass = passMap.get(prevDate);
+    if (!prevPass) continue;
+
+    if (isWithinAssignedShiftWindow(log.createdAt, prevDate, prevPass)) {
+      const wallPass = passMap.get(wallDate);
+      let belongsToNewShift = false;
+      if (wallPass && !absorbedDates.has(wallDate)) {
+        const wallWindow = assignedShiftWindow(wallDate, wallPass);
+        if (wallWindow && new Date(log.createdAt) >= wallWindow.start) {
+          belongsToNewShift = true;
+          console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) belongs to NEW shift on ${wallDate} (window start: ${wallWindow.start})`);
         }
-      } else {
+      }
+
+      if (!belongsToNewShift) {
+        console.log(`[DEBUG REBUCKET] Rebucketing log ${log._id} (${log.createdAt}) from ${wallDate} to ${prevDate}!`);
         rebucket.set(log._id.toString(), prevDate);
       }
+    } else {
+      console.log(`[DEBUG REBUCKET] Log ${log._id} (${log.createdAt}) is NOT within prev shift window for ${prevDate}`);
     }
   }
   return rebucket;
@@ -273,19 +278,16 @@ function buildOvernightRebucketMapByReg(logs, passByRegDate) {
 function buildAbsorbedDatesSet(passByDate) {
   const absorbed = new Set();
   for (const [validDate, pass] of passByDate) {
-    if (!isOvernightPass(pass)) continue;
-    // This is a night-shift work-date. Check if the next calendar day also has a pass
-    // that was created inside this shift's window (i.e. a re-entry after midnight).
     const nextDate = nextDateIst(validDate);
     const nextPass = passByDate.get(nextDate);
     if (!nextPass) continue;
 
-    // The next-day pass must have been created before shift end + grace on that next day
-    const endTime = pass.qrPayload?.shiftEndTime;
-    if (!endTime) continue;
-    const cutoff = overnightRebucketCutoff(nextDate, endTime);
+    const window = assignedShiftWindow(validDate, pass);
+    if (!window) continue;
+
+    // Check if the next-day pass was created inside this shift's window (re-entry)
     const nextPassCreated = new Date(nextPass.createdAt);
-    if (cutoff && nextPassCreated <= cutoff) {
+    if (nextPassCreated >= window.start && nextPassCreated <= window.end) {
       absorbed.add(nextDate);
     }
   }
@@ -580,6 +582,9 @@ export const ATTENDANCE_OVERRIDE_STATUSES = {
   P: { status: 'P', code: 'P', label: 'Present', payFactor: 1 },
   HD: { status: 'HD', code: 'HD', label: 'Half Day', payFactor: 0.5 },
   A: { status: 'A', code: 'A', label: 'Absent', payFactor: 0 },
+  DS: { status: 'P', code: 'DS', label: 'Double Shift', payFactor: 2 },
+  '1.5S': { status: 'P', code: '1.5S', label: '1.5 Shift', payFactor: 1.5 },
+  OT: { status: 'P', code: 'OT', label: 'Overtime', payFactor: 1.25 },
 };
 
 /**
@@ -951,11 +956,11 @@ export async function listRegistrationReports({ search = '', limit = 100, divisi
   const normalizedSearch = search.trim().toLowerCase();
   const filtered = normalizedSearch
     ? items.filter(
-        (item) =>
-          item.displayName?.toLowerCase().includes(normalizedSearch) ||
-          item.registrationCode?.toLowerCase().includes(normalizedSearch) ||
-          item.roleName?.toLowerCase().includes(normalizedSearch)
-      )
+      (item) =>
+        item.displayName?.toLowerCase().includes(normalizedSearch) ||
+        item.registrationCode?.toLowerCase().includes(normalizedSearch) ||
+        item.roleName?.toLowerCase().includes(normalizedSearch)
+    )
     : items;
 
   return filtered.sort(
@@ -1012,12 +1017,12 @@ export async function getRegistrationReport(
   const todayEntries = hasDateRange
     ? []
     : logs
-        .filter((log) => logDateKey(log.createdAt) === today)
-        .map((entry) => ({
-          ...formatLogEntry(entry),
-          label: scanLabel(formatLogEntry(entry)),
-        }))
-        .sort((a, b) => new Date(b.at) - new Date(a.at));
+      .filter((log) => logDateKey(log.createdAt) === today)
+      .map((entry) => ({
+        ...formatLogEntry(entry),
+        label: scanLabel(formatLogEntry(entry)),
+      }))
+      .sort((a, b) => new Date(b.at) - new Date(a.at));
 
   // Activity-monitor sightings for today (even without gate entry).
   if (!hasDateRange) {
@@ -1076,10 +1081,10 @@ export async function getRegistrationReport(
       }
     }
 
-    // Prefer the first pass carrying the assigned shift snapshot.
+    // Prefer the latest pass carrying the assigned shift snapshot to stretch the window for double-duties.
     shiftPassByDateForRange = new Map();
     for (const date of dates) {
-      const shiftPass = initialShiftPassByDate.get(date) || passByDate.get(date);
+      const shiftPass = passByDate.get(date) || initialShiftPassByDate.get(date);
       if (shiftPass?.qrPayload?.shiftId) {
         shiftPassByDateForRange.set(date, shiftPass);
       }
@@ -1196,10 +1201,10 @@ export async function getRegistrationReport(
     for (const sighting of sightings) {
       const date = hasDateRange
         ? assignedWorkDateForTimestamp(
-            sighting.createdAt,
-            sighting.sightingDate || logDateKey(sighting.createdAt),
-            shiftPassByDateForRange
-          )
+          sighting.createdAt,
+          sighting.sightingDate || logDateKey(sighting.createdAt),
+          shiftPassByDateForRange
+        )
         : sighting.sightingDate || logDateKey(sighting.createdAt);
       if (hasDateRange && (date < dateFrom || date > dateTo)) continue;
       const shiftPass = shiftPassByDateForRange?.get(date);
@@ -1465,6 +1470,9 @@ export async function getAttendanceHistoryGrid({
   limit = 50,
   page = 1,
   divisionIds = null,
+  payFrequency = '',
+  shiftName = '',
+  selectionFilters = '{}',
 } = {}) {
   const today = todayDateString();
   const from = dateFrom || today.slice(0, 8) + '01';
@@ -1518,14 +1526,73 @@ export async function getAttendanceHistoryGrid({
     regQuery._id = { $in: [...scopedRegIds].map((id) => new mongoose.Types.ObjectId(id)) };
   }
 
-  // Lightweight id list (covered by status+createdAt index) then hydrate one page.
-  const idDocs = await Registration.find(regQuery)
-    .select({ _id: 1 })
+  if (shiftName && shiftName !== '__none__') {
+    const shiftRegIds = await Pass.distinct('registrationId', {
+      validDate: { $gte: from, $lte: toDate },
+      'qrPayload.shiftName': shiftName,
+      ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {})
+    });
+    if (regQuery._id) {
+      const existingIds = new Set(regQuery._id.$in.map(id => id.toString()));
+      regQuery._id.$in = shiftRegIds.filter(id => existingIds.has(id.toString())).map(id => new mongoose.Types.ObjectId(id));
+    } else {
+      regQuery._id = { $in: shiftRegIds.map(id => new mongoose.Types.ObjectId(id)) };
+    }
+  }
+
+  // Hydrate all registrations for JS filtering (fast because no GateLogs/Passes are fetched yet)
+  const allRegDocs = await Registration.find(regQuery)
+    .select({ _id: 1, formData: 1, registrationCode: 1, roleId: 1, payFrequency: 1, formId: 1, createdAt: 1, photoPath: 1, customPayDays: 1, payAmount: 1 })
+    .populate('roleId', 'name slug')
+    .populate('formId', 'fields')
     .sort({ createdAt: 1 })
     .lean();
-  const total = idDocs.length;
+
+  const normalizedSearch = search.trim().toLowerCase();
+  let parsedSelectionFilters = {};
+  try { parsedSelectionFilters = JSON.parse(selectionFilters || '{}'); } catch (e) { }
+
+  let shiftNoneRegIds = null;
+  if (shiftName === '__none__') {
+    const withShiftIds = await Pass.distinct('registrationId', {
+      validDate: { $gte: from, $lte: toDate },
+      'qrPayload.shiftName': { $exists: true, $ne: null },
+      ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {})
+    });
+    shiftNoneRegIds = new Set(withShiftIds.map(id => id.toString()));
+  }
+
+  const filteredRegs = allRegDocs.filter(reg => {
+    if (payFrequency && reg.payFrequency !== payFrequency) return false;
+
+    if (shiftNoneRegIds && shiftNoneRegIds.has(reg._id.toString())) return false;
+
+    const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
+
+    for (const [label, val] of Object.entries(parsedSelectionFilters)) {
+      if (val && val !== 'all') {
+        const sel = (display.selections || []).find((s) => s.label === label);
+        if (!sel || sel.value !== val) return false;
+      }
+    }
+
+    if (normalizedSearch) {
+      const match =
+        (display.displayName || '').toLowerCase().includes(normalizedSearch) ||
+        (reg.registrationCode || '').toLowerCase().includes(normalizedSearch) ||
+        (reg.roleId?.name || '').toLowerCase().includes(normalizedSearch) ||
+        (display.displayPhone || '').toLowerCase().includes(normalizedSearch);
+      if (!match) return false;
+    }
+
+    reg._display = display; // cache it
+    return true;
+  });
+
+  const total = filteredRegs.length;
   const startIdx = (pageN - 1) * limitN;
-  const pageIds = idDocs.slice(startIdx, startIdx + limitN).map((d) => d._id);
+  const pageRegs = filteredRegs.slice(startIdx, startIdx + limitN);
+  const pageIds = pageRegs.map(r => r._id);
 
   if (pageIds.length === 0) {
     return {
@@ -1549,10 +1616,7 @@ export async function getAttendanceHistoryGrid({
     ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {}),
   };
 
-  const [registrations, rawLogs, rawPasses] = await Promise.all([
-    Registration.find({ _id: { $in: pageIds } })
-      .select('formData photoPath registrationCode payFrequency customPayDays payAmount createdAt roleId formId')
-      .lean(),
+  const [rawLogs, rawPasses] = await Promise.all([
     GateLog.find(
       grantedGateLogFilter({
         registrationId: { $in: pageIds },
@@ -1586,26 +1650,8 @@ export async function getAttendanceHistoryGrid({
     ]),
   ]);
 
-  // Preserve createdAt order from idDocs
-  const regById = new Map(registrations.map((r) => [r._id.toString(), r]));
-  const orderedRegs = pageIds.map((id) => regById.get(id.toString())).filter(Boolean);
-
-  const formIds = [
-    ...new Set(orderedRegs.map((r) => r.formId?.toString?.() || String(r.formId)).filter(Boolean)),
-  ];
-  const roleIds = [
-    ...new Set(orderedRegs.map((r) => r.roleId?.toString?.() || String(r.roleId)).filter(Boolean)),
-  ];
-  const [forms, roles] = await Promise.all([
-    formIds.length
-      ? RegistrationForm.find({ _id: { $in: formIds } })
-          .select('fields.fieldId fields.label fields.type fields.order')
-          .lean()
-      : [],
-    roleIds.length ? Role.find({ _id: { $in: roleIds } }).select('name slug').lean() : [],
-  ]);
-  const formById = new Map(forms.map((f) => [f._id.toString(), f]));
-  const roleById = new Map(roles.map((r) => [r._id.toString(), r]));
+  // Use pre-populated pageRegs
+  const orderedRegs = pageRegs;
 
   const logs = rawLogs;
   const passes = rawPasses.map(slimPassForAttendance);
@@ -1639,7 +1685,7 @@ export async function getAttendanceHistoryGrid({
     const date = overnightRebucket.get(log._id.toString()) || wallDate;
     const key = `${regId}|${date}`;
     const shiftPass =
-      initialShiftPassByRegDate.get(key) || passByRegDate.get(key);
+      passByRegDate.get(key) || initialShiftPassByRegDate.get(key);
     if (
       shiftPass?.qrPayload?.shiftId &&
       !isWithinAssignedShiftWindow(log.createdAt, date, shiftPass)
@@ -1655,8 +1701,6 @@ export async function getAttendanceHistoryGrid({
   // Dates absorbed into a previous overnight shift row — marked blank per registration.
   const absorbedByReg = buildAbsorbedDatesByReg(passByRegDate);
 
-  const normalizedSearch = search.trim().toLowerCase();
-
   // Manual admin status overrides across all registrations on this page.
   const overrideMap = await loadOverrideMapForRegistrations(
     orderedRegs.map((reg) => reg._id),
@@ -1666,9 +1710,8 @@ export async function getAttendanceHistoryGrid({
 
   const employees = orderedRegs
     .map((reg) => {
-      const form = formById.get(reg.formId?.toString?.() || String(reg.formId));
-      const role = roleById.get(reg.roleId?.toString?.() || String(reg.roleId));
-      const display = buildDisplayInfo(reg.formData, form?.fields || []);
+      const display = reg._display;
+      const role = reg.roleId;
       const regId = reg._id.toString();
       const registeredAt = reg.createdAt;
       const absorbedDates = absorbedByReg.get(regId) || new Set();
@@ -1760,6 +1803,10 @@ export async function recalculateAttendanceHistory({
   limit = 50,
   page = 1,
   divisionIds = null,
+  registrationIds = null,
+  payFrequency = '',
+  shiftName = '',
+  selectionFilters = '{}',
 } = {}) {
   const today = todayDateString();
   const from = dateFrom || today.slice(0, 8) + '01';
@@ -1772,6 +1819,10 @@ export async function recalculateAttendanceHistory({
     passType: PASS_TYPES.DAY_PASS,
     validDate: { $gte: from, $lte: toDate },
   };
+  if (Array.isArray(registrationIds) && registrationIds.length > 0) {
+    passSyncQuery.registrationId = { $in: toObjectIdArray(registrationIds) };
+  }
+
   if (divisionScoped) {
     if (divisionObjIds.length === 0) {
       const emptyGrid = await getAttendanceHistoryGrid({
@@ -1782,6 +1833,9 @@ export async function recalculateAttendanceHistory({
         limit,
         page,
         divisionIds,
+        payFrequency,
+        shiftName,
+        selectionFilters,
       });
       return {
         ...emptyGrid,
@@ -1878,6 +1932,9 @@ export async function recalculateAttendanceHistory({
     limit,
     page,
     divisionIds,
+    payFrequency,
+    shiftName,
+    selectionFilters,
   });
 
   let shiftDays = 0;

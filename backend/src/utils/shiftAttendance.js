@@ -79,12 +79,14 @@ function buildOnSiteSegments(dayLogs = [], session = null, date, { now = new Dat
   }
 
   if (openStart) {
-    const end =
-      date === todayKey
-        ? now
-        : new Date(`${date}T23:59:59.999Z`);
-    if (end.getTime() > openStart.getTime()) {
-      segments.push({ start: openStart, end });
+    const defaultEnd = date === todayKey ? now : new Date(`${date}T23:59:59.999+05:30`);
+    const end = session?.validUntil ? new Date(session.validUntil) : defaultEnd;
+    
+    // Ensure we don't cap backwards if validUntil is somehow before openStart
+    const finalEnd = end.getTime() > defaultEnd.getTime() ? end : defaultEnd;
+
+    if (finalEnd.getTime() > openStart.getTime()) {
+      segments.push({ start: openStart, end: finalEnd });
     }
   }
 
@@ -93,7 +95,9 @@ function buildOnSiteSegments(dayLogs = [], session = null, date, { now = new Dat
     let start = session?.gateEntryAt ? new Date(session.gateEntryAt) : null;
     let end = session?.gateExitAt ? new Date(session.gateExitAt) : null;
     if (start && !end) {
-      end = date === todayKey ? now : new Date(`${date}T23:59:59.999Z`);
+      const defaultEnd = date === todayKey ? now : new Date(`${date}T23:59:59.999+05:30`);
+      end = session?.validUntil ? new Date(session.validUntil) : defaultEnd;
+      if (end.getTime() < defaultEnd.getTime()) end = defaultEnd;
     }
     if (start && end && end.getTime() > start.getTime()) {
       segments.push({ start, end });
@@ -210,14 +214,23 @@ export function computeHourlyPayFactor(activityHours, shiftTotalHours) {
 export function resolveShiftDayStatus(activityHours, shift) {
   if (!shift) return null;
 
-  const half =
+  const shiftTotalHours = getShiftDurationHours(shift);
+
+  let half =
     shift.halfDayMinHours === null || shift.halfDayMinHours === undefined
       ? null
       : Number(shift.halfDayMinHours);
-  const full =
+      
+  let full =
     shift.fullDayMinHours === null || shift.fullDayMinHours === undefined
       ? null
       : Number(shift.fullDayMinHours);
+
+  // Fallbacks if thresholds are missing but total duration is known
+  if (shiftTotalHours > 0) {
+    if (full === null || Number.isNaN(full)) full = shiftTotalHours;
+    if (half === null || Number.isNaN(half)) half = roundHours(shiftTotalHours / 2);
+  }
 
   const hasHalf = half !== null && !Number.isNaN(half);
   const hasFull = full !== null && !Number.isNaN(full);
@@ -235,22 +248,47 @@ export function resolveShiftDayStatus(activityHours, shift) {
     };
   }
 
-  const shiftTotalHours = getShiftDurationHours(shift);
+  // Allow a 15-minute grace period (0.25 hours) for early departures
+  const grace = 0.25;
+
   const payDenominator =
     shiftTotalHours ?? (hasFull ? full : hasHalf ? roundHours(half * 2) : null);
   const hoursLabel = formatActivityHours(hours);
 
-  if (hasFull && hours >= full) {
+  if (hasFull && hours >= full - grace) {
+    let factor = 1;
+    let label = 'Present (Full Day)';
+    let code = 'P';
+    
+    // Check for continuous multiple shifts
+    if (shiftTotalHours && hours >= shiftTotalHours + full - grace) {
+      // Worked a full extra shift
+      factor = 2;
+      label = `Double Shift (${hoursLabel}h)`;
+      code = 'DS';
+    } else if (shiftTotalHours && hasHalf && hours >= shiftTotalHours + half - grace) {
+      // Worked an extra half shift
+      factor = 1.5;
+      label = `1.5 Shift (${hoursLabel}h)`;
+      code = '1.5S';
+    } else if (shiftTotalHours && hours > shiftTotalHours + 1 - grace) { // 1 hr minimum for OT
+      // Worked extra partial hours
+      const extraHours = Math.max(0, hours - shiftTotalHours);
+      factor = roundHours(1 + computeHourlyPayFactor(extraHours, payDenominator));
+      label = `Overtime (${hoursLabel}h)`;
+      code = 'OT';
+    }
+
     return {
       status: 'P',
-      code: 'P',
-      label: 'Present (Full Day)',
-      payFactor: 1,
+      code,
+      label,
+      payFactor: factor,
       halfSide: null,
     };
   }
 
-  if (hasHalf && hours >= half) {
+  if (hasHalf && hours >= half - grace) {
     return {
       status: 'HD',
       code: 'HD',

@@ -271,6 +271,7 @@ export const GEO_AUDIT_RESULTS = {
   DENIED: 'denied',
   BYPASSED: 'bypassed',
   ERROR: 'error',
+  VERIFIED: 'verified',
 };
 
 export const GEO_AUDIT_RESULT_LIST = Object.values(GEO_AUDIT_RESULTS);
@@ -278,6 +279,7 @@ export const GEO_AUDIT_RESULT_LIST = Object.values(GEO_AUDIT_RESULTS);
 export const GEO_AUDIT_RESULT_LABELS = {
   allowed: 'Access Allowed',
   denied: 'Access Denied — Outside Radius',
-  bypassed: 'Bypassed (Super Admin)',
-  error: 'Error / No Location Data',
+  bypassed: 'Location Check Bypassed',
+  error: 'System Error',
+  verified: 'Location Verified (Continuous)',
 };

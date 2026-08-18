@@ -8,6 +8,7 @@ import { api } from '@/lib/api/client';
 // Import our new components
 const LiveDetailsPanel = dynamic(() => import('./LiveDetailsPanel'), { ssr: false });
 const AuditTimelineMap = dynamic(() => import('./AuditTimelineMap'), { ssr: false });
+const UserActivityView = dynamic(() => import('./UserActivityView'), { ssr: false });
 
 const Icons = {
   shieldAlert: (
@@ -124,6 +125,35 @@ export default function GeoLoginActivityPage() {
     };
   }, [logs]);
 
+  const groupedUsers = useMemo(() => {
+    const map = new Map();
+    logs.forEach(log => {
+      const uId = log.userId || log.userUsername || 'unknown';
+      if (!map.has(uId)) {
+        map.set(uId, {
+          userId: uId,
+          username: log.userUsername,
+          displayName: log.userDisplayName,
+          role: log.role,
+          logs: [],
+          stats: { allowed: 0, denied: 0, verified: 0 }
+        });
+      }
+      const u = map.get(uId);
+      u.logs.push(log);
+      const dec = log.decision || log.result;
+      if (dec === 'allowed' || dec === 'granted') u.stats.allowed++;
+      else if (dec === 'verified') u.stats.verified++;
+      else if (dec === 'denied') u.stats.denied++;
+    });
+    // Sort so most recent active users are on top
+    return Array.from(map.values()).sort((a, b) => {
+      const aTime = a.logs[0] ? new Date(a.logs[0].createdAt).getTime() : 0;
+      const bTime = b.logs[0] ? new Date(b.logs[0].createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [logs]);
+
   return (
     <div className="soc-container">
       
@@ -174,6 +204,7 @@ export default function GeoLoginActivityPage() {
           <div className="view-switcher">
             <button className={`view-btn ${viewMode === 'table' ? 'active' : ''}`} onClick={() => setViewMode('table')}>Table</button>
             <button className={`view-btn ${viewMode === 'map' ? 'active' : ''}`} onClick={() => setViewMode('map')}>Map</button>
+            <button className={`view-btn ${viewMode === 'users' ? 'active' : ''}`} onClick={() => setViewMode('users')}>Users</button>
           </div>
           
           <div className="soc-search">
@@ -194,6 +225,7 @@ export default function GeoLoginActivityPage() {
             <option value="">All Decisions</option>
             <option value="granted">Granted</option>
             <option value="allowed">Allowed</option>
+            <option value="verified">Verified</option>
             <option value="denied">Denied</option>
             <option value="bypassed">Bypassed</option>
           </select>
@@ -248,6 +280,8 @@ export default function GeoLoginActivityPage() {
             <div className="spinner"></div>
             <span>Loading audit events...</span>
           </div>
+        ) : viewMode === 'users' ? (
+          <UserActivityView groupedUsers={groupedUsers} locations={locations} />
         ) : viewMode === 'table' ? (
           <div className="soc-split-layout">
             <div className="split-left">
@@ -359,9 +393,10 @@ export default function GeoLoginActivityPage() {
           display: flex;
           flex-direction: column;
           gap: 16px;
-          height: calc(100vh - 64px);
+          height: calc(100vh - 180px);
           padding: 16px;
           background: #f1f5f9;
+          overflow: hidden;
         }
 
         /* Header */
@@ -550,12 +585,12 @@ export default function GeoLoginActivityPage() {
         .soc-row:hover { background: #f8fafc; }
         .soc-row.selected { background: #eff6ff; }
         
-        .row-allowed, .row-granted { border-left-color: #10b981; }
+        .row-allowed, .row-granted, .row-verified { border-left-color: #10b981; }
         .row-denied { border-left-color: #ef4444; }
         .row-bypassed { border-left-color: #3b82f6; }
         .row-unknown { border-left-color: #94a3b8; }
         
-        .soc-row:hover.row-allowed { border-left-color: #059669; }
+        .soc-row:hover.row-allowed, .soc-row:hover.row-verified { border-left-color: #059669; }
         
         .cell-stack { display: flex; flex-direction: column; }
         .text-strong { font-size: 12px; font-weight: 600; color: #0f172a; white-space: nowrap; }
@@ -583,7 +618,7 @@ export default function GeoLoginActivityPage() {
           font-weight: 700;
           letter-spacing: 0.05em;
         }
-        .badge-allowed, .badge-granted { background: #dcfce7; color: #166534; }
+        .badge-allowed, .badge-granted, .badge-verified { background: #dcfce7; color: #166534; }
         .badge-denied { background: #fee2e2; color: #991b1b; }
         .badge-bypassed { background: #eff6ff; color: #1d4ed8; }
         .badge-unknown, .badge-error { background: #f1f5f9; color: #475569; }

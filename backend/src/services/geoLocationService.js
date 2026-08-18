@@ -144,7 +144,7 @@ function parseDevice(req, providedFingerprint) {
  *
  * @returns {{ ok: boolean, result: string, locationName?: string, distance?: number, message?: string }}
  */
-export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req, deviceFingerprint }) {
+export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req, deviceFingerprint, isContinuous }) {
   const startTime = Date.now();
   const orgId = 'default';
 
@@ -283,7 +283,7 @@ export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req
     // ── Access Allowed ──────────────────────────────────────────────────────────
     await writeGeoAuditLog({
       ...baseLog,
-      decision: GEO_AUDIT_RESULTS.ALLOWED,
+      decision: isContinuous ? GEO_AUDIT_RESULTS.VERIFIED : GEO_AUDIT_RESULTS.ALLOWED,
       matchedLocationId: matchedLocation._id,
       matchedLocationName: matchedLocation.name,
       matchedLatitude: matchedLocation.latitude,
@@ -297,7 +297,7 @@ export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req
 
     return {
       ok: true,
-      result: GEO_AUDIT_RESULTS.ALLOWED,
+      result: isContinuous ? GEO_AUDIT_RESULTS.VERIFIED : GEO_AUDIT_RESULTS.ALLOWED,
       locationName: matchedLocation.name,
       distance: Math.round(haversineDistance(lat, lng, matchedLocation.latitude, matchedLocation.longitude)),
     };

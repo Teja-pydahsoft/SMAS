@@ -652,6 +652,9 @@ function PeriodDayTrack({ entries, workDate = '' }) {
 
 const ATTENDANCE_STATUS_OPTIONS = [
   { value: 'AUTO', label: 'Auto', hint: 'Use computed status from scans' },
+  { value: 'DS', label: 'Double Shift', hint: 'Double pay' },
+  { value: '1.5S', label: '1.5 Shift', hint: '1.5x pay' },
+  { value: 'OT', label: 'Overtime', hint: 'Present + OT pay' },
   { value: 'P', label: 'Present', hint: 'Full day pay' },
   { value: 'HD', label: 'Half Day', hint: 'Half day pay' },
   { value: 'A', label: 'Absent', hint: 'No pay' },
@@ -2862,6 +2865,13 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     shiftName: '',
   });
   const [selectionFilters, setSelectionFilters] = useState({});
+  const [renderPage, setRenderPage] = useState(1);
+  const [recalcConfirmOpen, setRecalcConfirmOpen] = useState(false);
+  const loaderRef = useRef(null);
+
+  useEffect(() => {
+    setRenderPage(1);
+  }, [search, selectionFilters, filters]);
 
   useEffect(() => {
     api.roles.list().then((list) => setRoles(Array.isArray(list) ? list : [])).catch(() => setRoles([]));
@@ -2881,36 +2891,21 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
 
   const HISTORY_PAGE_SIZE = 50;
 
-  const mergeHistoryPage = (base, next) => {
-    if (!base) return next;
-    if (!next) return base;
-    const seen = new Set((base.employees || []).map((e) => e.registrationId));
-    const appended = (next.employees || []).filter((e) => !seen.has(e.registrationId));
-    return {
-      ...next,
-      employees: [...(base.employees || []), ...appended],
-      page: next.page,
-      hasMore: next.hasMore,
-      total: next.total ?? base.total,
+  const fetchHistoryPage = useCallback(async ({ dateFrom, dateTo, roleId, divisionId, payFrequency, shiftName, selectionFilters, page = 1, search = '' }) => {
+    const params = { 
+      dateFrom, 
+      dateTo, 
+      limit: HISTORY_PAGE_SIZE, 
+      page,
+      search,
+      payFrequency,
+      shiftName,
+      selectionFilters: JSON.stringify(selectionFilters || {})
     };
-  };
-
-  const fetchHistoryPages = useCallback(async ({ dateFrom, dateTo, roleId, divisionId, onPage }) => {
-    let page = 1;
-    let merged = null;
-    let guard = 0;
-    while (guard < 40) {
-      guard += 1;
-      const params = { dateFrom, dateTo, limit: HISTORY_PAGE_SIZE, page };
-      if (roleId) params.roleId = roleId;
-      if (divisionId) params.divisionId = divisionId;
-      const result = await api.reports.attendanceHistory(params);
-      merged = mergeHistoryPage(merged, result);
-      onPage?.(merged, result);
-      if (!result?.hasMore) break;
-      page += 1;
-    }
-    return merged;
+    if (roleId) params.roleId = roleId;
+    if (divisionId) params.divisionId = divisionId;
+    
+    return await api.reports.attendanceHistory(params);
   }, []);
 
   useEffect(() => {
@@ -2940,25 +2935,21 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
       }
 
       try {
-        await fetchHistoryPages({
+        const result = await fetchHistoryPage({
           dateFrom,
           dateTo,
           roleId: filters.roleId,
           divisionId: filters.divisionId,
-          onPage: (merged, pageResult) => {
-            if (cancelled) return;
-            setData(merged);
-            // First page is enough to paint the table; keep loading quietly for the rest.
-            if (pageResult?.page === 1) {
-              setLoading(false);
-              if (pageResult?.hasMore) setLoadingMore(true);
-            }
-            if (!pageResult?.hasMore) setLoadingMore(false);
-          },
+          payFrequency: filters.payFrequency,
+          shiftName: filters.shiftName,
+          selectionFilters,
+          search,
+          page: 1,
         });
+        if (cancelled) return;
+        setData(result);
       } catch (e) {
         if (!cancelled) {
-          // Keep previous rows on transient proxy/backend blips (ECONNRESET during restart).
           setError(e.message || 'Failed to load attendance history');
         }
       } finally {
@@ -2970,7 +2961,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     })();
 
     return () => { cancelled = true; };
-  }, [resolveDateRange, filters.roleId, filters.divisionId, fetchHistoryPages]);
+  }, [resolveDateRange, filters, selectionFilters, search, fetchHistoryPage]);
 
   const loadHistory = useCallback(async ({ silent = false } = {}) => {
     const { dateFrom, dateTo } = resolveDateRange();
@@ -2984,16 +2975,18 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     }
 
     try {
-      const result = await fetchHistoryPages({
+      const result = await fetchHistoryPage({
         dateFrom,
         dateTo,
         roleId: filters.roleId,
         divisionId: filters.divisionId,
-        onPage: (merged, pageResult) => {
-          setData(merged);
-          if (!silent && pageResult?.page === 1) setLoading(false);
-        },
+        payFrequency: filters.payFrequency,
+        shiftName: filters.shiftName,
+        selectionFilters,
+        search,
+        page: 1,
       });
+      setData(result);
       if (silent) setError('');
       return result;
     } catch (e) {
@@ -3002,82 +2995,53 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [resolveDateRange, filters.roleId, filters.divisionId, fetchHistoryPages]);
+  }, [resolveDateRange, filters, selectionFilters, search, fetchHistoryPage]);
 
-  const handleRecalculate = useCallback(async () => {
-    const { dateFrom, dateTo } = resolveDateRange();
-    if (!dateFrom || !dateTo) {
-      setError('Select a date range before recalculating.');
-      return;
-    }
-    if (dateFrom > dateTo) {
-      setError('From date cannot be after To date.');
-      return;
-    }
-
-    setRecalculating(true);
-    setError('');
-    setSuccess('');
-
+  const handleLoadMore = useCallback(async () => {
+    if (!data?.hasMore || loadingMore) return;
+    setLoadingMore(true);
     try {
-      const payload = { dateFrom, dateTo, limit: HISTORY_PAGE_SIZE, page: 1 };
-      if (filters.roleId) payload.roleId = filters.roleId;
-      if (filters.divisionId) payload.divisionId = filters.divisionId;
-
-      const result = await api.reports.recalculateAttendanceHistory(payload);
-      setData(result);
-      setRecalculating(false);
-
-      // Pull remaining pages after shift sync so the full grid is available.
-      if (result?.hasMore) {
-        let page = 2;
-        let merged = result;
-        while (page <= 40) {
-          const params = { dateFrom, dateTo, limit: HISTORY_PAGE_SIZE, page };
-          if (filters.roleId) params.roleId = filters.roleId;
-          if (filters.divisionId) params.divisionId = filters.divisionId;
-          const next = await api.reports.attendanceHistory(params);
-          merged = mergeHistoryPage(merged, next);
-          setData(merged);
-          if (!next?.hasMore) break;
-          page += 1;
-        }
-      }
-
-      const meta = result?.recalculation;
-      if (meta) {
-        const payLabel =
-          meta.totalPayroll != null
-            ? formatCurrency(meta.totalPayroll)
-            : '—';
-        setSuccess(
-          `Recalculated ${meta.employeeCount ?? 0} people using current shift rules` +
-          ` (${meta.shiftsApplied ?? 0} shifts, ${meta.passesUpdated ?? 0} day passes updated).` +
-          ` Present ${meta.presentDays ?? 0}, Partial ${meta.partialDays ?? 0}, Absent ${meta.absentDays ?? 0}.` +
-          ` Payroll total: ${payLabel}.`
-        );
-      } else {
-        setSuccess('Attendance and payroll recalculated from current shift settings.');
-      }
+      const nextPage = (data.page || 1) + 1;
+      const { dateFrom, dateTo } = resolveDateRange();
+      const nextData = await fetchHistoryPage({
+        dateFrom,
+        dateTo,
+        roleId: filters.roleId,
+        divisionId: filters.divisionId,
+        payFrequency: filters.payFrequency,
+        shiftName: filters.shiftName,
+        selectionFilters,
+        search,
+        page: nextPage,
+      });
+      setData(prev => ({
+        ...nextData,
+        employees: [...(prev?.employees || []), ...(nextData.employees || [])]
+      }));
     } catch (e) {
-      setError(e.message || 'Failed to recalculate attendance');
-      // If recalculate died mid-proxy (backend restart), reload the last saved grid.
-      await loadHistory({ silent: true });
+      setError(e.message || 'Failed to load more');
     } finally {
-      setRecalculating(false);
+      setLoadingMore(false);
     }
-  }, [resolveDateRange, filters.roleId, filters.divisionId, loadHistory]);
+  }, [data, loadingMore, fetchHistoryPage, resolveDateRange, filters, selectionFilters, search]);
 
-  const handleRangeModeChange = (mode) => {
-    setRangeMode(mode);
-    if (mode === 'week' && !filters.week) {
-      setFilters((f) => ({ ...f, week: currentIsoWeekValue() }));
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && data?.hasMore && !loadingMore) {
+          handleLoadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    const currentLoader = loaderRef.current;
+    if (currentLoader) {
+      observer.observe(currentLoader);
     }
-    if (mode === 'custom' && (!filters.dateFrom || !filters.dateTo)) {
-      const { dateFrom, dateTo } = getMonthRange(filters.month);
-      setFilters((f) => ({ ...f, dateFrom, dateTo }));
-    }
-  };
+    return () => {
+      if (currentLoader) observer.unobserve(currentLoader);
+    };
+  }, [data?.hasMore, loadingMore, handleLoadMore]);
 
   const allEmployees = data?.employees || [];
   const selectionColumns = collectSelectionColumns(allEmployees);
@@ -3115,6 +3079,84 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
     if (result !== 0) return pinSortDir === 'asc' ? result : -result;
     return compareSortValues(a.displayName, b.displayName);
   });
+
+  const handleRecalculate = useCallback(() => {
+    const { dateFrom, dateTo } = resolveDateRange();
+    if (!dateFrom || !dateTo) {
+      setError('Select a date range before recalculating.');
+      return;
+    }
+    if (dateFrom > dateTo) {
+      setError('From date cannot be after To date.');
+      return;
+    }
+    setRecalcConfirmOpen(true);
+  }, [resolveDateRange]);
+
+  const executeRecalculate = useCallback(async () => {
+    const { dateFrom, dateTo } = resolveDateRange();
+    setRecalcConfirmOpen(false);
+    setRecalculating(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const payload = { 
+        dateFrom, 
+        dateTo, 
+        limit: HISTORY_PAGE_SIZE, 
+        page: 1,
+        search,
+        payFrequency: filters.payFrequency,
+        shiftName: filters.shiftName,
+        selectionFilters: JSON.stringify(selectionFilters),
+        registrationIds: employees.map(e => e.registrationId)
+      };
+      if (filters.roleId) payload.roleId = filters.roleId;
+      if (filters.divisionId) payload.divisionId = filters.divisionId;
+
+      const result = await api.reports.recalculateAttendanceHistory(payload);
+      setData(result);
+      setRecalculating(false);
+
+      const meta = result?.recalculation;
+      if (meta) {
+        const payLabel =
+          meta.totalPayroll != null
+            ? formatCurrency(meta.totalPayroll)
+            : '—';
+        setSuccess(
+          `Recalculated ${meta.employeeCount ?? 0} people using current shift rules` +
+          ` (${meta.shiftsApplied ?? 0} shifts, ${meta.passesUpdated ?? 0} day passes updated).` +
+          ` Present ${meta.presentDays ?? 0}, Partial ${meta.partialDays ?? 0}, Absent ${meta.absentDays ?? 0}.` +
+          ` Payroll total: ${payLabel}.`
+        );
+      } else {
+        setSuccess('Attendance and payroll recalculated from current shift settings.');
+      }
+
+      // Wait for backend to reload
+      await loadHistory({ silent: true });
+    } catch (e) {
+      setError(e.message || 'Failed to recalculate attendance');
+    } finally {
+      setRecalculating(false);
+    }
+  }, [resolveDateRange, filters, search, selectionFilters, employees, loadHistory]);
+
+  const handleRangeModeChange = (mode) => {
+    setRangeMode(mode);
+    if (mode === 'week' && !filters.week) {
+      setFilters((f) => ({ ...f, week: currentIsoWeekValue() }));
+    }
+    if (mode === 'custom' && (!filters.dateFrom || !filters.dateTo)) {
+      const { dateFrom, dateTo } = getMonthRange(filters.month);
+      setFilters((f) => ({ ...f, dateFrom, dateTo }));
+    }
+  };
+
+
+  const displayedEmployees = employees.slice(0, renderPage * 50);
   const dates = data?.dates || [];
 
   const handlePinSort = useCallback(() => {
@@ -3442,7 +3484,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
                 </tr>
               </thead>
               <tbody>
-                {employees.map((emp, idx) => (
+                {displayedEmployees.map((emp, idx) => (
                   <tr key={emp.registrationId} className="rc-att-grid__row">
                     <td className="rc-att-grid__sticky rc-att-grid__index">{idx + 1}</td>
                     <td className="rc-att-grid__sticky rc-att-grid__employee rc-att-grid__employee--clickable"
@@ -3496,12 +3538,53 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
           </div>
         </div>
       )}
+      
+      {data?.hasMore && (
+        <div 
+          ref={loaderRef}
+          style={{ textAlign: 'center', marginTop: '1rem', marginBottom: '1rem', padding: '1rem' }}
+        >
+          <div className="rc-spinner" style={{ display: 'inline-block', width: '24px', height: '24px' }}></div>
+          <p className="rc-table__muted" style={{ marginTop: '0.5rem', margin: 0 }}>
+            {loadingMore ? 'Loading...' : `Scroll to load more (${data.total - employees.length} remaining)`}
+          </p>
+        </div>
+      )}
       {selectedDay && (
         <AttendanceDayDialog
           employee={selectedDay.employee}
           day={selectedDay.day}
           onClose={() => setSelectedDay(null)}
         />
+      )}
+      {recalcConfirmOpen && (
+        <PortalWrapper>
+          <div className="rc-dialog-overlay" onClick={() => setRecalcConfirmOpen(false)}>
+            <div className="rc-dialog" style={{ maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+              <div className="rc-dialog__header">
+                <h2 className="rc-dialog__title" style={{ marginTop: 0 }}>Confirm Recalculation</h2>
+                <button className="rc-dialog__close" onClick={() => setRecalcConfirmOpen(false)} aria-label="Close">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <div className="rc-dialog__body">
+                <p style={{ marginTop: 0 }}>
+                  Are you sure you want to recalculate attendance for the <strong>{employees.length}</strong> selected employees based on your active search and filters?
+                </p>
+                <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn-secondary" onClick={() => setRecalcConfirmOpen(false)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn-primary" onClick={executeRecalculate}>
+                    Yes, Recalculate
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </PortalWrapper>
       )}
     </div>
   );

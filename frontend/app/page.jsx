@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api/client';
 import { useAuth } from '@/components/AuthProvider';
 import AnimatedCounter from '@/components/admin/AnimatedCounter';
-import { Sparkline, BarChart, AreaChart, PieChart } from '@/components/admin/AdminCharts';
+import { Sparkline, BarChart, AreaChart, PieChart, ChartLegend } from '@/components/admin/AdminCharts';
 import AdminIcon from '@/components/admin/AdminIcons';
 import NotificationBell from '@/components/NotificationBell';
 
@@ -78,6 +78,7 @@ function Panel({ title, meta, children, className = '' }) {
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
 
+
   /* data */
   const [health,        setHealth]        = useState(null);
   const [registrations, setRegistrations] = useState([]);
@@ -89,6 +90,11 @@ export default function DashboardPage() {
   const [dashboardStats,setDashboardStats]= useState(null);
   const [loading,       setLoading]       = useState(true);
   const [personType,    setPersonType]    = useState('labour'); // 'labour' or 'visitor'
+  const [breakdownBy,   setBreakdownBy]   = useState('division'); // 'division', 'batch', 'labourType'
+  const [activeModalCard, setActiveModalCard] = useState(null); // null, 'registration', 'activity', 'distribution'
+  const [selectedDay, setSelectedDay] = useState('all'); // 'all', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'
+
+
 
   // Fetch initial collections on mount
   useEffect(() => {
@@ -115,6 +121,13 @@ export default function DashboardPage() {
     });
   }, [authLoading, user]);
 
+  // Adjust breakdown if changing personType renders it invalid
+  useEffect(() => {
+    if (personType === 'visitor') {
+      setBreakdownBy('division');
+    }
+  }, [personType]);
+
   // Fetch /api/dashboard stats dynamically when filter scope changes
   useEffect(() => {
     if (authLoading || !user || roles.length === 0) return;
@@ -128,7 +141,11 @@ export default function DashboardPage() {
 
     const activeRoleIds = personType === 'labour' ? labourRoleIds : visitorRoleIds;
 
-    api.dashboard.stats({ roleIds: activeRoleIds.join(',') })
+    const params = {
+      roleIds: activeRoleIds.join(','),
+    };
+
+    api.dashboard.stats(params)
       .then(stats => {
         setDashboardStats(stats);
       })
@@ -167,11 +184,11 @@ export default function DashboardPage() {
   });
 
   /* ── derived stats ── */
-  const totalReg    = filteredRegs.length;
-  const verified    = filteredRegs.filter(r => r?.status === 'verified').length;
-  const pending     = filteredRegs.filter(r => r?.status === 'pending_verification').length;
-  const rejected    = filteredRegs.filter(r => r?.status === 'rejected').length;
-  const inProgress  = filteredRegs.filter(r => r?.status === 'in_progress').length;
+  const totalReg    = dashboardStats?.totalRegistrations ?? filteredRegs.length;
+  const verified    = dashboardStats?.statusCounts?.verified ?? filteredRegs.filter(r => r?.status === 'verified').length;
+  const pending     = dashboardStats?.statusCounts?.pending_verification ?? filteredRegs.filter(r => r?.status === 'pending_verification').length;
+  const rejected    = dashboardStats?.statusCounts?.rejected ?? filteredRegs.filter(r => r?.status === 'rejected').length;
+  const inProgress  = dashboardStats?.statusCounts?.in_progress ?? filteredRegs.filter(r => r?.status === 'in_progress').length;
   const aiOnline    = health?.services?.ai === 'online';
   const activeDivs  = divisions.filter(d => d?.isActive !== false).length;
   const activeDepts = departments.filter(d => d?.isActive !== false).length;
@@ -184,39 +201,36 @@ export default function DashboardPage() {
   const todayEntry = Number.isFinite(dashboardStats?.todayEntries)
     ? dashboardStats.todayEntries
     : todayLogs.filter(l => l.eventType === 'entry' && l.matched).length;
-  const todayExit  = todayLogs.filter(l => l.eventType === 'exit'  && l.matched).length;
-  const insideNow  = Math.max(todayEntry - todayExit, 0);
+  const todayExit  = Number.isFinite(dashboardStats?.todayExits)
+    ? dashboardStats.todayExits
+    : todayLogs.filter(l => l.eventType === 'exit'  && l.matched).length;
+  const insideNow  = Number.isFinite(dashboardStats?.insideNow)
+    ? dashboardStats.insideNow
+    : Math.max(todayEntry - todayExit, 0);
 
-  const weeklyRegistrationData = dashboardStats?.weeklyRegistrations?.length
-    ? dashboardStats.weeklyRegistrations.map(item => item.count)
+  // Sparkline data totals
+  const sparklineRegistrationData = dashboardStats?.division?.weeklyRegistrationsSeries?.length
+    ? dashboardStats.division.weeklyRegistrationsSeries[0].data
     : Array(7).fill(0);
-  const weeklyRegistrationLabels = dashboardStats?.weeklyRegistrations?.length
-    ? dashboardStats.weeklyRegistrations.map(item => item.label)
-    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const currentWeekRegistrations = weeklyRegistrationData.reduce((sum, count) => sum + count, 0);
-  const weeklyEntryData = dashboardStats?.weeklyEntries?.length
-    ? dashboardStats.weeklyEntries.map(item => item.count)
+  const sparklineEntryData = dashboardStats?.division?.weeklyEntriesSeries?.length
+    ? dashboardStats.division.weeklyEntriesSeries[0].data
     : Array(7).fill(0);
-  const weeklyEntryLabels = dashboardStats?.weeklyEntries?.length
-    ? dashboardStats.weeklyEntries.map(item => item.label)
-    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  const weeklyRegistrationLabels = ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  
+  const regDatasets = dashboardStats?.[breakdownBy]?.weeklyRegistrationsSeries || [];
+  const currentWeekRegistrations = regDatasets.reduce((sum, ds) => sum + (ds.data || []).reduce((s, val) => s + val, 0), 0);
+
+  const entryDatasets = dashboardStats?.[breakdownBy]?.weeklyEntriesSeries || [];
+  const weeklyEntryLabels = ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
   /* accuracy estimate from matchScore */
   const scoredLogs = filteredLogs.filter(l => l.matched && l.matchScore);
-  const avgAcc = scoredLogs.length
-    ? Math.round(scoredLogs.reduce((s, l) => s + l.matchScore * 100, 0) / scoredLogs.length)
-    : 99;
-
-  /* role distribution pie */
-  const roleMap = {};
-  filteredRegs.forEach(r => {
-    const name = r.roleId?.name || 'Unknown';
-    roleMap[name] = (roleMap[name] || 0) + 1;
-  });
-  const PIE_COLORS = ['#2563EB','#60A5FA','#0EA5E9','#22C55E','#F59E0B','#EF4444'];
-  const roleSegments = Object.entries(roleMap).slice(0, 6).map(([label, value], i) => ({
-    label, value, color: PIE_COLORS[i % PIE_COLORS.length],
-  }));
+  const avgAcc = Number.isFinite(dashboardStats?.avgAcc)
+    ? dashboardStats.avgAcc
+    : (scoredLogs.length
+        ? Math.round(scoredLogs.reduce((s, l) => s + l.matchScore * 100, 0) / scoredLogs.length)
+        : 99);
 
   /* status distribution pie */
   const statusSegments = [
@@ -225,6 +239,79 @@ export default function DashboardPage() {
     { label: 'Rejected',   value: rejected,   color: '#EF4444' },
     { label: 'In Progress',value: inProgress, color: '#60A5FA' },
   ].filter(s => s.value > 0);
+
+  // Dynamic titles and labels for distribution pie chart
+  const breakdownTitles = {
+    division: 'Division Distribution',
+    batch: 'Batch Distribution',
+    labourType: 'Labour Type Distribution'
+  };
+  const distributionTitle = breakdownTitles[breakdownBy] || 'Category Distribution';
+  const distSegments = dashboardStats?.[breakdownBy]?.distributionSeries || [];
+
+  const BreakdownSelect = ({ value, onChange }) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="dash-filter-select"
+      style={{
+        height: '28px',
+        padding: '0 1.5rem 0 0.5rem',
+        fontSize: '0.725rem',
+        border: '1px solid var(--border-color)',
+        borderRadius: 'var(--radius-md)',
+        fontWeight: 'bold',
+        textTransform: 'uppercase',
+        letterSpacing: '0.02em',
+        cursor: 'pointer'
+      }}
+    >
+      <option value="division">Division</option>
+      {personType === 'labour' && (
+        <>
+          <option value="batch">Batch</option>
+          <option value="labourType">Labour Type</option>
+        </>
+      )}
+    </select>
+  );
+
+  const cardMeta = (labelText, key) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+      <span className="admin-panel__meta" style={{ margin: 0 }}>{labelText}</span>
+      <button
+        type="button"
+        onClick={() => {
+          setSelectedDay('all');
+          setActiveModalCard(key);
+        }}
+        style={{
+          background: 'var(--color-primary-subtle, rgba(26, 86, 255, 0.08))',
+          border: 'none',
+          color: 'var(--color-primary, #1A56FF)',
+          fontSize: '0.65rem',
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          cursor: 'pointer',
+          padding: '4px 8px',
+          borderRadius: 'var(--radius-md, 6px)',
+          transition: 'all 0.15s ease',
+          whiteSpace: 'nowrap'
+        }}
+        className="admin-hover-lift"
+      >
+        View Details
+      </button>
+    </div>
+  );
+
+  const sharedBreakdownMeta = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <span style={{ fontSize: '0.725rem', fontWeight: 600, color: 'var(--text-muted)' }}>BREAKDOWN:</span>
+      <BreakdownSelect value={breakdownBy} onChange={setBreakdownBy} />
+    </div>
+  );
 
   return (
     <div className="dash-scroll-area">
@@ -254,8 +341,8 @@ export default function DashboardPage() {
 
         {/* ─── METRICS GRID ─── */}
         <section className="admin-metrics-grid">
-          <MetricCard icon="registrations" iconColor="primary"   label="Total Registrations" mobileLabel="Registrations" value={totalReg}    sparkData={weeklyRegistrationData} loading={loading} href="/registrations" />
-          <MetricCard icon="entryExit"     iconColor="accent"    label="Today's Entries"      mobileLabel="Entries"       value={todayEntry} sparkData={weeklyEntryData} loading={loading} href="/reports" />
+          <MetricCard icon="registrations" iconColor="primary"   label="Total Registrations" mobileLabel="Registrations" value={totalReg}    sparkData={sparklineRegistrationData} loading={loading} href="/registrations" />
+          <MetricCard icon="entryExit"     iconColor="accent"    label="Today's Entries"      mobileLabel="Entries"       value={todayEntry} sparkData={sparklineEntryData} loading={loading} href="/reports" />
           <MetricCard icon="shield"        iconColor="secondary" label="Currently Inside"      mobileLabel="Inside"        value={insideNow}  sparkData={DAILY_DATA.slice(0,5)} loading={loading} />
           <MetricCard icon="divisions"     iconColor="primary"   label="Active Divisions"     mobileLabel="Divisions"     value={activeDivs}  sparkData={[3,3,4,4,5,activeDivs]} loading={loading} href="/divisions/manage" />
           <MetricCard icon="departments"   iconColor="accent"    label="Departments"           mobileLabel="Departments"   value={activeDepts} sparkData={[4,6,7,8,activeDepts]} loading={loading} href="/departments/manage" />
@@ -264,40 +351,71 @@ export default function DashboardPage() {
           <MetricCard icon="face"          iconColor="primary"   label="AI Accuracy"           mobileLabel="Accuracy"      value={avgAcc}     trend={2} trendUp sparkData={ACCURACY_AREA} loading={loading} />
         </section>
 
-        {/* ─── ANALYTICS ROW ─── */}
+        {/* ─── PERFORMANCE BREAKDOWN SECTION ─── */}
+        <section className="admin-fade-in admin-breakdown-section-container glass-panel">
+          <div className="admin-breakdown-section-header">
+            <div>
+              <h2 className="admin-breakdown-section-title">Performance Analytics</h2>
+              <span className="admin-panel__meta">Weekly registration trend, daily entry activity, and category distribution</span>
+            </div>
+            {sharedBreakdownMeta}
+          </div>
+          <div className="admin-breakdown-section-grid">
+            {/* Area chart — registration trend */}
+            <Panel title="Weekly Registration Trend" meta={!loading && cardMeta("Current week", "registration")} className="admin-breakdown-card">
+              {loading ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '140px' }}>
+                  <div className="dash-loading__spinner" />
+                </div>
+              ) : (
+                <>
+                  <div className="admin-stat-highlight">
+                    <AnimatedCounter value={currentWeekRegistrations} /><span>registrations this week</span>
+                  </div>
+                  <AreaChart datasets={regDatasets} labels={weeklyRegistrationLabels} showLegend={false} />
+                </>
+              )}
+            </Panel>
+
+            {/* Bar chart — daily entries */}
+            <Panel title="Daily Activity" meta={!loading && cardMeta("This week", "activity")} className="admin-breakdown-card">
+              {loading ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '140px' }}>
+                  <div className="dash-loading__spinner" />
+                </div>
+              ) : (
+                <>
+                  <div className="admin-stat-highlight">
+                    <AnimatedCounter value={todayEntry} /><span>today's entries</span>
+                  </div>
+                  <BarChart datasets={entryDatasets} labels={weeklyEntryLabels} showLegend={false} />
+                </>
+              )}
+            </Panel>
+
+            {/* Pie — category distribution */}
+            <Panel title={distributionTitle} meta={!loading && cardMeta("Total breakdown", "distribution")} className="admin-breakdown-card">
+              {loading ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '140px' }}>
+                  <div className="dash-loading__spinner" />
+                </div>
+              ) : distSegments.length ? (
+                <PieChart segments={distSegments} showLegend={false} />
+              ) : (
+                <p className="admin-empty-note">No data yet</p>
+              )}
+            </Panel>
+          </div>
+        </section>
+
+        {/* ─── OTHER ANALYTICS ROW ─── */}
         <section className="admin-section-grid admin-section-grid--analytics">
-
-          {/* Area chart — entry trend */}
-          <Panel title="Weekly Registration Trend" meta="Current week">
-            <div className="admin-stat-highlight">
-              <AnimatedCounter value={currentWeekRegistrations} /><span>registrations this week</span>
-            </div>
-            <AreaChart data={weeklyRegistrationData} labels={weeklyRegistrationLabels} />
-          </Panel>
-
-          {/* Bar chart — daily */}
-          <Panel title="Daily Activity" meta="This week">
-            <div className="admin-stat-highlight">
-              <AnimatedCounter value={todayEntry} /><span>today's entries</span>
-            </div>
-            <BarChart data={weeklyEntryData} labels={weeklyEntryLabels} />
-          </Panel>
-
           {/* Pie — registration status */}
           <Panel title="Registration Status" meta={`${totalReg} total`}>
             {statusSegments.length ? (
               <PieChart segments={statusSegments} />
             ) : (
               <p className="admin-empty-note">No registrations yet</p>
-            )}
-          </Panel>
-
-          {/* Pie — role distribution */}
-          <Panel title="Role Distribution" meta={`${activeRoles} active roles`}>
-            {roleSegments.length ? (
-              <PieChart segments={roleSegments} />
-            ) : (
-              <p className="admin-empty-note">No data yet</p>
             )}
           </Panel>
 
@@ -389,6 +507,122 @@ export default function DashboardPage() {
           <span>SAMS — Smart Access Management System</span>
           <span>Super Admin · {user.displayName}</span>
         </footer>
+
+        {/* ─── DETAILED BREAKDOWN MODAL POPUP ─── */}
+        {activeModalCard && (() => {
+          const selectedDayIdx = selectedDay === 'all' ? null : ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].indexOf(selectedDay);
+          const DaySelect = () => (
+            <select
+              value={selectedDay}
+              onChange={(e) => setSelectedDay(e.target.value)}
+              style={{
+                padding: '4px 8px',
+                fontSize: '0.725rem',
+                fontWeight: 'bold',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                outline: 'none',
+                background: 'var(--surface-base, #ffffff)',
+                color: 'var(--text-primary)',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="all">All Days</option>
+              <option value="Sat">Saturday</option>
+              <option value="Sun">Sunday</option>
+              <option value="Mon">Monday</option>
+              <option value="Tue">Tuesday</option>
+              <option value="Wed">Wednesday</option>
+              <option value="Thu">Thursday</option>
+              <option value="Fri">Friday</option>
+            </select>
+          );
+
+          return (
+            <div className="admin-modal-overlay" onClick={() => setActiveModalCard(null)}>
+              <div className="admin-modal-container glass-panel admin-fade-in" onClick={(e) => e.stopPropagation()}>
+                <div className="admin-modal-header">
+                  <h2>
+                    {activeModalCard === 'registration' && 'Weekly Registration Trend Detail'}
+                    {activeModalCard === 'activity' && 'Daily Activity Detail'}
+                    {activeModalCard === 'distribution' && distributionTitle}
+                  </h2>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: 'auto', marginRight: '16px' }}>
+                    {activeModalCard !== 'distribution' && <DaySelect />}
+                  </div>
+                  <button type="button" className="admin-modal-close" onClick={() => setActiveModalCard(null)} aria-label="Close modal">&times;</button>
+                </div>
+                <div className="admin-modal-body">
+                  {activeModalCard === 'registration' && (() => {
+                    const displayRegCount = typeof selectedDayIdx === 'number'
+                      ? regDatasets.reduce((sum, ds) => sum + (ds.data?.[selectedDayIdx] || 0), 0)
+                      : currentWeekRegistrations;
+                    return (
+                      <div className="admin-chart-modal-layout">
+                        <div className="admin-chart-modal-main">
+                          <div className="admin-stat-highlight" style={{ marginBottom: '1rem' }}>
+                            <AnimatedCounter value={displayRegCount} />
+                            <span>registrations {selectedDay === 'all' ? 'this week' : `on ${selectedDay}`}</span>
+                          </div>
+                          <AreaChart datasets={regDatasets} labels={weeklyRegistrationLabels} showLegend={false} />
+                        </div>
+                        <div className="admin-chart-modal-legend-container">
+                          <h4 style={{ margin: '0 0 8px 0', fontSize: '0.725rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Categories</h4>
+                          <ChartLegend datasets={regDatasets} selectedDayIndex={selectedDayIdx} />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {activeModalCard === 'activity' && (() => {
+                    const totalWeekEntries = entryDatasets.reduce((sum, ds) => sum + (ds.data || []).reduce((s, v) => s + v, 0), 0);
+                    const displayEntryCount = typeof selectedDayIdx === 'number'
+                      ? entryDatasets.reduce((sum, ds) => sum + (ds.data?.[selectedDayIdx] || 0), 0)
+                      : totalWeekEntries;
+                    return (
+                      <div className="admin-chart-modal-layout">
+                        <div className="admin-chart-modal-main">
+                          <div className="admin-stat-highlight" style={{ marginBottom: '1rem' }}>
+                            <AnimatedCounter value={displayEntryCount} />
+                            <span>entries {selectedDay === 'all' ? 'this week' : `on ${selectedDay}`}</span>
+                          </div>
+                          <BarChart datasets={entryDatasets} labels={weeklyEntryLabels} showLegend={false} />
+                        </div>
+                        <div className="admin-chart-modal-legend-container">
+                          <h4 style={{ margin: '0 0 8px 0', fontSize: '0.725rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Categories</h4>
+                          <ChartLegend datasets={entryDatasets} selectedDayIndex={selectedDayIdx} />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {activeModalCard === 'distribution' && (() => {
+                    const distTotal = distSegments.reduce((sum, item) => sum + item.value, 0) || 1;
+                    return (
+                      <div className="admin-chart-modal-layout">
+                        <div className="admin-chart-modal-main" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                          <PieChart segments={distSegments} showLegend={false} />
+                        </div>
+                        <div className="admin-chart-modal-legend-container">
+                          <h4 style={{ margin: '0 0 8px 0', fontSize: '0.725rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Categories</h4>
+                          <ul style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: 0, margin: 0, listStyle: 'none' }}>
+                            {distSegments.map((item) => (
+                              <li key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem' }}>
+                                <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+                                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{item.label}</span>
+                                <span style={{ color: 'var(--text-secondary)', marginLeft: 'auto' }}>
+                                  {item.value} ({Math.round((item.value / distTotal) * 100)}%)
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       </div>
     </div>

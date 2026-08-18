@@ -90,6 +90,7 @@
   .vehicle-metrics-grid      { grid-template-columns: repeat(3, 1fr); }
   .admin-widgets-grid        { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-quick-actions__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .admin-breakdown-section-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ── 1100px ── */
@@ -108,7 +109,18 @@
   .admin-topnav__profile-text{ display: none; }
   .gate-layout               { grid-template-columns: 1fr; }
   .gate-layout__details      { position: static; }
+  .admin-breakdown-section-grid { grid-template-columns: 1fr; }
+  .admin-breakdown-section-header { flex-direction: column; align-items: flex-start; gap: 8px; }
   .reg-flow-layout           { grid-template-columns: 1fr; }
+
+  .admin-chart-modal-layout  { flex-direction: column; align-items: stretch; gap: 1rem; }
+  .admin-chart-modal-legend-container { max-height: 180px; }
+  .admin-chart-modal-main .admin-bar-chart { height: 160px; }
+  .admin-chart-modal-main .admin-bar-chart__bar-wrap { height: 130px; }
+  .admin-chart-modal-main .admin-area-chart__plot { height: 140px; }
+  .admin-chart-modal-main .admin-pie-chart { height: 150px; }
+  .admin-chart-modal-main .admin-pie-chart .admin-pie-chart__svg { width: 120px; height: 120px; }
+
 
   .admin-dashboard__hero { flex-direction: column; align-items: stretch; }
   .admin-dashboard__hero-right { align-items: stretch; }
@@ -1282,5 +1294,25 @@
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
   }
+
+  /* Dashboard Filters Mobile Responsive Overrides */
+  .dashboard-filters-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+    padding: 1rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .dashboard-filters-bar .filter-group {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .dash-filter-select {
+    width: 100%;
+    font-size: 0.875rem;
+  }
 }
+
 

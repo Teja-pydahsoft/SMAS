@@ -1,10 +1,13 @@
 # Docker/Hugging Face install order is handled in Dockerfile (staged pip install).
 # For local dev: pip install -r requirements.txt
+#
+# IMPORTANT: numpy MUST stay <2.0 for faiss-cpu compatibility.
+# torch/torchvision are installed from the CPU wheel index in Docker.
 
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
-numpy>=1.26.4,<2.0.0
+numpy==1.26.4
 opencv-python-headless==4.10.0.84
 Pillow==11.1.0
 insightface==0.7.3
@@ -13,3 +16,8 @@ faiss-cpu==1.8.0.post1
 easyocr==1.7.1
 torch
 torchvision
+pyclipper
+python-bidi
+scikit-image
+PyYAML
+Shapely

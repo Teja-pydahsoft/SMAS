@@ -25,13 +25,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 # Install heavy ML wheels first, then the rest (avoids resolver/build failures on HF)
+# IMPORTANT: easyocr pulls torch/torchvision which can upgrade numpy to 2.x.
+# We pin numpy==1.26.4 LAST to force the correct version for faiss-cpu compatibility.
 RUN pip install --upgrade pip setuptools wheel cython \
     && pip install numpy==1.26.4 \
     && pip install onnxruntime==1.19.2 \
     && pip install opencv-python-headless==4.10.0.84 \
     && pip install faiss-cpu==1.8.0.post1 \
     && pip install insightface==0.7.3 \
-    && pip install fastapi==0.115.6 "uvicorn[standard]==0.34.0" python-multipart==0.0.20 Pillow==11.1.0 easyocr==1.7.1
+    && pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && pip install easyocr==1.7.1 --no-deps \
+    && pip install pyclipper python-bidi scikit-image PyYAML Shapely ninja \
+    && pip install fastapi==0.115.6 "uvicorn[standard]==0.34.0" python-multipart==0.0.20 Pillow==11.1.0 \
+    && pip install "numpy==1.26.4" --force-reinstall --no-deps \
+    && python -c "import numpy; assert numpy.__version__.startswith('1.'), f'NumPy {numpy.__version__} is 2.x — build broken'; print(f'OK: numpy=={numpy.__version__}')" \
+    && python -c "import faiss; print('OK: faiss imported')" \
+    && python -c "import cv2; print(f'OK: cv2=={cv2.__version__}')"
 
 COPY app ./app
 

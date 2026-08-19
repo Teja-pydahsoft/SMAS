@@ -42,6 +42,10 @@ RUN pip install --upgrade pip setuptools wheel cython \
     && python -c "import faiss; print('OK: faiss imported')" \
     && python -c "import cv2; print(f'OK: cv2=={cv2.__version__}')"
 
+# Pre-download EasyOCR models at build time (avoids runtime download on every restart)
+RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False, verbose=True)" \
+    && echo "OK: EasyOCR models cached"
+
 COPY app ./app
 
 ENV HOST=0.0.0.0

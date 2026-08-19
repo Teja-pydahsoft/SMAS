@@ -682,8 +682,13 @@ class ANPRServiceV3:
 
         # Determine which images to process (prefer frontPlate, fall back to front)
         images_to_try = []
+        seen_hashes = set()
         for key in ['frontPlate', 'rearPlate', 'front']:
             if key in image_data and image_data[key]:
+                img_hash = hash(image_data[key][:1024])  # Quick hash on first 1KB
+                if img_hash in seen_hashes:
+                    continue  # Skip duplicate image
+                seen_hashes.add(img_hash)
                 images_to_try.append((key, image_data[key]))
 
         best_result = None

@@ -1,12 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api/client';
 import { formatDate } from '@/lib/formatDate';
 import { useAuth } from '@/components/AuthProvider';
 import PermissionMatrix from '@/components/PermissionMatrix';
-import { emptyPermissions } from '@/lib/auth/permissions';
+import {
+  emptyPermissions,
+  applyWriteImpliesRead,
+  summarizePermissions,
+  hasElevatedPrivileges,
+  validateRoleName,
+} from '@/lib/auth/permissions';
 
 function PlusIcon() {
   return (
@@ -17,31 +23,57 @@ function PlusIcon() {
   );
 }
 
-function NewRoleModal({ onClose, onComplete }) {
+function NewRoleModal({ existingNames, onClose, onComplete }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [permissions, setPermissions] = useState(emptyPermissions());
   const [error, setError] = useState('');
+  const [nameTouched, setNameTouched] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const nameError = validateRoleName(name, existingNames);
+  const summary = useMemo(() => summarizePermissions(permissions), [permissions]);
+  const elevated = hasElevatedPrivileges(permissions);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (event.key === 'Escape' && !loading) onClose();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [loading, onClose]);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!name.trim()) {
-      setError('Role name is required');
+    setNameTouched(true);
+    if (nameError) {
+      setError(nameError);
       return;
+    }
+
+    if (summary.grantedCount === 0) {
+      const proceed = window.confirm(
+        'Create this role with no privileges? Assigned users will not be able to open any module.'
+      );
+      if (!proceed) return;
+    }
+
+    if (elevated) {
+      const proceed = window.confirm(
+        'This role can manage system users or roles. That is a privileged grant. Continue?'
+      );
+      if (!proceed) return;
     }
 
     setLoading(true);
     setError('');
 
     try {
-      // Create the role
       const role = await api.systemRoles.create({
         name: name.trim(),
         description: description.trim(),
+        permissions: applyWriteImpliesRead(permissions),
       });
-      // Save privileges in the same flow
-      await api.systemRoles.updatePermissions(role._id, permissions);
       onComplete(role);
     } catch (err) {
       setError(err.message);
@@ -53,22 +85,20 @@ function NewRoleModal({ onClose, onComplete }) {
   return (
     <div
       className="pass-modal-overlay reg-details-overlay"
-      onClick={onClose}
+      onClick={loading ? undefined : onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="New System Role"
+      aria-labelledby="new-role-title"
     >
       <div
-        className="reg-details-modal"
-        style={{ maxWidth: 780, width: '95vw', maxHeight: 'none', overflowY: 'visible' }}
+        className="reg-details-modal reg-details-modal--flow reg-details-modal--role"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="reg-details-modal__header no-print">
           <div className="reg-details-modal__title-wrap">
             <div>
-              <h3 className="reg-details-modal__title">New System Role</h3>
-              <p className="reg-details-modal__sub">Set the role name and assign its privileges</p>
+              <h3 id="new-role-title" className="reg-details-modal__title">New System Role</h3>
+              <p className="reg-details-modal__sub">Name the role and grant the least privilege it needs</p>
             </div>
           </div>
           <button
@@ -77,6 +107,7 @@ function NewRoleModal({ onClose, onComplete }) {
             onClick={onClose}
             title="Close"
             aria-label="Close"
+            disabled={loading}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -85,52 +116,70 @@ function NewRoleModal({ onClose, onComplete }) {
           </button>
         </div>
 
-        {/* Body */}
-        <div className="reg-details-modal__body" style={{ overflowY: 'visible' }}>
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label htmlFor="role-name">
-                Role Name <span style={{ color: 'var(--danger)' }}>*</span>
-              </label>
-              <input
-                id="role-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Gate Operator, Department Manager"
-                autoFocus
-              />
+        <form onSubmit={handleSubmit}>
+          <div className="reg-details-modal__body">
+            <div className="role-form-grid">
+              <div className="form-group">
+                <label htmlFor="role-name">
+                  Role Name <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <input
+                  id="role-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onBlur={() => setNameTouched(true)}
+                  placeholder="e.g. Gate Operator, Department Manager"
+                  autoFocus
+                  maxLength={60}
+                  className={nameTouched && nameError ? 'input-error' : undefined}
+                  aria-invalid={nameTouched && Boolean(nameError)}
+                  aria-describedby={nameTouched && nameError ? 'role-name-error' : undefined}
+                />
+                {nameTouched && nameError && (
+                  <p id="role-name-error" className="error-msg">{nameError}</p>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="role-description">Description</label>
+                <input
+                  id="role-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Optional — what this role is for"
+                  maxLength={160}
+                />
+              </div>
             </div>
 
-            <div className="form-group">
-              <label htmlFor="role-description">Description</label>
-              <input
-                id="role-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional description"
-              />
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border)', marginTop: '1.25rem', paddingTop: '1.25rem' }}>
+            <div style={{ borderTop: '1px solid var(--border)', marginTop: '0.25rem', paddingTop: '1rem' }}>
               <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.25rem' }}>Privileges</h4>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                Set read and write access for each module. Write access includes read.
-              </p>
-              <PermissionMatrix permissions={permissions} onChange={setPermissions} />
+              <PermissionMatrix permissions={permissions} onChange={setPermissions} showSummary={false} />
             </div>
 
-            {error && <p className="error-msg" style={{ marginTop: '1rem' }}>{error}</p>}
+            {elevated && (
+              <div className="role-form-warning" role="status">
+                Privileged access is selected. Users with this role can create or change system users and roles.
+              </div>
+            )}
 
-            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
-              <button type="submit" className="btn-primary" disabled={loading}>
-                {loading ? 'Creating...' : 'Create Role'}
-              </button>
-              <button type="button" className="btn-secondary" onClick={onClose}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
+            {error && <p className="error-msg" style={{ marginTop: '0.75rem' }}>{error}</p>}
+          </div>
+
+          <div className="reg-details-modal__footer">
+            <p className="role-form-footer-meta">
+              {summary.grantedCount === 0
+                ? 'No modules granted yet'
+                : `${summary.writeCount} write · ${summary.readCount} read-only`}
+            </p>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={loading}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary" disabled={loading || Boolean(nameError)}>
+              {loading ? 'Creating...' : 'Create Role'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -193,7 +242,7 @@ export default function ManageSystemRolesPage() {
       <div className="reports-section-header" style={{ marginBottom: '1rem' }}>
         <div>
           <h3 className="section-title">System Roles ({roles.length})</h3>
-          <p className="section-desc">Manage roles and assign module privileges separately</p>
+          <p className="section-desc">Create roles and assign module privileges in one step</p>
         </div>
         {canWrite && (
           <button
@@ -258,7 +307,7 @@ export default function ManageSystemRolesPage() {
                     <td className="actions-cell">
                       <Link href={`/system/roles/${role._id}/permissions`}>
                         <button type="button" className="btn-secondary">
-                          {canWrite ? 'Assign Privileges' : 'View Privileges'}
+                          {canWrite ? 'Edit Privileges' : 'View Privileges'}
                         </button>
                       </Link>
                       {canWrite && (
@@ -282,6 +331,7 @@ export default function ManageSystemRolesPage() {
 
       {showNewRoleModal && (
         <NewRoleModal
+          existingNames={roles.map((role) => role.name)}
           onClose={() => setShowNewRoleModal(false)}
           onComplete={handleRoleCreated}
         />

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api/client';
-import { PERMISSION_MODULES, emptyPermissions } from '@/lib/auth/permissions';
+import { PERMISSION_MODULES, emptyPermissions, applyWriteImpliesRead } from '@/lib/auth/permissions';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
 import PermissionMatrix from '@/components/PermissionMatrix';
 import GateAccessPicker, { gateModeBadgeLabel } from '@/components/GateAccessPicker';
@@ -14,7 +14,10 @@ function normalizePermissions(source) {
   if (!source) return base;
   for (const { key } of PERMISSION_MODULES) {
     const value = source[key];
-    if (value) base[key] = { read: Boolean(value.read), write: Boolean(value.write) };
+    if (value) {
+      const write = Boolean(value.write);
+      base[key] = { write, read: write || Boolean(value.read) };
+    }
   }
   return base;
 }
@@ -240,7 +243,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
       if (password.trim()) payload.password = password.trim();
       await api.systemUsers.update(user._id, payload);
       if (canEditPrivileges && roleId) {
-        await api.systemRoles.updatePermissions(roleId, rolePerms);
+        await api.systemRoles.updatePermissions(roleId, applyWriteImpliesRead(rolePerms));
       }
       const full = await api.systemUsers.get(user._id);
       setSuccess('User updated successfully.');

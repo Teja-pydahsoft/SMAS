@@ -83,14 +83,13 @@
   border-right: 1px solid var(--border-color);
   box-shadow: 2px 0 24px rgba(31, 42, 46, 0.05);
   transition: width var(--transition-medium);
-  overflow: visible;
+  overflow: hidden;
   gap: 0;
 }
 
 .admin-sidebar--collapsed {
   width: 72px;
-  overflow-x: clip;
-  overflow-y: visible;
+  overflow: hidden;
   padding-left: 0.625rem;
   padding-right: 0.625rem;
 }
@@ -154,9 +153,8 @@
   font-size: 0.6875rem;
   color: #8A959C;
   line-height: 1.3;
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
   font-weight: 500;
   margin-top: 1px;
 }
@@ -228,16 +226,25 @@
 ════════════════════════════════════════════════════════ */
 .admin-sidebar__nav {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  overflow-x: visible;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  scrollbar-width: none;
-  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #C5D0CC transparent;
+  padding-bottom: 8px;
 }
 
-.admin-sidebar__nav::-webkit-scrollbar { display: none; }
+.admin-sidebar__nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-sidebar__nav::-webkit-scrollbar-thumb {
+  background: #C5D0CC;
+  border-radius: 999px;
+}
 
 /* ════════════════════════════════════════════════════════
    SECTION LABELS  (GENERAL / MANAGEMENT / SETTINGS)
@@ -334,7 +341,7 @@
   cursor: pointer;
   font-family: var(--font-family);
   letter-spacing: 0.005em;
-  white-space: nowrap;
+  white-space: normal;
   overflow: visible;
   position: relative;
   min-height: 46px;
@@ -343,6 +350,11 @@
     color 280ms cubic-bezier(0.4, 0, 0.2, 1),
     transform 280ms cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.admin-sidebar .nav-label {
+  min-width: 0;
+  line-height: 1.3;
 }
 
 /* ── Hover ── */
@@ -458,15 +470,16 @@
 }
 
 .admin-sidebar__sub-nav--open {
-  max-height: 400px;
+  max-height: 2000px;
+  overflow: visible;
   opacity: 1;
 }
 
 .admin-sidebar__sub-link {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
-  padding: 6px 12px;
+  padding: 7px 10px;
   border-radius: 8px;
   color: #4b5563;
   font-size: 0.775rem;
@@ -476,7 +489,8 @@
   background: transparent;
   width: 100%;
   cursor: pointer;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.35;
   position: relative;
   transition: all 220ms ease;
 }

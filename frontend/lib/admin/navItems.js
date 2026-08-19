@@ -27,9 +27,9 @@ export const SUPER_ADMIN_NAV_ITEMS = [
     module: 'projects',
     children: [
       { path: '/projects/create', label: 'Project Portfolio', module: 'projects' },
-      { path: '/projects/maintenance', label: 'Project Maintenance', module: 'projects' },
-      { path: '/projects/photo-capture', label: 'Project Photo Capture', module: 'projects' },
-      { path: '/projects/reports', label: 'Project Reports', module: 'projects' },
+      { path: '/projects/maintenance', label: 'Project Maintenance', module: 'project_maintenance' },
+      { path: '/projects/photo-capture', label: 'Project Photo Capture', module: 'project_photo_capture' },
+      { path: '/projects/reports', label: 'Project Reports', module: 'project_reports' },
     ],
   },
   {

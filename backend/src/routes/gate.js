@@ -1517,7 +1517,8 @@ router.post(
     // Call AI Server for ANPR
     let aiResult;
     try {
-      aiResult = await analyzeVehicle(imageBuffer, req.file.originalname || 'vehicle.jpg', req.file.mimetype);
+      const imagePayload = { frontPlate: { buffer: imageBuffer, filename: req.file.originalname || 'vehicle.jpg', mimeType: req.file.mimetype } };
+      aiResult = await analyzeVehicle(imagePayload);
     } catch (error) {
       if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
       return res.status(500).json({ error: 'Failed to analyze vehicle image' });
@@ -1526,16 +1527,16 @@ router.post(
     // Start upload in parallel
     const uploadPromise = startGatePhotoUpload(imageBuffer, filePath);
     
-    const capturedPlate = aiResult.plateDetected ? aiResult.plateNumber : null;
+    const capturedPlate = aiResult.normalizedPlateNumber || aiResult.frontPlateNumber || null;
     const normalizedCapturedPlate = capturedPlate ? capturedPlate.toLowerCase().replace(/\s+/g, '') : null;
-    const confidence = aiResult.ocrConfidence || 0;
+    const confidence = aiResult.confidence?.ocr || 0;
     
     let decision = 'Unknown';
     let reason = 'Plate not detected';
     let vehicle = null;
     
     if (normalizedCapturedPlate) {
-      vehicle = await Vehicle.findOne({ normalizedCapturedPlate }).populate('allowedGates');
+      vehicle = await Vehicle.findOne({ normalizedPlateNumber: normalizedCapturedPlate }).populate('allowedGates');
       
       if (!vehicle) {
         decision = 'Denied';

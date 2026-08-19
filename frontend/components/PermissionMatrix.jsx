@@ -1,88 +1,126 @@
-import React, { useState } from 'react';
-import { PERMISSION_MODULES } from '@/lib/auth/permissions';
+'use client';
 
-const UI_TREE = [
-  {
-    title: 'General',
-    items: [
-      { key: 'gate', label: 'Gate Entry / Exit' },
-      { key: 'activity', label: 'Activity' },
-      { key: 'vehicle_activity', label: 'Vehicle Activity Log' }
-    ]
-  },
-  {
-    title: 'Management',
-    items: [
-      { key: 'registration_roles', label: 'Registration Roles' },
-      { key: 'registrations', label: 'Registrations' },
-      { key: 'shifts', label: 'Shifts' },
-      { key: 'projects', label: 'Project Management' },
-      {
-        title: 'Organization',
-        items: [
-          { key: 'divisions', label: 'Divisions' },
-          { key: 'departments', label: 'Departments' }
-        ]
-      },
-      {
-        title: 'Vehicle & Equipment',
-        items: [
-          { key: 'vehicles', label: 'Vehicles' },
-          { key: 'vehicle_types', label: 'Vehicle Types' },
-          { key: 'vehicle_categories', label: 'Vehicle Categories' },
-          { key: 'vehicle_registrations', label: 'Vehicle Registrations' },
-          { key: 'equipment_movements', label: 'Equipment Movements' },
-          { key: 'idle_monitoring', label: 'Idle Monitoring' }
-        ]
-      },
-      {
-        title: 'Reports',
-        items: [
-          { key: 'reports', label: 'Reports' },
-          { key: 'vehicle_reports', label: 'Vehicle Reports' },
-          { key: 'idle_reports', label: 'Idle Reports' },
-          { key: 'idle_dashboard', label: 'Idle Dashboard' }
-        ]
-      }
-    ]
-  },
-  {
-    title: 'Settings',
-    items: [
-      {
-        title: 'System Access',
-        items: [
-          { key: 'system_roles', label: 'System Roles' },
-          { key: 'system_users', label: 'System Users' }
-        ]
-      },
-      { key: 'locations', label: 'Geo Location Access' },
-      { key: 'geo_login_activity', label: 'Geo Login Audit' },
-      { key: 'devices', label: 'Device Maintenance' }
-    ]
-  }
-];
+import React, { useMemo, useState } from 'react';
+import {
+  PERMISSION_MODULES,
+  SENSITIVE_PERMISSION_KEYS,
+  emptyPermissions,
+  applyWriteImpliesRead,
+  summarizePermissions,
+} from '@/lib/auth/permissions';
+import { getPrivilegeTree } from '@/lib/app/navItems';
 
-// Helper to extract all keys from a subtree
-function getAllKeys(node) {
-  if (node.key) return [node.key];
-  if (node.items) return node.items.flatMap(getAllKeys);
-  return [];
+const SENSITIVE = new Set(SENSITIVE_PERMISSION_KEYS);
+
+function uniqueKeys(keys) {
+  return [...new Set(keys)];
 }
 
-export default function PermissionMatrix({ permissions, onChange, readOnly = false }) {
-  const [expanded, setExpanded] = useState({
-    'General': true,
-    'Management': true,
-    'Settings': true,
-    'Organization': false,
-    'Vehicle & Equipment': false,
-    'Reports': false,
-    'System Access': false
-  });
+function getAllKeys(node) {
+  const keys = [];
+  if (node.key) keys.push(node.key);
+  if (node.items) keys.push(...node.items.flatMap(getAllKeys));
+  return uniqueKeys(keys);
+}
+
+const UI_TREE = (() => {
+  const tree = getPrivilegeTree();
+  const groupedKeys = new Set(tree.flatMap(getAllKeys));
+  const leftover = PERMISSION_MODULES.filter((m) => !groupedKeys.has(m.key)).map((m) => ({
+    key: m.key,
+    label: m.label,
+    id: `more::${m.key}`,
+  }));
+  if (leftover.length) {
+    tree.push({ title: 'More modules', items: leftover });
+  }
+  return tree;
+})();
+
+function defaultExpandedState() {
+  const next = {};
+  function walk(nodes) {
+    nodes.forEach((node) => {
+      if (node.items && node.title) {
+        next[node.title] = node.title !== 'More modules';
+        walk(node.items);
+      }
+    });
+  }
+  walk(UI_TREE);
+  return next;
+}
+
+const DEFAULT_EXPANDED = defaultExpandedState();
+
+const PRESETS = [
+  { id: 'none', label: 'None' },
+  { id: 'viewer', label: 'Viewer' },
+  { id: 'operator', label: 'Operator' },
+];
+
+const OPERATOR_WRITE_KEYS = ['gate', 'activity', 'equipment_movements'];
+
+function nodeMatchesQuery(node, query) {
+  if (!query) return true;
+  const hay = `${node.title || ''} ${node.label || ''} ${node.key || ''}`.toLowerCase();
+  if (hay.includes(query)) return true;
+  if (node.items) return node.items.some((child) => nodeMatchesQuery(child, query));
+  return false;
+}
+
+function filterTree(nodes, query) {
+  if (!query) return nodes;
+  return nodes
+    .map((node) => {
+      const selfMatch = `${node.title || ''} ${node.label || ''} ${node.key || ''}`
+        .toLowerCase()
+        .includes(query);
+      if (node.items) {
+        if (selfMatch) return node;
+        const items = filterTree(node.items, query);
+        return items.length ? { ...node, items } : null;
+      }
+      return selfMatch ? node : null;
+    })
+    .filter(Boolean);
+}
+
+function setIndeterminate(el, some, all) {
+  if (el) el.indeterminate = some && !all;
+}
+
+export default function PermissionMatrix({ permissions, onChange, readOnly = false, showSummary = true }) {
+  const [expanded, setExpanded] = useState(DEFAULT_EXPANDED);
+  const [search, setSearch] = useState('');
+  const [activePreset, setActivePreset] = useState('');
+
+  const query = search.trim().toLowerCase();
+  const summary = useMemo(() => summarizePermissions(permissions), [permissions]);
+
+  const displayTree = useMemo(() => filterTree(UI_TREE, query), [query]);
+
+  function commit(next) {
+    setActivePreset('');
+    onChange(applyWriteImpliesRead(next));
+  }
 
   function toggleExpand(title) {
-    setExpanded(prev => ({ ...prev, [title]: !prev[title] }));
+    setExpanded((prev) => ({ ...prev, [title]: !prev[title] }));
+  }
+
+  function setAllExpanded(value) {
+    const next = { ...expanded };
+    function walk(nodes) {
+      nodes.forEach((node) => {
+        if (node.items && node.title) {
+          next[node.title] = value;
+          walk(node.items);
+        }
+      });
+    }
+    walk(UI_TREE);
+    setExpanded(next);
   }
 
   function toggleSingle(module, action) {
@@ -91,153 +129,254 @@ export default function PermissionMatrix({ permissions, onChange, readOnly = fal
     const next = { ...current, [action]: !current[action] };
     if (action === 'write' && next.write) next.read = true;
     if (action === 'read' && !next.read) next.write = false;
-    onChange({ ...permissions, [module]: next });
+    commit({ ...permissions, [module]: next });
+  }
+
+  function toggleKeys(keys, action, forceValue) {
+    if (readOnly) return;
+    const next = { ...permissions };
+    keys.forEach((key) => {
+      const current = next[key] || { read: false, write: false };
+      const updated = { ...current, [action]: forceValue };
+      if (action === 'write' && updated.write) updated.read = true;
+      if (action === 'read' && !updated.read) updated.write = false;
+      next[key] = updated;
+    });
+    commit(next);
   }
 
   function toggleGroup(node, action, forceValue) {
-    if (readOnly) return;
-    const keys = getAllKeys(node);
-    const newPerms = { ...permissions };
-    keys.forEach(k => {
-      const current = newPerms[k] || { read: false, write: false };
-      const next = { ...current, [action]: forceValue };
-      if (action === 'write' && next.write) next.read = true;
-      if (action === 'read' && !next.read) next.write = false;
-      newPerms[k] = next;
-    });
-    onChange(newPerms);
+    toggleKeys(getAllKeys(node), action, forceValue);
   }
 
-  function getGroupState(node, action) {
-    const keys = getAllKeys(node);
-    if (keys.length === 0) return false;
-    const allChecked = keys.every(k => permissions[k]?.[action]);
-    const someChecked = keys.some(k => permissions[k]?.[action]);
-    return { all: allChecked, some: someChecked };
+  function getGroupState(keys, action) {
+    if (keys.length === 0) return { all: false, some: false };
+    const all = keys.every((k) => permissions[k]?.[action]);
+    const some = keys.some((k) => permissions[k]?.[action]);
+    return { all, some };
+  }
+
+  function applyPreset(id) {
+    if (readOnly) return;
+    const next = emptyPermissions();
+    if (id === 'viewer') {
+      PERMISSION_MODULES.forEach(({ key }) => {
+        next[key] = { read: true, write: false };
+      });
+    }
+    if (id === 'operator') {
+      OPERATOR_WRITE_KEYS.forEach((key) => {
+        next[key] = { read: true, write: true };
+      });
+    }
+    setActivePreset(id);
+    onChange(applyWriteImpliesRead(next));
+  }
+
+  function renderCheckbox({ checked, indeterminate, onToggle, disabled, label, implied }) {
+    return (
+      <label className={`permission-check${implied ? ' permission-check--implied' : ''}`} title={implied ? 'Included with write' : label}>
+        <input
+          type="checkbox"
+          checked={checked}
+          ref={(el) => setIndeterminate(el, Boolean(indeterminate), checked)}
+          onChange={onToggle}
+          disabled={disabled || readOnly}
+          aria-label={label}
+        />
+      </label>
+    );
   }
 
   function renderRow(node, level = 0) {
-    if (node.key) {
-      // Leaf node
+    if (node.key && !node.items) {
       const value = permissions[node.key] || { read: false, write: false };
+      const sensitive = SENSITIVE.has(node.key);
       return (
-        <tr key={node.key} className="permission-leaf-row">
-          <td className="name-cell" style={{ paddingLeft: `${level * 1.5 + 1}rem` }}>
-            {node.label}
+        <tr key={node.id || `${node.key}:${node.label}`} className={`permission-leaf-row${sensitive ? ' permission-leaf-row--sensitive' : ''}`}>
+          <td className="name-cell" style={{ paddingLeft: `${level * 1.25 + 0.9}rem` }}>
+            <span className="permission-leaf-label">
+              {node.label}
+              {sensitive && <span className="permission-badge permission-badge--warn">Privileged</span>}
+            </span>
           </td>
           <td>
-            <label className="permission-check">
-              <input
-                type="checkbox"
-                checked={Boolean(value.read)}
-                onChange={() => toggleSingle(node.key, 'read')}
-                disabled={readOnly}
-              />
-            </label>
+            {renderCheckbox({
+              checked: Boolean(value.read),
+              onToggle: () => toggleSingle(node.key, 'read'),
+              disabled: Boolean(value.write),
+              implied: Boolean(value.write),
+              label: `Read access for ${node.label}`,
+            })}
           </td>
           <td>
-            <label className="permission-check">
-              <input
-                type="checkbox"
-                checked={Boolean(value.write)}
-                onChange={() => toggleSingle(node.key, 'write')}
-                disabled={readOnly}
-              />
-            </label>
+            {renderCheckbox({
+              checked: Boolean(value.write),
+              onToggle: () => toggleSingle(node.key, 'write'),
+              label: `Write access for ${node.label}`,
+            })}
           </td>
         </tr>
       );
     }
 
     if (node.items) {
-      // Group node
-      const isExpanded = expanded[node.title];
-      const readState = getGroupState(node, 'read');
-      const writeState = getGroupState(node, 'write');
-      
+      const isExpanded = query ? true : expanded[node.title] !== false;
+      const keys = getAllKeys(node);
+      const readState = getGroupState(keys, 'read');
+      const writeState = getGroupState(keys, 'write');
       const isTopLevel = level === 0;
-      const rowStyle = isTopLevel 
-        ? { backgroundColor: 'var(--bg-inset, #f9fafb)', borderBottom: '1px solid var(--border)' }
-        : { backgroundColor: 'transparent' };
-      const textStyle = isTopLevel
-        ? { color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }
-        : { fontWeight: 600, fontSize: '0.85rem' };
 
       return (
         <React.Fragment key={node.title}>
-          <tr className="permission-group-row" style={rowStyle}>
-            <td 
-              className="name-cell" 
-              style={{ 
-                paddingLeft: `${level * 1.5 + 1}rem`, 
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                ...textStyle
-              }}
-              onClick={() => toggleExpand(node.title)}
-            >
-              <svg 
-                width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" 
-                style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', opacity: 0.6 }}
+          <tr className={`permission-group-row${isTopLevel ? ' permission-group-row--section' : ''}`}>
+            <td className="name-cell" style={{ paddingLeft: `${level * 1.25 + 0.9}rem` }}>
+              <button
+                type="button"
+                className="permission-group-toggle"
+                onClick={() => toggleExpand(node.title)}
+                aria-expanded={isExpanded}
               >
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-              {node.title}
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  aria-hidden
+                  style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                >
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+                <span>{node.title}</span>
+              </button>
             </td>
             <td>
-              <label className="permission-check">
-                <input
-                  type="checkbox"
-                  ref={el => { if (el) el.indeterminate = readState.some && !readState.all; }}
-                  checked={readState.all}
-                  onChange={(e) => toggleGroup(node, 'read', e.target.checked)}
-                  disabled={readOnly}
-                />
-              </label>
+              {renderCheckbox({
+                checked: readState.all,
+                indeterminate: readState.some,
+                onToggle: (e) => toggleGroup(node, 'read', e.target.checked),
+                label: `Read access for ${node.title}`,
+              })}
             </td>
             <td>
-              <label className="permission-check">
-                <input
-                  type="checkbox"
-                  ref={el => { if (el) el.indeterminate = writeState.some && !writeState.all; }}
-                  checked={writeState.all}
-                  onChange={(e) => toggleGroup(node, 'write', e.target.checked)}
-                  disabled={readOnly}
-                />
-              </label>
+              {renderCheckbox({
+                checked: writeState.all,
+                indeterminate: writeState.some,
+                onToggle: (e) => toggleGroup(node, 'write', e.target.checked),
+                label: `Write access for ${node.title}`,
+              })}
             </td>
           </tr>
-          {isExpanded && node.items.map(child => renderRow(child, level + 1))}
+          {isExpanded && node.items.map((child) => renderRow(child, level + 1))}
         </React.Fragment>
       );
     }
+
     return null;
   }
 
-  // Handle any uncategorized permissions dynamically
-  const groupedKeys = new Set(UI_TREE.flatMap(getAllKeys));
-  const otherKeys = PERMISSION_MODULES.filter(m => !groupedKeys.has(m.key)).map(m => ({ key: m.key, label: m.label }));
-  const displayTree = [...UI_TREE];
-  if (otherKeys.length > 0) {
-    displayTree.push({ title: 'Other Features', items: otherKeys });
-  }
+  const allKeys = PERMISSION_MODULES.map((m) => m.key);
+  const allRead = getGroupState(allKeys, 'read');
+  const allWrite = getGroupState(allKeys, 'write');
 
   return (
-    <div className="table-scroll">
-      <table className="reg-table permission-matrix">
-        <thead>
-          <tr>
-            <th>Module</th>
-            <th>Read</th>
-            <th>Write</th>
-          </tr>
-        </thead>
-        <tbody>
-          {displayTree.map(node => renderRow(node, 0))}
-        </tbody>
-      </table>
+    <div className="permission-matrix-wrap">
+      <div className="permission-matrix-toolbar">
+        <div className="permission-matrix-search">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.preventDefault();
+            }}
+            placeholder="Search modules…"
+            aria-label="Search modules"
+            disabled={readOnly}
+          />
+        </div>
+        <div className="permission-matrix-presets" role="group" aria-label="Permission presets">
+          {PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className={`permission-preset${activePreset === preset.id ? ' is-active' : ''}`}
+              onClick={() => applyPreset(preset.id)}
+              disabled={readOnly}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+        <div className="permission-matrix-actions">
+          <button type="button" className="permission-link-btn" onClick={() => setAllExpanded(true)}>
+            Expand all
+          </button>
+          <button type="button" className="permission-link-btn" onClick={() => setAllExpanded(false)}>
+            Collapse
+          </button>
+        </div>
+      </div>
+
+      <p className="permission-matrix-hint">
+        Write includes read. Checking write on a module grants read automatically — you only need to check write once.
+      </p>
+
+      <div className="table-scroll permission-matrix-scroll">
+        <table className="reg-table permission-matrix">
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th>
+                <span className="permission-col-head">
+                  Read
+                  {renderCheckbox({
+                    checked: allRead.all,
+                    indeterminate: allRead.some,
+                    onToggle: (e) => toggleKeys(allKeys, 'read', e.target.checked),
+                    label: 'Grant read on all modules',
+                  })}
+                </span>
+              </th>
+              <th>
+                <span className="permission-col-head">
+                  Write
+                  {renderCheckbox({
+                    checked: allWrite.all,
+                    indeterminate: allWrite.some,
+                    onToggle: (e) => toggleKeys(allKeys, 'write', e.target.checked),
+                    label: 'Grant write on all modules',
+                  })}
+                </span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayTree.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="permission-empty">
+                  No modules match “{search.trim()}”.
+                </td>
+              </tr>
+            ) : (
+              displayTree.map((node) => renderRow(node, 0))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showSummary && (
+        <div className="permission-matrix-summary" aria-live="polite">
+          <span>
+            <strong>{summary.grantedCount}</strong> of {summary.total} modules granted
+          </span>
+          <span className="permission-matrix-summary__split">
+            {summary.writeCount} write · {summary.readCount} read-only
+          </span>
+        </div>
+      )}
     </div>
   );
 }

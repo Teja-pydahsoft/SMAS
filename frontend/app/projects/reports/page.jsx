@@ -273,7 +273,7 @@ export default function ProjectReportsPage() {
 
 function ProjectReportsContent() {
   const { can, user } = useAuth();
-  const canRead = can('projects', 'read');
+  const canRead = can('project_reports', 'read');
   const searchParams = useSearchParams();
   const projectFromQuery = searchParams.get('project') || '';
 

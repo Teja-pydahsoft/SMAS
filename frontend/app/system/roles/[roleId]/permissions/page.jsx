@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api/client';
 import PermissionMatrix from '@/components/PermissionMatrix';
-import { emptyPermissions } from '@/lib/auth/permissions';
+import { emptyPermissions, applyWriteImpliesRead } from '@/lib/auth/permissions';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
 
@@ -47,7 +47,7 @@ export default function SystemRolePermissionsPage() {
     setError('');
     setSuccess('');
     try {
-      const updated = await api.systemRoles.updatePermissions(roleId, permissions);
+      const updated = await api.systemRoles.updatePermissions(roleId, applyWriteImpliesRead(permissions));
       setRole(updated);
       setPermissions({ ...emptyPermissions(), ...(updated.permissions || {}) });
       setSuccess('Privileges updated successfully.');
@@ -68,7 +68,7 @@ export default function SystemRolePermissionsPage() {
           <div>
             <h3 className="section-title">Assign Privileges — {role.name}</h3>
             <p className="section-desc">
-              Set read and write access for each module. Write access includes read.
+              Grant the least access this role needs. Write includes read — check write once.
             </p>
           </div>
           <Link href="/system/roles/manage">

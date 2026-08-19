@@ -273,7 +273,7 @@ export default function ProjectWorkspacePage() {
 
 function WorkspaceContent() {
   const { can } = useAuth();
-  const canWrite = can('projects', 'write');
+  const canWrite = can('project_maintenance', 'write');
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();

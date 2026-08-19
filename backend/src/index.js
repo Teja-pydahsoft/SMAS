@@ -38,7 +38,7 @@ import devicesRouter from './routes/devices.js';
 import geoLocationsRouter from './routes/geoLocations.js';
 import { startOverstayMonitor } from './services/overstayMonitor.js';
 import { startIdleMonitor } from './services/idleMonitor.js';
-import { migrateProjectsPermissionsFromDepartments } from './services/projectPermissionMigration.js';
+import { migrateProjectsPermissionsFromDepartments, migrateProjectSubpagePermissions } from './services/projectPermissionMigration.js';
 import vehicleTypesRouter from './routes/vehicleTypes.js';
 import vehicleCategoriesRouter from './routes/vehicleCategories.js';
 import vehiclesRouter from './routes/vehicles.js';
@@ -267,6 +267,17 @@ async function runBackgroundBootstrap() {
     }
   } catch (err) {
     console.warn('Project permission migration skipped:', err.message);
+  }
+
+  try {
+    const projectSubpageMigration = await migrateProjectSubpagePermissions();
+    if (projectSubpageMigration.migrated > 0) {
+      console.log(
+        `Copied Project Management access onto ${projectSubpageMigration.migrated} role(s) for Maintenance, Photo Capture, and Reports`
+      );
+    }
+  } catch (err) {
+    console.warn('Project subpage permission migration skipped:', err.message);
   }
 
   try {

@@ -13,6 +13,46 @@ import VehicleCategory from '../models/VehicleCategory.js';
 
 const router = Router();
 
+/**
+ * Generate a small number of OCR correction variants for Vehicle Master matching.
+ * Only applies controlled substitutions at positions where OCR commonly confuses characters.
+ * Returns max ~10 variants to avoid false matches.
+ */
+function generateLightOcrVariants(plate) {
+  if (!plate || plate.length < 6) return [];
+
+  const upper = plate.toUpperCase().replace(/\s+/g, '');
+  const SUBS = { 'O': '0', '0': 'O', 'S': '5', '5': 'S', 'I': '1', '1': 'I', 'B': '8', '8': 'B', 'Z': '2', '2': 'Z', 'G': '6', '6': 'G' };
+
+  const variants = new Set();
+
+  // Single-character substitutions
+  for (let i = 0; i < upper.length; i++) {
+    const sub = SUBS[upper[i]];
+    if (sub) {
+      const v = upper.slice(0, i) + sub + upper.slice(i + 1);
+      variants.add(v);
+    }
+  }
+
+  // Two-character substitutions (only for adjacent or nearby positions)
+  const chars = upper.split('');
+  for (let i = 0; i < chars.length; i++) {
+    const sub1 = SUBS[chars[i]];
+    if (!sub1) continue;
+    for (let j = i + 1; j < Math.min(i + 4, chars.length); j++) {
+      const sub2 = SUBS[chars[j]];
+      if (!sub2) continue;
+      const v = upper.slice(0, i) + sub1 + upper.slice(i + 1, j) + sub2 + upper.slice(j + 1);
+      variants.add(v);
+    }
+  }
+
+  variants.delete(upper);
+  // Cap at 15 variants
+  return [...variants].slice(0, 15);
+}
+
 const upload = createMulter('vehicles', (req, file) => {
   return `${Date.now()}-${Math.round(Math.random() * 1e9)}-${file.originalname}`;
 });
@@ -49,8 +89,9 @@ router.post(
         return res.status(400).json({ error: 'Both Vehicle Photo (front) and Number Plate Photo (frontPlate) are required' });
       }
 
+      // Send both front and frontPlate to AI so it can try the best image
       const imagePayload = {};
-      for (const key of ['frontPlate']) {
+      for (const key of ['frontPlate', 'front']) {
         const f = files[key] ? files[key][0] : null;
         if (!f) continue;
         let buffer;
@@ -67,28 +108,57 @@ router.post(
         console.log('[POST /analyze] 5. AI response received.', aiResult);
       } catch (err) {
         console.error('[POST /analyze] AI Error:', err.stack);
-        console.log('[POST /analyze] 8. res.status(500).json(...) executed (AI Error)');
         return res.status(500).json({ error: 'AI processing failed', details: err.message });
       }
 
       const plateNumber = aiResult.normalizedPlateNumber || aiResult.frontPlateNumber;
       if (!plateNumber) {
-        console.log('[POST /analyze] 8. res.status(400).json(...) executed (Plate missing)');
         return res.status(400).json({ error: 'Plate number could not be detected' });
       }
 
+      const ocrConfidence = aiResult.confidence?.ocr || 0;
       const normalizedPlateNumber = plateNumber.toLowerCase().replace(/\s+/g, '');
-      const vehicle = await Vehicle.findOne({ normalizedPlateNumber }).populate('typeId');
-      const pendingReg = await VehicleRegistration.findOne({ normalizedPlateNumber, status: 'Pending' });
 
-      console.log('[POST /analyze] 6. Vehicle Master lookup completed.', vehicle ? 'Found' : (pendingReg ? 'Found Pending' : 'Not found'));
+      // Step 1: Exact Vehicle Master lookup
+      let vehicle = await Vehicle.findOne({ normalizedPlateNumber }).populate('typeId');
+      let pendingReg = await VehicleRegistration.findOne({ normalizedPlateNumber, status: 'Pending' });
+      let matchType = vehicle ? 'exact' : (pendingReg ? 'exact_pending' : null);
+      let matchedPlate = vehicle?.plateNumber || pendingReg?.plateNumber || null;
 
-      console.log('[POST /analyze] 7. Preparing response.');
+      // Step 2: If no exact match, try light OCR variant correction
+      if (!vehicle && !pendingReg) {
+        const variants = generateLightOcrVariants(plateNumber);
+        if (variants.length > 0) {
+          const normalizedVariants = variants.map(v => v.toLowerCase().replace(/\s+/g, ''));
+          const variantVehicle = await Vehicle.findOne({ normalizedPlateNumber: { $in: normalizedVariants } }).populate('typeId');
+          if (variantVehicle) {
+            vehicle = variantVehicle;
+            matchType = 'variant';
+            matchedPlate = variantVehicle.plateNumber;
+          } else {
+            const variantPending = await VehicleRegistration.findOne({ normalizedPlateNumber: { $in: normalizedVariants }, status: 'Pending' });
+            if (variantPending) {
+              pendingReg = variantPending;
+              matchType = 'variant_pending';
+              matchedPlate = variantPending.plateNumber;
+            }
+          }
+        }
+      }
+
+      console.log('[POST /analyze] 6. Lookup completed.', matchType || 'no_match');
+
+      // Determine confidence level for frontend
+      const needsVerification = ocrConfidence < 85 || aiResult.validationStatus !== 'success';
+
       if (vehicle) {
-        console.log('[POST /analyze] 8. res.json(...) executed (Found in Master)');
         return res.json({
           foundInMaster: true,
-          message: 'Vehicle Already Registered',
+          message: matchType === 'variant' ? 'Possible Vehicle Match (OCR variant)' : 'Vehicle Already Registered',
+          matchType,
+          matchedPlate,
+          plateNumber,
+          needsVerification: matchType === 'variant',
           vehicle: {
             plateNumber: vehicle.plateNumber,
             type: vehicle.typeId ? vehicle.typeId.name : 'Unknown',
@@ -101,10 +171,13 @@ router.post(
       }
 
       if (pendingReg) {
-        console.log('[POST /analyze] 8. res.json(...) executed (Found Pending)');
         return res.json({
-          foundInMaster: true, // Reuse foundInMaster to block frontend submission
-          message: 'Registration Already Pending',
+          foundInMaster: true,
+          message: matchType === 'variant_pending' ? 'Possible Pending Match (OCR variant)' : 'Registration Already Pending',
+          matchType,
+          matchedPlate,
+          plateNumber,
+          needsVerification: matchType === 'variant_pending',
           vehicle: {
             plateNumber: pendingReg.plateNumber,
             type: 'Pending Approval',
@@ -116,10 +189,10 @@ router.post(
         });
       }
 
-      console.log('[POST /analyze] 8. res.json(...) executed (Not in Master)');
       return res.json({
         foundInMaster: false,
         plateNumber,
+        needsVerification,
         ocrDetails: aiResult
       });
     } catch (err) {
@@ -163,30 +236,30 @@ router.post(
       catch(e) { parsedData = {}; }
     }
 
-    // Prepare ONLY frontPlate image for AI Server
-    const imagePayload = {};
-    for (const key of ['frontPlate']) {
-      if (!files[key] || !files[key][0]) continue;
-      const f = files[key][0];
-      let buffer;
-      if (f.buffer) {
-        buffer = f.buffer;
-      } else if (f.path) {
-        buffer = await fs.promises.readFile(f.path);
-      } else {
-        return res.status(500).json({ error: `Failed to read uploaded file data for ${key}` });
+    // Skip duplicate OCR: use the plate number provided by the frontend (from /analyze or user edit).
+    // Only call AI if no plate number was provided at all.
+    let aiResult = null;
+    if (!manualPlateNumber) {
+      const imagePayload = {};
+      for (const key of ['frontPlate']) {
+        if (!files[key] || !files[key][0]) continue;
+        const f = files[key][0];
+        let buffer;
+        if (f.buffer) buffer = f.buffer;
+        else if (f.path) buffer = await fs.promises.readFile(f.path);
+        else continue;
+        imagePayload[key] = { buffer, filename: f.originalname, mimeType: f.mimetype };
       }
-      imagePayload[key] = { buffer, filename: f.originalname, mimeType: f.mimetype };
+
+      if (Object.keys(imagePayload).length > 0) {
+        try {
+          aiResult = await analyzeVehicle(imagePayload);
+        } catch (err) {
+          return res.status(500).json({ error: 'AI processing failed', details: err.message });
+        }
+      }
     }
 
-    let aiResult;
-    try {
-      aiResult = await analyzeVehicle(imagePayload);
-    } catch (err) {
-      return res.status(500).json({ error: 'AI processing failed', details: err.message });
-    }
-
-    // AI classification can populate nullable fields in future, but we use the provided typeId
     const typeId = parsedData.typeId;
     if (!typeId) {
       return res.status(400).json({ error: 'Vehicle Type (typeId) is required' });
@@ -201,8 +274,8 @@ router.post(
     // Ensure department is null if not provided
     parsedData.departmentId = parsedData.departmentId || null;
 
-    // Determine plate number
-    const plateNumber = manualPlateNumber || aiResult.normalizedPlateNumber || aiResult.frontPlateNumber;
+    // Determine plate number (prefer user-provided, fallback to AI)
+    const plateNumber = manualPlateNumber || (aiResult && (aiResult.normalizedPlateNumber || aiResult.frontPlateNumber));
     if (!plateNumber) {
       return res.status(400).json({ error: 'Plate number is required. AI returned null and no manual plate number was provided.' });
     }

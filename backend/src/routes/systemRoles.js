@@ -16,6 +16,10 @@ function slugify(name) {
     .replace(/^-+|-+$/g, '');
 }
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function normalizePermissions(input) {
   const base = emptyPermissions();
   if (!input || typeof input !== 'object') return base;
@@ -23,12 +27,21 @@ function normalizePermissions(input) {
   for (const module of PERMISSION_MODULE_LIST) {
     const value = input[module];
     if (!value) continue;
+    const write = Boolean(value.write);
     base[module] = {
-      read: Boolean(value.read),
-      write: Boolean(value.write),
+      write,
+      read: write || Boolean(value.read),
     };
   }
   return base;
+}
+
+async function findRoleByName(name, excludeId) {
+  const query = {
+    name: { $regex: `^${escapeRegex(name.trim())}$`, $options: 'i' },
+  };
+  if (excludeId) query._id = { $ne: excludeId };
+  return SystemRole.findOne(query);
 }
 
 router.get(
@@ -68,17 +81,32 @@ router.post(
   requirePermission('system_roles', 'write'),
   asyncHandler(async (req, res) => {
     const { name, description } = req.body;
-    if (!name?.trim()) return res.status(400).json({ error: 'Role name is required' });
+    const trimmedName = name?.trim();
+    if (!trimmedName) return res.status(400).json({ error: 'Role name is required' });
+    if (trimmedName.length < 2) return res.status(400).json({ error: 'Role name must be at least 2 characters' });
+    if (trimmedName.length > 60) return res.status(400).json({ error: 'Role name must be 60 characters or fewer' });
 
-    const slug = req.body.slug || slugify(name);
-    const role = await SystemRole.create({
-      name: name.trim(),
-      slug,
-      description: description?.trim() || '',
-      permissions: normalizePermissions(req.body.permissions),
-    });
+    const duplicate = await findRoleByName(trimmedName);
+    if (duplicate) return res.status(400).json({ error: 'A role with this name already exists' });
 
-    res.status(201).json({ ...role.toObject(), permissions: role.toPermissionObject() });
+    const slug = req.body.slug || slugify(trimmedName);
+    const slugTaken = await SystemRole.findOne({ slug });
+    if (slugTaken) return res.status(400).json({ error: 'A role with this name already exists' });
+
+    try {
+      const role = await SystemRole.create({
+        name: trimmedName,
+        slug,
+        description: description?.trim() || '',
+        permissions: normalizePermissions(req.body.permissions),
+      });
+      res.status(201).json({ ...role.toObject(), permissions: role.toPermissionObject() });
+    } catch (err) {
+      if (err?.code === 11000) {
+        return res.status(400).json({ error: 'A role with this name already exists' });
+      }
+      throw err;
+    }
   })
 );
 
@@ -102,6 +130,12 @@ router.put(
   requirePermission('system_roles', 'write'),
   asyncHandler(async (req, res) => {
     const { name, description, isActive } = req.body;
+    if (name !== undefined) {
+      const trimmedName = name.trim();
+      if (!trimmedName) return res.status(400).json({ error: 'Role name is required' });
+      const duplicate = await findRoleByName(trimmedName, req.params.id);
+      if (duplicate) return res.status(400).json({ error: 'A role with this name already exists' });
+    }
     const role = await SystemRole.findByIdAndUpdate(
       req.params.id,
       {

@@ -26,7 +26,7 @@ async function labourReportHandler(req, res) {
 
 router.get(
   '/projects',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
@@ -71,7 +71,7 @@ router.get(
 
 router.get(
   '/overview',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     if (!req.query.projectId) return res.status(400).json({ error: 'projectId is required' });
     try {
@@ -84,7 +84,7 @@ router.get(
 
 router.get(
   '/attendance',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     if (!req.query.projectId) return res.status(400).json({ error: 'projectId is required' });
     try {
@@ -97,7 +97,7 @@ router.get(
 
 router.get(
   '/history',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     if (!req.query.projectId) return res.status(400).json({ error: 'projectId is required' });
     try {
@@ -110,7 +110,7 @@ router.get(
 
 router.get(
   '/history/:labourId',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     if (!req.query.projectId) return res.status(400).json({ error: 'projectId is required' });
     try {
@@ -125,13 +125,13 @@ router.get(
 
 router.get(
   '/labour/:assignmentId',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(labourReportHandler)
 );
 
 router.get(
   '/labour/:assignmentId/excel',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     try {
       const data = await getProjectReportLabourByAssignment(req.params.assignmentId, {
@@ -151,7 +151,7 @@ router.get(
 
 router.get(
   '/labour/:assignmentId/pdf',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     try {
       const data = await getProjectReportLabourByAssignment(req.params.assignmentId, {
@@ -171,7 +171,7 @@ router.get(
 
 router.get(
   '/faces',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     if (!req.query.projectId) return res.status(400).json({ error: 'projectId is required' });
     try {
@@ -184,7 +184,7 @@ router.get(
 
 router.get(
   '/analytics',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     if (!req.query.projectId) return res.status(400).json({ error: 'projectId is required' });
     try {
@@ -197,7 +197,7 @@ router.get(
 
 router.get(
   '/filters',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     if (!req.query.projectId) return res.status(400).json({ error: 'projectId is required' });
     try {
@@ -210,7 +210,7 @@ router.get(
 
 router.get(
   '/export',
-  requirePermission('projects', 'read'),
+  requirePermission('project_reports', 'read'),
   asyncHandler(async (req, res) => {
     if (!req.query.projectId) return res.status(400).json({ error: 'projectId is required' });
     const type = req.query.type || 'summary';

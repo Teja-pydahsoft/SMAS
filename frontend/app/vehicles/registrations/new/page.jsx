@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import PageShell from '@/components/PageShell';
 import PageTabs from '@/components/PageTabs';
@@ -46,6 +46,8 @@ export default function NewVehicleRegistrationPage() {
   // Existing Vehicle State
   const [foundInMaster, setFoundInMaster] = useState(false);
   const [existingVehicle, setExistingVehicle] = useState(null);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [matchType, setMatchType] = useState(null);
   
   // Lookups
   const [types, setTypes] = useState([]);
@@ -101,8 +103,9 @@ export default function NewVehicleRegistrationPage() {
       }
       
       const allCaptured = Object.values(newFiles).every(f => f !== null);
-      if (allCaptured && aiStatus === 'idle') {
-        analyzeRegistration(newFiles);
+      if (allCaptured) {
+        // Defer to avoid double-trigger from stale closure
+        setTimeout(() => analyzeRegistration(newFiles), 0);
       }
       
       return newFiles;
@@ -117,7 +120,11 @@ export default function NewVehicleRegistrationPage() {
     }
   };
 
+  const analyzingRef = useRef(false);
+
   const analyzeRegistration = async (currentFiles) => {
+    if (analyzingRef.current) return;
+    analyzingRef.current = true;
     setAiStatus('processing');
     setError(null);
     
@@ -128,8 +135,12 @@ export default function NewVehicleRegistrationPage() {
           formPayload.append(key, file, `${key}.jpg`);
         }
       });
+
+      // Use direct backend URL to avoid Next.js proxy timeout on long AI calls
+      const backendUrl = (typeof window !== 'undefined' && window.location?.hostname === 'localhost')
+        ? 'http://localhost:3001' : '';
       
-      const res = await fetch('/api/vehicles/registrations/analyze', {
+      const res = await fetch(`${backendUrl}/api/vehicles/registrations/analyze`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('smas_token') || ''}`
@@ -141,7 +152,14 @@ export default function NewVehicleRegistrationPage() {
       if (!res.ok) throw new Error(data.error || 'Analysis failed');
       
       setAiResult(data.ocrDetails);
-      setFormData(prev => ({ ...prev, plateNumber: data.plateNumber }));
+      setNeedsVerification(data.needsVerification || false);
+      setMatchType(data.matchType || null);
+
+      // Use matchedPlate if variant match, otherwise detected plate
+      const detectedPlate = data.matchedPlate || data.plateNumber;
+      if (detectedPlate) {
+        setFormData(prev => ({ ...prev, plateNumber: detectedPlate }));
+      }
       
       if (data.foundInMaster) {
         setFoundInMaster(true);
@@ -153,7 +171,9 @@ export default function NewVehicleRegistrationPage() {
       setAiStatus('completed');
     } catch (err) {
       setError(err.message);
-      setAiStatus('idle'); // Allow retry
+      setAiStatus('idle');
+    } finally {
+      analyzingRef.current = false;
     }
   };
 
@@ -462,23 +482,42 @@ export default function NewVehicleRegistrationPage() {
                 </div>
               )}
               {aiStatus === 'completed' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Detected Plate</span>
-                    <div style={{ fontSize: '1rem', color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                      {formData.plateNumber || 'Unknown'}
-                    </div>
-                    <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Confidence</span>
-                    <div style={{ fontSize: '1.25rem', color: aiResult?.confidence?.ocr > 80 ? 'var(--success)' : 'var(--warning)', fontWeight: 'bold' }}>
-                      {aiResult?.confidence?.ocr || 0}%
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Master Lookup</span>
-                    <div style={{ marginTop: '0.25rem' }}>
-                      <span className={`admin-badge admin-badge--${foundInMaster ? 'warning' : 'success'}`}>
-                        {foundInMaster ? 'Already Registered' : 'New Vehicle'}
+                <div>
+                  {needsVerification && (
+                    <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                      <span style={{ fontSize: '0.8125rem', color: '#92400e', fontWeight: '600' }}>
+                        Please verify the detected registration number before submitting.
                       </span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Detected Plate</span>
+                      <div style={{ fontSize: '1rem', color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                        {formData.plateNumber || 'Unknown'}
+                      </div>
+                      <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Confidence</span>
+                      <div style={{ fontSize: '1.25rem', color: (aiResult?.confidence?.ocr || 0) > 80 ? 'var(--success)' : (aiResult?.confidence?.ocr || 0) > 50 ? 'var(--warning)' : 'var(--danger)', fontWeight: 'bold' }}>
+                        {Math.round(aiResult?.confidence?.ocr || 0)}%
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Master Lookup</span>
+                      <div style={{ marginTop: '0.25rem' }}>
+                        {matchType === 'variant' ? (
+                          <span className="admin-badge admin-badge--warning">Possible Match</span>
+                        ) : foundInMaster ? (
+                          <span className="admin-badge admin-badge--warning">Already Registered</span>
+                        ) : (
+                          <span className="admin-badge admin-badge--success">New Vehicle</span>
+                        )}
+                      </div>
+                      {matchType === 'variant' && existingVehicle && (
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          Matched: <strong>{existingVehicle.plateNumber}</strong>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

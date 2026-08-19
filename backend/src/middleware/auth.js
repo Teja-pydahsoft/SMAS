@@ -167,6 +167,15 @@ export function requirePermission(module, action) {
   };
 }
 
+export function requireAnyPermission(modules, action) {
+  const list = Array.isArray(modules) ? modules : [modules];
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+    if (list.some((module) => userHasPermission(req.user, module, action))) return next();
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  };
+}
+
 function toIdString(value) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'object' && value._id) return value._id.toString();

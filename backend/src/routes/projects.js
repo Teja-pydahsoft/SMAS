@@ -5,7 +5,7 @@ import ProjectAssignment from '../models/ProjectAssignment.js';
 import Department from '../models/Department.js';
 import Division from '../models/Division.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { requirePermission } from '../middleware/auth.js';
+import { requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import {
   PROJECT_TYPES,
   PROJECT_TYPE_LIST,
@@ -36,6 +36,9 @@ import ProjectDailyPhoto from '../models/ProjectDailyPhoto.js';
 import fs from 'fs';
 
 const router = Router();
+
+const ANY_PROJECT_PAGE = ['projects', 'project_maintenance', 'project_photo_capture', 'project_reports'];
+const MAINTENANCE_OR_PHOTO = ['project_maintenance', 'project_photo_capture'];
 
 const projectPhotoUpload = createMulter('projects', (req, file) => {
   const stamp = Date.now();
@@ -172,7 +175,7 @@ const populateProject = [
 
 router.get(
   '/',
-  requirePermission('projects', 'read'),
+  requireAnyPermission(ANY_PROJECT_PAGE, 'read'),
   asyncHandler(async (req, res) => {
     const filter = {};
     if (req.query.status) {
@@ -262,7 +265,7 @@ router.post(
 
 router.get(
   '/:id',
-  requirePermission('projects', 'read'),
+  requireAnyPermission(ANY_PROJECT_PAGE, 'read'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id).populate(populateProject);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -347,7 +350,7 @@ router.delete(
 
 router.get(
   '/:id/eligible-labourers',
-  requirePermission('projects', 'read'),
+  requirePermission('project_maintenance', 'read'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -369,7 +372,7 @@ router.get(
 
 router.get(
   '/:id/assignments',
-  requirePermission('projects', 'read'),
+  requireAnyPermission(MAINTENANCE_OR_PHOTO, 'read'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -385,7 +388,7 @@ router.get(
 
 router.get(
   '/:id/activity',
-  requirePermission('projects', 'read'),
+  requirePermission('project_maintenance', 'read'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id).populate('createdBy', 'displayName username');
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -402,7 +405,7 @@ router.get(
 
 router.post(
   '/:id/assignments',
-  requirePermission('projects', 'write'),
+  requirePermission('project_maintenance', 'write'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -470,7 +473,7 @@ router.post(
 
 router.delete(
   '/:id/assignments/:labourId',
-  requirePermission('projects', 'write'),
+  requirePermission('project_maintenance', 'write'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -495,7 +498,7 @@ router.delete(
 
 router.post(
   '/:id/assignments/remove',
-  requirePermission('projects', 'write'),
+  requirePermission('project_maintenance', 'write'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -527,7 +530,7 @@ router.post(
 
 router.get(
   '/:id/photo-days',
-  requirePermission('projects', 'read'),
+  requireAnyPermission(MAINTENANCE_OR_PHOTO, 'read'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -541,7 +544,7 @@ router.get(
 
 router.get(
   '/:id/photos',
-  requirePermission('projects', 'read'),
+  requireAnyPermission(MAINTENANCE_OR_PHOTO, 'read'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -563,7 +566,7 @@ router.get(
 
 router.post(
   '/:id/photos',
-  requirePermission('projects', 'write'),
+  requireAnyPermission(MAINTENANCE_OR_PHOTO, 'write'),
   projectPhotoUpload.array('photos', 12),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id);
@@ -639,7 +642,7 @@ router.post(
 
 router.delete(
   '/:id/photos/:photoId',
-  requirePermission('projects', 'write'),
+  requireAnyPermission(MAINTENANCE_OR_PHOTO, 'write'),
   asyncHandler(async (req, res) => {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });

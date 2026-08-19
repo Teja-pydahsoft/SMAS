@@ -986,6 +986,17 @@
   transform: translateZ(0);
 }
 
+.reg-details-modal--role {
+  width: min(920px, 96vw);
+}
+
+.reg-details-modal--role form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
 .reg-details-modal--flow .reg-details-modal__body {
   flex: 1;
   min-height: 0;

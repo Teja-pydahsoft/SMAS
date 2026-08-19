@@ -20,8 +20,8 @@ function initials(name) {
 
 export default function ProjectPhotoCapturePage() {
   const { can } = useAuth();
-  const canWrite = can('projects', 'write');
-  const canRead = can('projects', 'read');
+  const canWrite = can('project_photo_capture', 'write');
+  const canRead = can('project_photo_capture', 'read');
 
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState('');

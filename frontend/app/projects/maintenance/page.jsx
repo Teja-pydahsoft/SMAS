@@ -86,7 +86,7 @@ export default function ProjectListPage() {
 
 function ProjectListContent() {
   const { can } = useAuth();
-  const canRead = can('projects', 'read');
+  const canRead = can('project_maintenance', 'read');
   const router = useRouter();
   const searchParams = useSearchParams();
 

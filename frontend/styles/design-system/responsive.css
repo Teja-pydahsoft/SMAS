@@ -543,7 +543,7 @@
   .pass-verify-entry__time { width: 100%; margin-left: 0; }
 
   /* Permissions */
-  .permission-matrix { min-width: 280px; }
+  .permission-matrix { min-width: 0; }
 
   /* Misc */
   .empty-state { padding: 1.5rem var(--space-4); font-size: var(--text-13); }

@@ -4,7 +4,7 @@ export const APP_NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: 'dashboard', module: null, section: 'GENERAL' },
   { path: '/access-scope', label: 'Gate Access', icon: 'gateAccess', module: 'gate', gateOnly: true, section: 'GENERAL' },
   { path: '/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate', section: 'GENERAL' },
-  { path: '/equipment/movements', label: 'Vehicle Entry & Exit', icon: 'entryExit', module: null, section: 'GENERAL' },
+  { path: '/equipment/movements', label: 'Vehicle Entry & Exit', icon: 'entryExit', module: 'equipment_movements', section: 'GENERAL' },
   { path: '/activity', label: 'Activity', icon: 'cameras', module: 'activity', section: 'GENERAL' },
   { path: '/roles', label: 'Roles', icon: 'roles', module: 'registration_roles', section: 'MANAGEMENT' },
   { path: '/registrations', label: 'Registrations', icon: 'registrations', module: 'registrations', section: 'MANAGEMENT' },
@@ -18,6 +18,7 @@ export const APP_NAV_ITEMS = [
     children: [
       { path: '/organization?tab=divisions', label: 'Divisions', module: 'divisions' },
       { path: '/organization?tab=departments', label: 'Departments', module: 'departments' },
+      { path: '/shifts/manage', label: 'Shifts', module: 'shifts' },
     ],
   },
   {
@@ -27,12 +28,12 @@ export const APP_NAV_ITEMS = [
     module: null,
     section: 'MANAGEMENT',
     children: [
-      { path: '/vehicles/dashboard', label: 'Dashboard', icon: 'dashboard', module: null },
-      { path: '/vehicles/registrations?status=Pending', label: 'Registrations', icon: 'registrations', module: null },
-      { path: '/vehicles', label: 'Vehicle Master', icon: 'companies', module: null },
+      { path: '/vehicles/dashboard', label: 'Dashboard', icon: 'dashboard', module: 'vehicles' },
+      { path: '/vehicles/registrations?status=Pending', label: 'Registrations', icon: 'registrations', module: 'vehicle_registrations' },
+      { path: '/vehicles', label: 'Vehicle Master', icon: 'companies', module: 'vehicles' },
       { path: '/registrations?roleSlug=driver', label: 'Driver Registration', icon: 'registrations', module: 'registrations' },
-      { path: '/equipment/movements', label: 'Entry & Exit', icon: 'entryExit', module: null },
-      { path: '/vehicles/reports', label: 'Reports', icon: 'reports', module: null },
+      { path: '/equipment/movements', label: 'Entry & Exit', icon: 'entryExit', module: 'equipment_movements' },
+      { path: '/vehicles/reports', label: 'Reports', icon: 'reports', module: 'vehicle_reports' },
     ],
   },
   {
@@ -43,9 +44,9 @@ export const APP_NAV_ITEMS = [
     section: 'MANAGEMENT',
     children: [
       { path: '/projects/create', label: 'Project Portfolio', module: 'projects' },
-      { path: '/projects/maintenance', label: 'Project Maintenance', module: 'projects' },
-      { path: '/projects/photo-capture', label: 'Project Photo Capture', module: 'projects' },
-      { path: '/projects/reports', label: 'Project Reports', module: 'projects' },
+      { path: '/projects/maintenance', label: 'Project Maintenance', module: 'project_maintenance' },
+      { path: '/projects/photo-capture', label: 'Project Photo Capture', module: 'project_photo_capture' },
+      { path: '/projects/reports', label: 'Project Reports', module: 'project_reports' },
     ],
   },
   {
@@ -93,21 +94,74 @@ export const APP_NAV_ITEMS = [
   },
 ];
 
+function permissionKeyForNavItem(item) {
+  return item.module || null;
+}
+
+function navItemToLeaf(item) {
+  const key = permissionKeyForNavItem(item);
+  if (!key) return null;
+  return {
+    key,
+    label: item.label,
+    id: `${item.path}::${item.label}`,
+  };
+}
+
+/** Privilege matrix tree — same names, headers, and order as the sidebar. */
+export function getPrivilegeTree() {
+  const sections = new Map();
+
+  for (const item of APP_NAV_ITEMS) {
+    if (item.gateOnly || item.path === '/') continue;
+
+    const section = item.section || 'OTHER';
+    if (!sections.has(section)) sections.set(section, []);
+
+    if (item.children?.length) {
+      const children = item.children.map(navItemToLeaf).filter(Boolean);
+      if (children.length === 0) continue;
+      sections.get(section).push({
+        title: item.label,
+        items: children,
+      });
+      continue;
+    }
+
+    const leaf = navItemToLeaf(item);
+    if (leaf) sections.get(section).push(leaf);
+  }
+
+  return Array.from(sections.entries()).map(([title, items]) => ({ title, items }));
+}
+
+function canReadModule(can, module) {
+  return !module || can(module, 'read');
+}
+
+function isItemVisible(item, user, can, gateSessionUrl) {
+  if (item.gateOnly) {
+    if (user?.isSuperAdmin) return false;
+    return hasAssignedEntryExitScope(user);
+  }
+  if (item.path === '/entry-exit') {
+    if (user?.isSuperAdmin) return can('gate', 'read');
+    return Boolean(gateSessionUrl);
+  }
+
+  const parentVisible =
+    canReadModule(can, item.module) ||
+    (item.altModule && can(item.altModule, 'read'));
+
+  if (item.children?.length) {
+    return parentVisible || item.children.some((child) => canReadModule(can, child.module));
+  }
+
+  return parentVisible;
+}
+
 export function getNavItemsForUser(user, can, gateSessionUrl) {
-  return APP_NAV_ITEMS.filter((item) => {
-    if (item.gateOnly) {
-      if (user?.isSuperAdmin) return false;
-      return hasAssignedEntryExitScope(user);
-    }
-    if (item.path === '/entry-exit') {
-      if (user?.isSuperAdmin) return can('gate', 'read');
-      return Boolean(gateSessionUrl);
-    }
-    if (!item.module) return true;
-    if (can(item.module, 'read')) return true;
-    if (item.altModule && can(item.altModule, 'read')) return true;
-    return false;
-  });
+  return APP_NAV_ITEMS.filter((item) => isItemVisible(item, user, can, gateSessionUrl));
 }
 
 export function getUserRoleLabel(user) {

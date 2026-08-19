@@ -136,16 +136,18 @@ function assignedShiftWindow(workDate, pass) {
 }
 
 function isWithinAssignedShiftWindow(value, workDate, pass) {
-  const window = assignedShiftWindow(workDate, pass);
-  if (!window) return true;
   const at = new Date(value);
   if (Number.isNaN(at.getTime())) return false;
+  const wallDate = logDateKey(value);
+  const window = assignedShiftWindow(workDate, pass);
 
-  // If log falls inherently within the same calendar day, it belongs here.
-  // We strictly enforce window.end to prevent stealing from the next day.
-  // But enforcing window.start strictly can falsely discard morning logs 
-  // if the shift window's start was derived from a later re-entry.
-  if (logDateKey(value) === workDate) {
+  // No resolvable window: keep calendar-day logs, but never steal the next day.
+  // Returning true here used to merge separate morning shifts into yesterday.
+  if (!window) return wallDate === workDate;
+
+  // Same calendar day: keep the log unless it is after the window closed.
+  // Do not enforce window.start — a later re-entry can shift the derived start.
+  if (wallDate === workDate) {
     return at <= window.end;
   }
 
@@ -153,23 +155,81 @@ function isWithinAssignedShiftWindow(value, workDate, pass) {
 }
 
 /**
+ * True when the previous day's session already gated out before this timestamp.
+ */
+function sessionClosedBefore(pass, at) {
+  const exitRaw = pass?.qrPayload?.gateExitAt;
+  if (!exitRaw || !at) return false;
+  const exitAt = new Date(exitRaw);
+  const time = new Date(at);
+  if (Number.isNaN(exitAt.getTime()) || Number.isNaN(time.getTime())) return false;
+  return exitAt.getTime() < time.getTime();
+}
+
+/** Off-site gap long enough to count as going home, not a mid-shift break. */
+const DISCONNECTED_SESSION_GAP_HOURS = 6;
+
+/**
+ * Checkout already happened and this later scan is a new attendance day.
+ * Day shifts: any later-day return after GATE OUT is a new day.
+ * Overnight clock shifts: only split when they were off site for hours
+ * (a brief post-midnight gate-out/in still belongs to the same night).
+ */
+function disconnectedAfterCheckout(pass, at) {
+  if (!sessionClosedBefore(pass, at)) return false;
+  if (!isOvernightPass(pass)) return true;
+  const exitAt = new Date(pass.qrPayload.gateExitAt);
+  const gapHours = (new Date(at).getTime() - exitAt.getTime()) / (1000 * 60 * 60);
+  return gapHours >= DISCONNECTED_SESSION_GAP_HOURS;
+}
+
+/**
+ * True when this scan belongs to the wall-date's own day pass (a fresh check-in),
+ * rather than leftover time from yesterday's shift.
+ */
+function belongsToNewDayPass(logAt, wallPass, absorbedDates, wallDate) {
+  if (!wallPass || absorbedDates.has(wallDate)) return false;
+  const startRaw = wallPass.qrPayload?.gateEntryAt || wallPass.createdAt;
+  if (startRaw) {
+    const start = new Date(startRaw);
+    if (!Number.isNaN(start.getTime()) && new Date(logAt).getTime() >= start.getTime()) {
+      return true;
+    }
+  }
+  const wallWindow = assignedShiftWindow(wallDate, wallPass);
+  return Boolean(wallWindow && new Date(logAt) >= wallWindow.start);
+}
+
+/**
+ * Next-calendar-day scans attach to yesterday only while that session is still
+ * open (or a true overnight clock-window) and they are not a new day's pass.
+ */
+function shouldRebucketToPrevDate(logAt, prevDate, prevPass, wallPass, absorbedDates, wallDate) {
+  if (!prevPass) return false;
+  if (disconnectedAfterCheckout(prevPass, logAt)) return false;
+  if (belongsToNewDayPass(logAt, wallPass, absorbedDates, wallDate)) return false;
+  return isWithinAssignedShiftWindow(logAt, prevDate, prevPass);
+}
+
+/**
  * Resolve a timestamp to an assigned work-date. The previous date is checked
  * first so post-midnight events stay attached to the prior night shift.
  */
-function assignedWorkDateForTimestamp(value, fallbackDate, shiftPassByDate) {
+function assignedWorkDateForTimestamp(value, fallbackDate, shiftPassByDate, absorbedDates = null) {
   if (!(shiftPassByDate instanceof Map) || shiftPassByDate.size === 0) {
     return fallbackDate;
   }
   const wallDate = logDateKey(value);
   const previousDate = prevDateIst(wallDate);
   const previousPass = shiftPassByDate.get(previousDate);
+  const wallPass = shiftPassByDate.get(wallDate);
+  const absorbed = absorbedDates instanceof Set ? absorbedDates : new Set();
   if (
     previousPass &&
-    isWithinAssignedShiftWindow(value, previousDate, previousPass)
+    shouldRebucketToPrevDate(value, previousDate, previousPass, wallPass, absorbed, wallDate)
   ) {
     return previousDate;
   }
-  const wallPass = shiftPassByDate.get(wallDate);
   if (wallPass && isWithinAssignedShiftWindow(value, wallDate, wallPass)) {
     return wallDate;
   }
@@ -178,7 +238,10 @@ function assignedWorkDateForTimestamp(value, fallbackDate, shiftPassByDate) {
 
 /**
  * Build a map of  logId → workDate  for logs that should be re-attributed to
- * the previous calendar day's shift window (overnight shifts only).
+ * the previous calendar day's shift window (overnight / still-open sessions).
+ *
+ * A completed GATE OUT followed by the next morning's GATE IN is two days,
+ * not a continuous double shift.
  *
  * Single-registration variant used in getRegistrationReport.
  * `passByDate`  — Map<validDate, pass>
@@ -195,21 +258,9 @@ function buildOvernightRebucketMap(logs, passByDate) {
     if (absorbedDates.has(prevDate)) continue;
 
     const prevPass = passByDate.get(prevDate);
-    if (!prevPass) continue;
-
-    if (isWithinAssignedShiftWindow(log.createdAt, prevDate, prevPass)) {
-      const wallPass = passByDate.get(wallDate);
-      let belongsToNewShift = false;
-      if (wallPass && !absorbedDates.has(wallDate)) {
-        const wallWindow = assignedShiftWindow(wallDate, wallPass);
-        if (wallWindow && new Date(log.createdAt) >= wallWindow.start) {
-          belongsToNewShift = true;
-        }
-      }
-
-      if (!belongsToNewShift) {
-        rebucket.set(log._id.toString(), prevDate);
-      }
+    const wallPass = passByDate.get(wallDate);
+    if (shouldRebucketToPrevDate(log.createdAt, prevDate, prevPass, wallPass, absorbedDates, wallDate)) {
+      rebucket.set(log._id.toString(), prevDate);
     }
   }
   return rebucket;
@@ -244,21 +295,9 @@ function buildOvernightRebucketMapByReg(logs, passByRegDate) {
     if (absorbedDates.has(prevDate)) continue;
 
     const prevPass = passMap.get(prevDate);
-    if (!prevPass) continue;
-
-    if (isWithinAssignedShiftWindow(log.createdAt, prevDate, prevPass)) {
-      const wallPass = passMap.get(wallDate);
-      let belongsToNewShift = false;
-      if (wallPass && !absorbedDates.has(wallDate)) {
-        const wallWindow = assignedShiftWindow(wallDate, wallPass);
-        if (wallWindow && new Date(log.createdAt) >= wallWindow.start) {
-          belongsToNewShift = true;
-        }
-      }
-
-      if (!belongsToNewShift) {
-        rebucket.set(log._id.toString(), prevDate);
-      }
+    const wallPass = passMap.get(wallDate);
+    if (shouldRebucketToPrevDate(log.createdAt, prevDate, prevPass, wallPass, absorbedDates, wallDate)) {
+      rebucket.set(log._id.toString(), prevDate);
     }
   }
   return rebucket;
@@ -270,6 +309,7 @@ function buildOvernightRebucketMapByReg(logs, passByRegDate) {
  * gate re-entry that still falls within the previous night's shift window.
  *
  * These dates should be suppressed in the attendance grid (merged into the prior row).
+ * A next-morning pass after yesterday already gated out is a new day, not absorbed.
  *
  * Single-registration variant: `passByDate` — Map<validDate, pass>
  */
@@ -279,12 +319,15 @@ function buildAbsorbedDatesSet(passByDate) {
     const nextDate = nextDateIst(validDate);
     const nextPass = passByDate.get(nextDate);
     if (!nextPass) continue;
+    if (!isOvernightPass(pass)) continue;
+
+    const nextPassCreated = new Date(nextPass.createdAt || nextPass.qrPayload?.gateEntryAt);
+    if (Number.isNaN(nextPassCreated.getTime())) continue;
+    if (disconnectedAfterCheckout(pass, nextPassCreated)) continue;
 
     const window = assignedShiftWindow(validDate, pass);
     if (!window) continue;
 
-    // Check if the next-day pass was created inside this shift's window (re-entry)
-    const nextPassCreated = new Date(nextPass.createdAt);
     if (nextPassCreated >= window.start && nextPassCreated <= window.end) {
       absorbed.add(nextDate);
     }
@@ -537,7 +580,7 @@ function resolveDayAttendance({
     totalHours: shiftTotalHours,
     halfDayMinHours: shiftMeta.halfDayMinHours,
     fullDayMinHours: shiftMeta.fullDayMinHours,
-  });
+  }, { breaks: divisionBreaks.breaks });
   if (shiftStatus) {
     return {
       status: shiftStatus.status,
@@ -1117,6 +1160,7 @@ export async function getRegistrationReport(
   // Populated inside the hasDateRange block; reused for entriesByDate below.
   let overnightRebucketForRange = null;
   let shiftPassByDateForRange = null;
+  let absorbedDatesForRange = null;
   let timelineLogs = logs;
 
   let attendanceRange = null;
@@ -1191,6 +1235,7 @@ export async function getRegistrationReport(
     // Dates whose pass was created by a post-midnight re-entry inside the previous
     // night's shift window — these are merged into the prior overnight row.
     const absorbedDates = buildAbsorbedDatesSet(passByDate);
+    absorbedDatesForRange = absorbedDates;
 
     // Manual admin status overrides for this registration within the range.
     const overrideMap = await loadOverrideMapForRegistration(
@@ -1288,7 +1333,8 @@ export async function getRegistrationReport(
         ? assignedWorkDateForTimestamp(
           sighting.createdAt,
           sighting.sightingDate || logDateKey(sighting.createdAt),
-          shiftPassByDateForRange
+          shiftPassByDateForRange,
+          absorbedDatesForRange
         )
         : sighting.sightingDate || logDateKey(sighting.createdAt);
       if (hasDateRange && (date < dateFrom || date > dateTo)) continue;

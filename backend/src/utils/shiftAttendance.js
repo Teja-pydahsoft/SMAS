@@ -210,8 +210,11 @@ export function computeHourlyPayFactor(activityHours, shiftTotalHours) {
  * - Full-day threshold met → full day pay (1)
  * - Half-day threshold met → half day pay (0.5) as HD
  * - Below half-day but on site → hourly proration vs totalHours
+ *
+ * Double / 1.5 shift only apply when extra hours are continuous. A long
+ * off-site gap (going home overnight) is a new day, not extra shift pay.
  */
-export function resolveShiftDayStatus(activityHours, shift) {
+export function resolveShiftDayStatus(activityHours, shift, options = {}) {
   if (!shift) return null;
 
   const shiftTotalHours = getShiftDurationHours(shift);
@@ -254,24 +257,26 @@ export function resolveShiftDayStatus(activityHours, shift) {
   const payDenominator =
     shiftTotalHours ?? (hasFull ? full : hasHalf ? roundHours(half * 2) : null);
   const hoursLabel = formatActivityHours(hours);
+  const breaks = Array.isArray(options.breaks) ? options.breaks : [];
+  const disconnected = breaks.some((item) => Number(item?.hours) >= 6);
 
   if (hasFull && hours >= full - grace) {
     let factor = 1;
     let label = 'Present (Full Day)';
     let code = 'P';
     
-    // Check for continuous multiple shifts
-    if (shiftTotalHours && hours >= shiftTotalHours + full - grace) {
+    // Extra shift pay requires continuous on-site time, not two separate days.
+    if (!disconnected && shiftTotalHours && hours >= shiftTotalHours + full - grace) {
       // Worked a full extra shift
       factor = 2;
       label = `Double Shift (${hoursLabel}h)`;
       code = 'DS';
-    } else if (shiftTotalHours && hasHalf && hours >= shiftTotalHours + half - grace) {
+    } else if (!disconnected && shiftTotalHours && hasHalf && hours >= shiftTotalHours + half - grace) {
       // Worked an extra half shift
       factor = 1.5;
       label = `1.5 Shift (${hoursLabel}h)`;
       code = '1.5S';
-    } else if (shiftTotalHours && hours > shiftTotalHours + 1 - grace) { // 1 hr minimum for OT
+    } else if (!disconnected && shiftTotalHours && hours > shiftTotalHours + 1 - grace) { // 1 hr minimum for OT
       // Worked extra partial hours
       const extraHours = Math.max(0, hours - shiftTotalHours);
       const otHours = Math.floor(extraHours);

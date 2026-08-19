@@ -150,7 +150,8 @@ function applyPayFrequency(registration, role, payFrequency, customPayDays, payA
 function validateGender(role, gender) {
   const allowed = role?.payFrequencies || [];
   if (!allowed.length) return null;
-  if (!gender) return 'Gender is required';
+  // Optional: gender is no longer collected on the registration form.
+  if (!gender) return null;
   if (!GENDERS.includes(gender)) {
     return `Gender must be one of: ${GENDERS.map((g) => GENDER_LABELS[g] || g).join(', ')}`;
   }
@@ -167,14 +168,99 @@ function applyGender(registration, role, gender) {
   const error = validateGender(role, gender);
   if (error) return error;
 
-  registration.gender = gender;
+  if (gender) registration.gender = gender;
   return null;
+}
+
+function findFormFieldId(form, labels) {
+  const wanted = labels.map((label) => String(label).toLowerCase());
+  for (const field of form?.fields || []) {
+    const label = String(field.label || '').toLowerCase().trim();
+    if (wanted.some((wantedLabel) => label === wantedLabel || label.includes(wantedLabel))) {
+      return field.fieldId;
+    }
+  }
+  return null;
+}
+
+function constructedLabourType(payFrequency, gender) {
+  let payFreqStr = 'Daily';
+  if (payFrequency === 'weekly') payFreqStr = 'Weekly';
+  else if (payFrequency === 'monthly') payFreqStr = 'Monthly';
+  else if (payFrequency === 'custom_days') payFreqStr = 'Custom';
+
+  let genderStr = 'Male';
+  if (gender === 'female') genderStr = 'Female';
+  else if (!gender) genderStr = 'Male';
+
+  return `${payFreqStr} ${genderStr}`;
+}
+
+/**
+ * Labour timings and rates come from Rate Master (Batch + Labour Type + Work Category),
+ * not from a per-person shift picker.
+ */
+async function resolveRateMasterRule(role, form, formData, payFrequency, gender) {
+  try {
+    if (!role?.name || !role.name.match(/labour/i)) return null;
+
+    const fieldsForm = form || await RegistrationForm.findOne({ roleId: role._id, isActive: true });
+    if (!fieldsForm) return null;
+
+    const batchFieldId = findFormFieldId(fieldsForm, ['batch', 'batch name']);
+    const workCategoryFieldId = findFormFieldId(fieldsForm, ['work category']);
+    const labourTypeFieldId = findFormFieldId(fieldsForm, ['labour type', 'labor type']);
+
+    const batchName = String(formData?.[batchFieldId] ?? '').trim();
+    const workCategory = String(formData?.[workCategoryFieldId] ?? '').trim();
+    const labourType = String(
+      (labourTypeFieldId && formData?.[labourTypeFieldId]) ||
+      constructedLabourType(payFrequency, gender)
+    ).trim();
+
+    if (!batchName || !workCategory || !labourType) return null;
+
+    const mostRecentRM = await RateMaster.findOne({
+      status: 'Applied',
+      'rules.batchName': batchName,
+      'rules.labourType': labourType,
+      'rules.workCategory': workCategory
+    }).sort({ appliedAt: -1, createdAt: -1 });
+
+    if (!mostRecentRM) return null;
+
+    const matchedRule = mostRecentRM.rules.find((r) =>
+      r.batchName === batchName &&
+      r.labourType === labourType &&
+      r.workCategory === workCategory
+    );
+    if (!matchedRule) return null;
+
+    return {
+      amount: matchedRule.amount,
+      hours: matchedRule.hours,
+    };
+  } catch (err) {
+    console.error('Error auto-resolving rate master rule:', err);
+    return null;
+  }
+}
+
+function applyRateMasterHours(registration, hours) {
+  if (hours == null || hours === '') return;
+  const value = Number(hours);
+  if (!Number.isFinite(value) || value <= 0) return;
+  registration.workingHours = value;
+  // Rate Master owns timings — do not keep a leftover shift assignment.
+  registration.shiftId = null;
 }
 
 async function validateShiftAssignment(role, shiftId) {
   if (!role?.isShiftBased) return null;
-  if (!shiftId || !mongoose.Types.ObjectId.isValid(shiftId)) {
-    return 'Shift is required for this role';
+  // Shift is optional: working hours are assigned from Rate Master.
+  if (!shiftId) return null;
+  if (!mongoose.Types.ObjectId.isValid(shiftId)) {
+    return 'Selected shift is not available';
   }
   const shift = await Shift.findById(shiftId);
   if (!shift || !shift.isActive) {
@@ -190,6 +276,9 @@ async function validateShiftAssignment(role, shiftId) {
 async function applyShiftAssignment(registration, role, shiftId) {
   if (!role?.isShiftBased) {
     registration.shiftId = null;
+    return null;
+  }
+  if (!shiftId) {
     return null;
   }
   const error = await validateShiftAssignment(role, shiftId);
@@ -570,67 +659,6 @@ router.get(
   })
 );
 
-async function resolveAutoPayAmount(role, formData, payFrequency, gender) {
-  try {
-    if (!role.name || !role.name.match(/labour/i)) return null;
-
-    const form = await RegistrationForm.findOne({ roleId: role._id, isActive: true });
-    if (!form) return null;
-
-    let batchFieldId = null;
-    let workCategoryFieldId = null;
-
-    for (const field of form.fields) {
-      const labelLower = field.label.toLowerCase();
-      if (labelLower === 'batch' || labelLower === 'batch name') {
-        batchFieldId = field.fieldId;
-      }
-      if (labelLower === 'work category') {
-        workCategoryFieldId = field.fieldId;
-      }
-    }
-
-    if (!batchFieldId || !workCategoryFieldId) return null;
-
-    const batchName = formData[batchFieldId];
-    const workCategory = formData[workCategoryFieldId];
-
-    if (!batchName || !workCategory) return null;
-
-    let payFreqStr = 'Daily';
-    if (payFrequency === 'weekly') payFreqStr = 'Weekly';
-    else if (payFrequency === 'monthly') payFreqStr = 'Monthly';
-    else if (payFrequency === 'custom_days') payFreqStr = 'Custom';
-
-    let genderStr = 'Male';
-    if (gender === 'female') genderStr = 'Female';
-    else if (!gender) genderStr = 'Male';
-
-    const labourType = `${payFreqStr} ${genderStr}`;
-
-    const mostRecentRM = await RateMaster.findOne({
-      status: 'Applied',
-      'rules.batchName': batchName,
-      'rules.labourType': labourType,
-      'rules.workCategory': workCategory
-    }).sort({ appliedAt: -1, createdAt: -1 });
-
-    if (mostRecentRM) {
-      const matchedRule = mostRecentRM.rules.find(r =>
-        r.batchName === batchName &&
-        r.labourType === labourType &&
-        r.workCategory === workCategory
-      );
-      if (matchedRule && matchedRule.amount > 0) {
-        return matchedRule.amount;
-      }
-    }
-  } catch (err) {
-    console.error('Error auto-resolving pay amount:', err);
-  }
-  return null;
-}
-
 // Stage 1: Submit dynamic form data
 router.post(
   '/',
@@ -643,10 +671,11 @@ router.post(
     const form = await RegistrationForm.findOne({ roleId, isActive: true });
     if (!form) return res.status(404).json({ error: 'No active registration form for this role' });
 
-    const autoAmount = await resolveAutoPayAmount(role, formData, payFrequency, gender);
-    if (autoAmount != null) {
-      payAmount = autoAmount;
+    const rateRule = await resolveRateMasterRule(role, form, formData, payFrequency, gender);
+    if (rateRule?.amount > 0) {
+      payAmount = rateRule.amount;
     }
+    const rateHours = rateRule?.hours > 0 ? rateRule.hours : null;
 
     const validationError = validateFormData(form, formData, { skipMediaRequired: true });
     if (validationError) return res.status(400).json({ error: validationError });
@@ -673,7 +702,8 @@ router.post(
       roleId,
       formId: form._id,
       formData: formData || {},
-      shiftId: role.isShiftBased ? shiftId : null,
+      shiftId: rateHours ? null : (role.isShiftBased ? shiftId || null : null),
+      workingHours: rateHours,
       payFrequency: role.payFrequencies?.length ? payFrequency : null,
       customPayDays:
         role.payFrequencies?.length && payFrequency === 'custom_days' ? Number(customPayDays) : null,
@@ -707,9 +737,15 @@ router.put(
       return res.status(400).json({ error: `A registration already exists with this ${match.matchedFieldLabel || 'Unique Field'}.` });
     }
 
-    const autoAmount = await resolveAutoPayAmount(role, req.body.formData, req.body.payFrequency, req.body.gender);
-    if (autoAmount != null) {
-      req.body.payAmount = autoAmount;
+    const rateRule = await resolveRateMasterRule(
+      role,
+      form,
+      req.body.formData,
+      req.body.payFrequency,
+      req.body.gender
+    );
+    if (rateRule?.amount > 0) {
+      req.body.payAmount = rateRule.amount;
     }
 
     const payFrequencyError = applyPayFrequency(
@@ -726,6 +762,8 @@ router.put(
 
     const shiftError = await applyShiftAssignment(registration, role, req.body.shiftId);
     if (shiftError) return res.status(400).json({ error: shiftError });
+
+    applyRateMasterHours(registration, rateRule?.hours);
 
     registration.formData = req.body.formData;
 

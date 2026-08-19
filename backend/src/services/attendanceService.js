@@ -753,10 +753,15 @@ export async function createOrRefreshDayPass({
     }
   }
 
+  const rateMasterHours = Number(registration.workingHours);
+  const resolvedHours =
+    shiftSnapshot?.totalHours ??
+    (Number.isFinite(rateMasterHours) && rateMasterHours > 0 ? rateMasterHours : null);
+
   const validUntil = resolveDayPassValidUntil({
     entryAt: now,
     fallbackDate: now,
-    totalHours: shiftSnapshot?.totalHours ?? null,
+    totalHours: resolvedHours,
   });
 
   const existing = await getActiveDayPass(registration._id, divisionId);
@@ -839,7 +844,9 @@ export async function createOrRefreshDayPass({
           halfDayMinHours: shiftSnapshot.halfDayMinHours,
           fullDayMinHours: shiftSnapshot.fullDayMinHours,
         }
-      : {}),
+      : resolvedHours
+        ? { totalHours: resolvedHours }
+        : {}),
   };
 
   // Stamp shift onto the gate entry log when available

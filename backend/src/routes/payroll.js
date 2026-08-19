@@ -85,13 +85,20 @@ function labourerDisplayName(reg, fields = []) {
 
 /**
  * Builds the MongoDB query to find matching registrations based on a rule.
+ * Must match Batch + Labour Type + Work Category, or a new batch would
+ * overwrite every labourer who only shares the same labour type.
  */
 function buildMatchingQuery(rule, batchFieldId, workCategoryFieldId, labourTypeFieldId, roleId) {
-  const query = {
-    roleId,
-    [`formData.${labourTypeFieldId}`]: rule.labourType
-  };
-
+  const query = { roleId };
+  if (labourTypeFieldId && rule.labourType) {
+    query[`formData.${labourTypeFieldId}`] = rule.labourType;
+  }
+  if (batchFieldId && rule.batchName) {
+    query[`formData.${batchFieldId}`] = rule.batchName;
+  }
+  if (workCategoryFieldId && rule.workCategory) {
+    query[`formData.${workCategoryFieldId}`] = rule.workCategory;
+  }
   return query;
 }
 
@@ -238,13 +245,13 @@ router.post('/rate-master/preview', authenticate, requirePermission('payroll_rat
       }
     }
 
-    const { batchFieldId, workCategoryFieldId, roleId } = await resolveLabourFields();
+    const { batchFieldId, workCategoryFieldId, labourTypeFieldId, roleId } = await resolveLabourFields();
     
     const affectedLabourers = [];
     let affectedCount = 0;
 
     for (const rule of rules) {
-      const query = buildMatchingQuery(rule, batchFieldId, workCategoryFieldId, roleId);
+      const query = buildMatchingQuery(rule, batchFieldId, workCategoryFieldId, labourTypeFieldId, roleId);
       const matches = await Registration.find(query).select('registrationCode formData payAmount payFrequency gender workingHours');
       
       for (const match of matches) {

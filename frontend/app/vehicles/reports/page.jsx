@@ -246,34 +246,34 @@ export default function VehicleReportsPage() {
         </div>
 
         {/* FILTER BAR */}
-        <div className="admin-panel" style={{ padding: '0.75rem 1rem', display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+        <div className="admin-panel vehicle-reports-filters">
           
           {activeTab === 'movements' && (
             <>
-              <div style={{ flex: '0 1 140px' }}>
-                <input type="date" className="admin-input" name="from" value={filters.from} onChange={handleFilterChange} style={{ width: '100%', height: '36px' }} title="From Date" />
+              <div className="vehicle-reports-filters__field vehicle-reports-filters__field--date">
+                <input type="date" className="admin-input vehicle-reports-filters__control" name="from" value={filters.from} onChange={handleFilterChange} title="From Date" />
               </div>
-              <div style={{ flex: '0 1 140px' }}>
-                <input type="date" className="admin-input" name="to" value={filters.to} onChange={handleFilterChange} style={{ width: '100%', height: '36px' }} title="To Date" />
+              <div className="vehicle-reports-filters__field vehicle-reports-filters__field--date">
+                <input type="date" className="admin-input vehicle-reports-filters__control" name="to" value={filters.to} onChange={handleFilterChange} title="To Date" />
               </div>
             </>
           )}
 
-          <div style={{ flex: '0 1 200px' }}>
-            <input type="text" className="admin-input" placeholder="Plate Number" name="plateNumber" value={filters.plateNumber} onChange={handleFilterChange} style={{ width: '100%', height: '36px' }} />
+          <div className="vehicle-reports-filters__field vehicle-reports-filters__field--plate">
+            <input type="text" className="admin-input vehicle-reports-filters__control" placeholder="Plate Number" name="plateNumber" value={filters.plateNumber} onChange={handleFilterChange} />
           </div>
           
           {activeTab === 'movements' && (
             <>
-              <div style={{ flex: '0 1 160px' }}>
-                <select className="admin-input" name="direction" value={filters.direction} onChange={handleFilterChange} style={{ width: '100%', height: '36px' }}>
+              <div className="vehicle-reports-filters__field vehicle-reports-filters__field--short">
+                <select className="admin-input vehicle-reports-filters__control" name="direction" value={filters.direction} onChange={handleFilterChange}>
                   <option value="">All Directions</option>
                   <option value="Entry">Entry</option>
                   <option value="Exit">Exit</option>
                 </select>
               </div>
-              <div style={{ flex: '0 1 180px' }}>
-                <select className="admin-input" name="departmentId" value={filters.departmentId} onChange={handleFilterChange} style={{ width: '100%', height: '36px' }}>
+              <div className="vehicle-reports-filters__field">
+                <select className="admin-input vehicle-reports-filters__control" name="departmentId" value={filters.departmentId} onChange={handleFilterChange}>
                   <option value="">All Departments</option>
                   {departments.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
                 </select>
@@ -281,8 +281,8 @@ export default function VehicleReportsPage() {
             </>
           )}
 
-          <div style={{ flex: '0 1 160px' }}>
-            <select className="admin-input" name="status" value={filters.status} onChange={handleFilterChange} style={{ width: '100%', height: '36px' }}>
+          <div className="vehicle-reports-filters__field vehicle-reports-filters__field--short">
+            <select className="admin-input vehicle-reports-filters__control" name="status" value={filters.status} onChange={handleFilterChange}>
               <option value="">All Statuses</option>
               {activeTab === 'movements' ? (
                 <>
@@ -299,9 +299,9 @@ export default function VehicleReportsPage() {
             </select>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
-            <button className="admin-btn admin-btn--primary" onClick={handleApplyFilters} disabled={loading} style={{ height: '36px' }}>Apply</button>
-            <button className="admin-btn admin-btn--ghost" onClick={handleResetFilters} disabled={loading} style={{ height: '36px' }}>Reset</button>
+          <div className="vehicle-reports-filters__actions">
+            <button className="admin-btn admin-btn--primary vehicle-reports-filters__btn" onClick={handleApplyFilters} disabled={loading}>Apply</button>
+            <button className="admin-btn admin-btn--ghost vehicle-reports-filters__btn" onClick={handleResetFilters} disabled={loading}>Reset</button>
           </div>
         </div>
 

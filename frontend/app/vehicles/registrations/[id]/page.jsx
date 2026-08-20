@@ -100,7 +100,17 @@ export default function RegistrationDetailsPage({ params }) {
   }
 
   const isPending = reg.status === 'Pending';
-  const aiData = reg.aiEnrollmentData || {};
+  const aiData = reg.aiEnrollmentData && typeof reg.aiEnrollmentData === 'object' ? reg.aiEnrollmentData : {};
+  const ocrConfidence = Number(aiData.confidence?.ocr || 0);
+  const overallConfidence = Number(aiData.confidence?.overall || ocrConfidence || 0);
+  const detectedPlate = aiData.normalizedPlateNumber || aiData.combinedPlate || aiData.frontPlateNumber || null;
+  const hasAiSnapshot = Boolean(detectedPlate || ocrConfidence || aiData.validationStatus);
+  const validationLabel = aiData.validationStatus === 'success' || aiData.validationStatus === 'Valid'
+    ? 'Valid'
+    : (aiData.validationStatus || (hasAiSnapshot ? 'Unknown' : 'Not captured'));
+  const validationBadge = (aiData.validationStatus === 'success' || aiData.validationStatus === 'Valid')
+    ? 'success'
+    : (hasAiSnapshot ? 'warning' : 'secondary');
   
   const getStatusBadge = (status) => {
     switch (status) {
@@ -174,22 +184,43 @@ export default function RegistrationDetailsPage({ params }) {
               AI Analysis
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {!hasAiSnapshot && (
+                <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '0.75rem 1rem', fontSize: '0.8125rem', color: '#92400e' }}>
+                  OCR snapshot was not saved with this registration. The plate <strong>{reg.plateNumber}</strong> was submitted without stored confidence data.
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
                 <span className="text-muted" style={{ fontWeight: '600' }}>Detected Plate</span>
-                <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold' }}>{aiData.normalizedPlateNumber || aiData.frontPlateNumber || 'Null'}</span>
+                <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold' }}>{detectedPlate || 'Not captured'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                <span className="text-muted" style={{ fontWeight: '600' }}>Submitted Plate</span>
+                <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold' }}>{aiData.submittedPlate || reg.plateNumber}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
                 <span className="text-muted" style={{ fontWeight: '600' }}>OCR Confidence</span>
-                <span style={{ fontWeight: 'bold', color: getConfidenceColor(aiData.confidence?.ocr) }}>
-                  {aiData.confidence?.ocr ? `${Math.round(aiData.confidence.ocr)}%` : 'N/A'}
+                <span style={{ fontWeight: 'bold', color: getConfidenceColor(ocrConfidence) }}>
+                  {hasAiSnapshot ? `${Math.round(ocrConfidence)}%` : 'N/A'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                <span className="text-muted" style={{ fontWeight: '600' }}>Overall Confidence</span>
+                <span style={{ fontWeight: 'bold', color: getConfidenceColor(overallConfidence) }}>
+                  {hasAiSnapshot ? `${Math.round(overallConfidence)}%` : 'N/A'}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
                 <span className="text-muted" style={{ fontWeight: '600' }}>Validation Status</span>
-                <span className={`admin-badge admin-badge--${aiData.validationStatus === 'Valid' ? 'success' : aiData.validationStatus ? 'warning' : 'secondary'}`}>
-                  {aiData.validationStatus || 'Pending'}
+                <span className={`admin-badge admin-badge--${validationBadge}`}>
+                  {validationLabel}
                 </span>
               </div>
+              {aiData.matchType && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                  <span className="text-muted" style={{ fontWeight: '600' }}>Master Match</span>
+                  <span>{aiData.matchType}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
                 <span className="text-muted" style={{ fontWeight: '600' }}>Processing Time</span>
                 <span>{aiData.processingTimeMs ? `${aiData.processingTimeMs}ms` : 'N/A'}</span>
@@ -268,9 +299,9 @@ export default function RegistrationDetailsPage({ params }) {
                 <div className="text-muted" style={{ fontSize: '0.875rem' }}>{new Date(reg.createdAt).toLocaleString()}</div>
               </div>
               <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: '-21px', top: '2px', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: aiData.confidence ? 'var(--primary)' : 'var(--border-color)', border: '2px solid var(--surface-base)' }}></div>
+                <div style={{ position: 'absolute', left: '-21px', top: '2px', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: hasAiSnapshot ? 'var(--primary)' : 'var(--border-color)', border: '2px solid var(--surface-base)' }}></div>
                 <div style={{ fontWeight: 'bold' }}>AI Processing</div>
-                <div className="text-muted" style={{ fontSize: '0.875rem' }}>{aiData.confidence ? 'Completed' : 'Pending'}</div>
+                <div className="text-muted" style={{ fontSize: '0.875rem' }}>{hasAiSnapshot ? 'Completed' : 'Not captured'}</div>
               </div>
               <div style={{ position: 'relative' }}>
                 <div style={{ position: 'absolute', left: '-21px', top: '2px', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: reg.status === 'Approved' ? 'var(--success)' : reg.status === 'Rejected' ? 'var(--danger)' : 'var(--warning)', border: '2px solid var(--surface-base)' }}></div>

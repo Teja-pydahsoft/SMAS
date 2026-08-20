@@ -1,4 +1,5 @@
 import fs from 'fs';
+import mongoose from 'mongoose';
 import { Router } from 'express';
 import VehicleRegistration from '../models/VehicleRegistration.js';
 import Vehicle from '../models/Vehicle.js';
@@ -51,6 +52,38 @@ function generateLightOcrVariants(plate) {
   variants.delete(upper);
   // Cap at 15 variants
   return [...variants].slice(0, 15);
+}
+
+function parseJsonField(value, fallback = null) {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function buildEnrollmentSnapshot({ aiResult, plateNumber, matchType, source }) {
+  const normalized = String(plateNumber || aiResult?.normalizedPlateNumber || aiResult?.combinedPlate || '')
+    .toUpperCase()
+    .replace(/\s+/g, '');
+  const ocr = Number(aiResult?.confidence?.ocr || 0);
+  const overall = Number(aiResult?.confidence?.overall || ocr || 0);
+  return {
+    success: Boolean(aiResult?.success),
+    frontPlateNumber: aiResult?.frontPlateNumber || normalized || null,
+    rearPlateNumber: aiResult?.rearPlateNumber || null,
+    normalizedPlateNumber: aiResult?.normalizedPlateNumber || normalized || null,
+    combinedPlate: aiResult?.combinedPlate || aiResult?.normalizedPlateNumber || normalized || null,
+    plates: Array.isArray(aiResult?.plates) ? aiResult.plates : [],
+    confidence: { ocr, overall },
+    validationStatus: aiResult?.validationStatus || (aiResult ? 'unknown' : 'manual'),
+    processingTimeMs: aiResult?.processingTimeMs ?? null,
+    matchType: matchType || null,
+    source: source || (aiResult ? 'analyze' : 'manual'),
+    submittedPlate: plateNumber || normalized || null,
+  };
 }
 
 const upload = createMulter('vehicles', (req, file) => {
@@ -225,7 +258,8 @@ router.post(
       return res.status(400).json({ error: 'Vehicle Photo (front) and Number Plate Photo (frontPlate) are required' });
     }
 
-    const { formId, data, submittedBy, plateNumber: manualPlateNumber } = req.body;
+    const { formId, data, submittedBy, plateNumber: manualPlateNumber, matchType: clientMatchType } = req.body;
+    const clientOcr = parseJsonField(req.body.ocrDetails);
     if (!formId) {
       return res.status(400).json({ error: 'formId is required' });
     }
@@ -236,10 +270,10 @@ router.post(
       catch(e) { parsedData = {}; }
     }
 
-    // Skip duplicate OCR: use the plate number provided by the frontend (from /analyze or user edit).
-    // Only call AI if no plate number was provided at all.
-    let aiResult = null;
-    if (!manualPlateNumber) {
+    // Skip duplicate OCR: use the plate from /analyze (or user edit) plus the stored OCR snapshot.
+    // Only call AI if no plate number and no analyze snapshot were provided.
+    let aiResult = clientOcr;
+    if (!manualPlateNumber && !aiResult) {
       const imagePayload = {};
       for (const key of ['frontPlate']) {
         if (!files[key] || !files[key][0]) continue;
@@ -318,6 +352,13 @@ router.post(
     console.log('--- Before Mongo Save ---');
     console.log('Photos to save:', photos);
 
+    const aiEnrollmentData = buildEnrollmentSnapshot({
+      aiResult,
+      plateNumber,
+      matchType: clientMatchType || null,
+      source: clientOcr ? 'analyze' : (aiResult ? 'submit_ocr' : 'manual'),
+    });
+
     const registration = await VehicleRegistration.create({
       formId,
       submittedBy: submittedBy || req.user?._id,
@@ -325,7 +366,7 @@ router.post(
       plateNumber,
       normalizedPlateNumber,
       photos,
-      aiEnrollmentData: aiResult
+      aiEnrollmentData
     });
 
     console.log('--- After Mongo Save ---');
@@ -336,7 +377,7 @@ router.post(
     await VehicleActivityLog.create({
       capturedPlate: plateNumber,
       normalizedCapturedPlate: normalizedPlateNumber,
-      confidence: aiResult.confidence?.ocr || 0,
+      confidence: aiEnrollmentData.confidence?.ocr || 0,
       snapshotUrl: photos.frontPlate,
       decision: 'Unknown',
       reason: 'Vehicle Registration initiated',
@@ -359,8 +400,6 @@ router.get(
     res.json(registrations);
   })
 );
-
-import mongoose from 'mongoose';
 
 router.get(
   '/:id',
@@ -431,7 +470,14 @@ router.post(
       expiryDate,
       ownerId: registration._id,
       ownerModel: 'Registration',
-      aiMetadata: registration.aiEnrollmentData, // Preserves original AI response
+      aiMetadata: registration.aiEnrollmentData && Object.keys(registration.aiEnrollmentData).length
+        ? registration.aiEnrollmentData
+        : buildEnrollmentSnapshot({
+            aiResult: null,
+            plateNumber: finalPlateNumber,
+            matchType: null,
+            source: 'manual',
+          }),
       metadata: { photos: registration.photos }
     });
 

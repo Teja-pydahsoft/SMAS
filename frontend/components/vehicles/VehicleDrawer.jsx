@@ -18,6 +18,7 @@ export default function VehicleDrawer({ vehicle, onClose, visits = [] }) {
   if (!vehicle || !mounted) return null;
 
   const aiData = vehicle.aiMetadata || {};
+  const ocrConfidence = Number(aiData.confidence?.ocr || 0);
   const photos = vehicle.metadata?.photos || {};
 
   return createPortal(
@@ -91,7 +92,7 @@ export default function VehicleDrawer({ vehicle, onClose, visits = [] }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div>
                 <div style={{ fontSize: 'var(--text-12)', color: 'var(--text-secondary)' }}>Original OCR Result</div>
-                <div style={{ fontFamily: 'monospace' }}>{aiData.frontPlateNumber || '-'}</div>
+                <div style={{ fontFamily: 'monospace' }}>{aiData.frontPlateNumber || aiData.combinedPlate || '-'}</div>
               </div>
               <div>
                 <div style={{ fontSize: 'var(--text-12)', color: 'var(--text-secondary)' }}>Normalized Plate</div>
@@ -99,11 +100,15 @@ export default function VehicleDrawer({ vehicle, onClose, visits = [] }) {
               </div>
               <div>
                 <div style={{ fontSize: 'var(--text-12)', color: 'var(--text-secondary)' }}>OCR Confidence</div>
-                <div>{aiData.confidence?.ocr || 0}%</div>
+                <div>{aiData.confidence ? `${Math.round(ocrConfidence)}%` : 'N/A'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 'var(--text-12)', color: 'var(--text-secondary)' }}>Overall Confidence</div>
+                <div>{aiData.confidence ? `${Math.round(Number(aiData.confidence.overall || ocrConfidence))}%` : 'N/A'}</div>
               </div>
               <div>
                 <div style={{ fontSize: 'var(--text-12)', color: 'var(--text-secondary)' }}>Validation Status</div>
-                <div>{aiData.validationStatus || 'Pending'}</div>
+                <div>{aiData.validationStatus === 'success' ? 'Valid' : (aiData.validationStatus || 'Not captured')}</div>
               </div>
             </div>
           </section>

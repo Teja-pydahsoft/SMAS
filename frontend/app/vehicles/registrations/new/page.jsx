@@ -207,6 +207,8 @@ export default function NewVehicleRegistrationPage() {
       const formPayload = new FormData();
       formPayload.append('formId', '000000000000000000000000'); 
       formPayload.append('plateNumber', formData.plateNumber);
+      if (matchType) formPayload.append('matchType', matchType);
+      if (aiResult) formPayload.append('ocrDetails', JSON.stringify(aiResult));
       formPayload.append('data', JSON.stringify({
         typeId: formData.typeId,
         categoryId: formData.categoryId,

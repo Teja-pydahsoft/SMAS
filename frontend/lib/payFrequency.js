@@ -64,6 +64,33 @@ export function serializePayFrequencySelection(payFrequency, customPayDays) {
   return payFrequency;
 }
 
+/** Infer pay frequency + gender from Labour Type values like "Weekly Male". */
+export function inferPayFieldsFromLabourType(labourType) {
+  const text = String(labourType || '').trim().toLowerCase();
+  if (!text) return { payFrequency: '', gender: '' };
+
+  let payFrequency = '';
+  if (/\bweekly\b/.test(text)) payFrequency = 'weekly';
+  else if (/\bmonthly\b/.test(text)) payFrequency = 'monthly';
+  else if (/\bdaily\b/.test(text)) payFrequency = 'daily';
+  else if (/\bcustom\b/.test(text)) payFrequency = 'custom_days';
+
+  let gender = '';
+  if (/\bfemale\b/.test(text)) gender = 'female';
+  else if (/\bmale\b/.test(text)) gender = 'male';
+
+  return { payFrequency, gender };
+}
+
+export function labourTypeFromForm(form, formData = {}) {
+  const field = (form?.fields || []).find((f) => {
+    const label = String(f.label || '').toLowerCase().trim();
+    return label === 'labour type' || label === 'labor type' || label.includes('labour type') || label.includes('labor type');
+  });
+  if (!field) return '';
+  return String(formData?.[field.fieldId] ?? '').trim();
+}
+
 /** @deprecated use buildCombinedPayFrequencyOptions */
 export function getPayFrequencyOptions(payFrequencies = []) {
   return payFrequencies

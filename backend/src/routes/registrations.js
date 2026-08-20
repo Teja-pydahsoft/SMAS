@@ -25,7 +25,7 @@ import {
   deleteStoredObject,
   deleteStoredMedia,
 } from '../services/objectStorage.js';
-import { generateRegistrationCode, shouldAssignRegistrationCode, syncPassRegistrationCode, isLegacySamsCode, buildRegistrationCodePrefix } from '../utils/registrationCode.js';
+import { generateRegistrationCode, shouldAssignRegistrationCode, syncPassRegistrationCode, isLegacySamsCode, canBuildRegistrationCodePrefix } from '../utils/registrationCode.js';
 import { getShiftDurationHours } from '../utils/shiftAttendance.js';
 import mongoose from 'mongoose';
 import RateMaster from '../models/RateMaster.js';
@@ -194,6 +194,53 @@ function constructedLabourType(payFrequency, gender) {
   else if (!gender) genderStr = 'Male';
 
   return `${payFreqStr} ${genderStr}`;
+}
+
+/** Infer pay frequency + gender from Labour Type values like "Weekly Male". */
+function parseLabourTypeValue(labourType) {
+  const text = String(labourType || '').trim().toLowerCase();
+  if (!text) return { payFrequency: '', gender: '' };
+
+  let payFrequency = '';
+  if (/\bweekly\b/.test(text)) payFrequency = 'weekly';
+  else if (/\bmonthly\b/.test(text)) payFrequency = 'monthly';
+  else if (/\bdaily\b/.test(text)) payFrequency = 'daily';
+  else if (/\bcustom\b/.test(text)) payFrequency = 'custom_days';
+
+  let gender = '';
+  if (/\bfemale\b/.test(text)) gender = 'female';
+  else if (/\bmale\b/.test(text)) gender = 'male';
+
+  return { payFrequency, gender };
+}
+
+function inferPayFieldsFromForm(form, formData = {}, payFrequency, gender, role) {
+  const labourTypeFieldId = findFormFieldId(form, ['labour type', 'labor type']);
+  const labourType = String(
+    (labourTypeFieldId && formData?.[labourTypeFieldId]) || ''
+  ).trim();
+  const inferred = parseLabourTypeValue(labourType);
+  const allowed = role?.payFrequencies || [];
+  let resolvedPay = payFrequency || inferred.payFrequency || '';
+  if (resolvedPay && allowed.length && !allowed.includes(resolvedPay)) {
+    resolvedPay = '';
+  }
+  let resolvedGender = gender || inferred.gender || '';
+  if (resolvedGender && !GENDERS.includes(resolvedGender)) {
+    resolvedGender = '';
+  }
+  return {
+    payFrequency: resolvedPay,
+    gender: resolvedGender,
+  };
+}
+
+function resolveStoredPayAmount(role, payAmount, rateAmount) {
+  if (!role?.payFrequencies?.length) return null;
+  if (rateAmount > 0) return Number(rateAmount);
+  if (payAmount == null || payAmount === '') return null;
+  const amount = Number(payAmount);
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
 
 /**
@@ -671,11 +718,13 @@ router.post(
     const form = await RegistrationForm.findOne({ roleId, isActive: true });
     if (!form) return res.status(404).json({ error: 'No active registration form for this role' });
 
+    const inferred = inferPayFieldsFromForm(form, formData, payFrequency, gender, role);
+    payFrequency = inferred.payFrequency;
+    gender = inferred.gender;
+
     const rateRule = await resolveRateMasterRule(role, form, formData, payFrequency, gender);
-    if (rateRule?.amount > 0) {
-      payAmount = rateRule.amount;
-    }
     const rateHours = rateRule?.hours > 0 ? rateRule.hours : null;
+    payAmount = resolveStoredPayAmount(role, payAmount, rateRule?.amount);
 
     const validationError = validateFormData(form, formData, { skipMediaRequired: true });
     if (validationError) return res.status(400).json({ error: validationError });
@@ -702,16 +751,26 @@ router.post(
       roleId,
       formId: form._id,
       formData: formData || {},
-      shiftId: rateHours ? null : (role.isShiftBased ? shiftId || null : null),
+      // Working hours come from Rate Master, not a registration shift picker.
+      shiftId: null,
       workingHours: rateHours,
-      payFrequency: role.payFrequencies?.length ? payFrequency : null,
+      payFrequency: role.payFrequencies?.length ? payFrequency || null : null,
       customPayDays:
         role.payFrequencies?.length && payFrequency === 'custom_days' ? Number(customPayDays) : null,
-      payAmount: role.payFrequencies?.length ? Number(payAmount) : null,
-      gender: role.payFrequencies?.length ? gender : null,
+      payAmount,
+      gender: role.payFrequencies?.length ? gender || null : null,
       currentStage: REGISTRATION_STAGES.PHOTO,
       status: REGISTRATION_STATUS.IN_PROGRESS,
     });
+
+    if (shouldAssignRegistrationCode(registration)) {
+      try {
+        registration.registrationCode = await generateRegistrationCode(registration);
+        await registration.save();
+      } catch (err) {
+        console.error('Registration code not assigned at create:', err.message);
+      }
+    }
 
     res.status(201).json(registration);
   })
@@ -737,30 +796,35 @@ router.put(
       return res.status(400).json({ error: `A registration already exists with this ${match.matchedFieldLabel || 'Unique Field'}.` });
     }
 
+    const inferred = inferPayFieldsFromForm(
+      form,
+      req.body.formData,
+      req.body.payFrequency,
+      req.body.gender,
+      role
+    );
     const rateRule = await resolveRateMasterRule(
       role,
       form,
       req.body.formData,
-      req.body.payFrequency,
-      req.body.gender
+      inferred.payFrequency,
+      inferred.gender
     );
-    if (rateRule?.amount > 0) {
-      req.body.payAmount = rateRule.amount;
-    }
+    req.body.payAmount = resolveStoredPayAmount(role, req.body.payAmount, rateRule?.amount);
 
     const payFrequencyError = applyPayFrequency(
       registration,
       role,
-      req.body.payFrequency,
+      inferred.payFrequency,
       req.body.customPayDays,
       req.body.payAmount
     );
     if (payFrequencyError) return res.status(400).json({ error: payFrequencyError });
 
-    const genderError = applyGender(registration, role, req.body.gender);
+    const genderError = applyGender(registration, role, inferred.gender);
     if (genderError) return res.status(400).json({ error: genderError });
 
-    const shiftError = await applyShiftAssignment(registration, role, req.body.shiftId);
+    const shiftError = await applyShiftAssignment(registration, role, null);
     if (shiftError) return res.status(400).json({ error: shiftError });
 
     applyRateMasterHours(registration, rateRule?.hours);
@@ -1013,27 +1077,11 @@ router.post(
     }
 
     if (approved) {
-      const role = await Role.findById(registration.roleId);
-      if (role?.payFrequencies?.length) {
-        if (!registration.payFrequency || !registration.gender) {
+      if (shouldAssignRegistrationCode(registration) || isLegacySamsCode(registration.registrationCode)) {
+        const canBuild = await canBuildRegistrationCodePrefix(registration);
+        if (!canBuild) {
           return res.status(400).json({
-            error: 'Pay frequency and gender are required before verification (codes like DM0001)',
-          });
-        }
-      }
-
-      registration.status = REGISTRATION_STATUS.VERIFIED;
-      registration.currentStage = REGISTRATION_STAGES.COMPLETED;
-      registration.verifiedAt = new Date();
-      registration.verifiedBy = verifiedBy || 'system';
-
-      const needsNewCode =
-        shouldAssignRegistrationCode(registration) || isLegacySamsCode(registration.registrationCode);
-
-      if (needsNewCode) {
-        if (!buildRegistrationCodePrefix(registration.payFrequency, registration.gender)) {
-          return res.status(400).json({
-            error: 'Pay frequency and gender are required to issue a registration code (e.g. DM0001)',
+            error: 'Labour Type (e.g. Daily Male) is required to issue a registration code (e.g. DM0001)',
           });
         }
         try {
@@ -1045,6 +1093,10 @@ router.post(
         }
       }
 
+      registration.status = REGISTRATION_STATUS.VERIFIED;
+      registration.currentStage = REGISTRATION_STAGES.COMPLETED;
+      registration.verifiedAt = new Date();
+      registration.verifiedBy = verifiedBy || 'system';
       registration.rejectionReason = undefined;
     } else {
       registration.status = REGISTRATION_STATUS.REJECTED;

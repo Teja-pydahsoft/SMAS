@@ -1,57 +1,18 @@
 import Registration from '../models/Registration.js';
 import RegistrationForm from '../models/RegistrationForm.js';
-import { GENDERS, REGISTRATION_STATUS } from '../constants/index.js';
+import { REGISTRATION_STATUS } from '../constants/index.js';
 import {
   generateRegistrationCode,
   isLegacySamsCode,
+  extractLabourType,
   buildRegistrationCodePrefix,
   syncPassRegistrationCode,
+  shouldAssignRegistrationCode,
 } from '../utils/registrationCode.js';
 
-function normalizeGender(value) {
-  if (value == null) return null;
-  const raw = String(value).trim().toLowerCase();
-  if (!raw) return null;
-  if (GENDERS.includes(raw)) return raw;
-  if (raw === 'm' || raw.startsWith('male')) return 'male';
-  if (raw === 'f' || raw.startsWith('female')) return 'female';
-  return null;
-}
-
-async function inferGender(registration, formFieldsById) {
-  const fromField = normalizeGender(registration.gender);
-  if (fromField) return fromField;
-
-  const formData = registration.formData || {};
-  const fields = formFieldsById.get(String(registration.formId)) || [];
-
-  for (const field of fields) {
-    const label = String(field.label || '').toLowerCase();
-    const fieldId = String(field.fieldId || '').toLowerCase();
-    if (
-      !label.includes('gender') &&
-      !fieldId.includes('gender') &&
-      fieldId !== 'sex' &&
-      label !== 'sex'
-    ) {
-      continue;
-    }
-    const inferred = normalizeGender(formData[field.fieldId]);
-    if (inferred) return inferred;
-  }
-
-  for (const [key, value] of Object.entries(formData)) {
-    if (!/gender|sex/i.test(key)) continue;
-    const inferred = normalizeGender(value);
-    if (inferred) return inferred;
-  }
-
-  return null;
-}
-
 /**
- * On startup: replace legacy SAMS-… codes with pay-frequency + gender codes
- * (DM0001, DF0001, WM0001, WF0001, …). Also fills gender from form data when possible.
+ * On startup: replace legacy SAMS-… codes and fill missing codes from Labour Type
+ * (DM0001, DF0001, WM0001, WF0001, …).
  */
 export async function migrateLegacyRegistrationCodes() {
   const candidates = await Registration.find({
@@ -79,20 +40,22 @@ export async function migrateLegacyRegistrationCodes() {
   const skippedDetails = [];
 
   for (const reg of candidates) {
-    const gender = await inferGender(reg, formFieldsById);
-    if (gender && reg.gender !== gender) {
-      reg.gender = gender;
+    if (reg.registrationCode && !isLegacySamsCode(reg.registrationCode) && !shouldAssignRegistrationCode(reg)) {
+      continue;
     }
 
-    if (!buildRegistrationCodePrefix(reg.payFrequency, reg.gender)) {
+    const fields = formFieldsById.get(String(reg.formId)) || [];
+    const labourType = extractLabourType(reg, fields);
+    const prefix =
+      buildRegistrationCodePrefix(labourType) ||
+      buildRegistrationCodePrefix(reg.payFrequency, reg.gender);
+
+    if (!prefix) {
       skipped += 1;
       skippedDetails.push({
         id: String(reg._id),
         oldCode: reg.registrationCode || null,
-        missing: [
-          !reg.payFrequency ? 'payFrequency' : null,
-          !reg.gender ? 'gender' : null,
-        ].filter(Boolean),
+        missing: ['labourType'],
       });
       continue;
     }

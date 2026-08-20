@@ -235,12 +235,12 @@ async function runBackgroundBootstrap() {
     const codeMigration = await migrateLegacyRegistrationCodes();
     if (codeMigration.upgraded > 0) {
       console.log(
-        `Upgraded ${codeMigration.upgraded} registration code(s) to pay/gender format (DM0001…)`
+        `Upgraded ${codeMigration.upgraded} registration code(s) from Labour Type (DM0001…)`
       );
     }
     if (codeMigration.skipped > 0) {
       console.warn(
-        `Skipped ${codeMigration.skipped} registration(s) — set pay frequency + gender, then restart to upgrade`
+        `Skipped ${codeMigration.skipped} registration(s) — set Labour Type (e.g. Daily Male), then restart to upgrade`
       );
     }
   } catch (err) {

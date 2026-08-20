@@ -8,15 +8,11 @@ import DynamicFormFields, { validateMediaFields } from '@/components/DynamicForm
 import CameraCapture from '@/components/CameraCapture';
 import PassCard from '@/components/PassCard';
 import {
-  formatPayFrequency,
-  formatGender,
-  GENDERS,
-  GENDER_LABELS,
-  buildCombinedPayFrequencyOptions,
   parsePayFrequencySelection,
   serializePayFrequencySelection,
+  inferPayFieldsFromLabourType,
+  labourTypeFromForm,
 } from '@/lib/payFrequency';
-import { formatShiftHoursLabel, getShiftDurationHours } from '@/lib/shiftTiming';
 
 const STAGES = [
   { key: 'form', label: '1. Details & Photo' },
@@ -132,8 +128,6 @@ export default function RegistrationFlow({
   const [payFrequencySelection, setPayFrequencySelection] = useState('');
   const [payAmount, setPayAmount] = useState('');
   const [gender, setGender] = useState('');
-  const [shiftId, setShiftId] = useState('');
-  const [shifts, setShifts] = useState([]);
   const [pendingMediaFiles, setPendingMediaFiles] = useState({});
   const [photoBlob, setPhotoBlob] = useState(null);
   const [gatePhotoLoaded, setGatePhotoLoaded] = useState(false);
@@ -167,7 +161,6 @@ export default function RegistrationFlow({
       setPayFrequencySelection('');
       setPayAmount('');
       setGender('');
-      setShiftId('');
       setPendingMediaFiles({});
       setStage('form');
       loadNew(selectedRoleId);
@@ -233,13 +226,6 @@ export default function RegistrationFlow({
       setRole(r);
       const f = await api.forms.getByRole(id);
       setForm(f);
-      if (r?.isShiftBased) {
-        const list = await api.shifts.list({ isActive: true });
-        setShifts(Array.isArray(list) ? list : []);
-      } else {
-        setShifts([]);
-        setShiftId('');
-      }
     } catch (e) {
       setError(e.message);
       setRole(null);
@@ -259,7 +245,6 @@ export default function RegistrationFlow({
       );
       setPayAmount(reg.payAmount != null ? String(reg.payAmount) : '');
       setGender(reg.gender || '');
-      setShiftId(reg.shiftId?._id || reg.shiftId || '');
       setPendingMediaFiles({});
       setStage(resolveStage(reg));
 
@@ -268,12 +253,6 @@ export default function RegistrationFlow({
       setRole(r);
       const f = await api.forms.getByRole(roleRef);
       setForm(f);
-      if (r?.isShiftBased || reg.roleId?.isShiftBased) {
-        const list = await api.shifts.list({ isActive: true });
-        setShifts(Array.isArray(list) ? list : []);
-      } else {
-        setShifts([]);
-      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -326,36 +305,30 @@ export default function RegistrationFlow({
       setError(mediaError);
       return;
     }
-    if (role?.payFrequencies?.length) {
-      if (!payFrequencySelection) {
-        setError('Please select a pay frequency');
-        return;
-      }
-      if (!gender) {
-        setError('Please select a gender');
-        return;
-      }
-      const amount = Number(payAmount);
-      if (!Number.isFinite(amount) || amount < 0) {
-        setError('Please enter a valid pay amount');
-        return;
-      }
-    }
     setLoading(true);
     setError('');
     setSuccess('');
     setDuplicateWarning(null);
     try {
-      const { payFrequency, customPayDays } = parsePayFrequencySelection(payFrequencySelection);
+      const inferred = inferPayFieldsFromLabourType(labourTypeFromForm(form, formData));
+      const parsed = parsePayFrequencySelection(payFrequencySelection);
+      const allowed = role?.payFrequencies || [];
+      const inferredPay =
+        inferred.payFrequency && allowed.includes(inferred.payFrequency)
+          ? inferred.payFrequency
+          : '';
+      const payFrequency = parsed.payFrequency || inferredPay;
+      const customPayDays = parsed.customPayDays;
+      const resolvedGender = gender || inferred.gender;
       const registrationPayload = {
         formData,
-        payFrequency: role?.payFrequencies?.length ? payFrequency : undefined,
+        payFrequency: role?.payFrequencies?.length ? payFrequency || undefined : undefined,
         customPayDays:
           role?.payFrequencies?.length && payFrequency === 'custom_days'
             ? customPayDays
             : undefined,
-        payAmount: role?.payFrequencies?.length ? Number(payAmount) : undefined,
-        gender: role?.payFrequencies?.length ? gender : undefined,
+        payAmount: role?.payFrequencies?.length && payAmount !== '' ? Number(payAmount) : undefined,
+        gender: role?.payFrequencies?.length ? resolvedGender || undefined : undefined,
       };
       let reg = registration;
       if (reg) {
@@ -497,11 +470,6 @@ export default function RegistrationFlow({
     }
   }
 
-  const payFrequencyOptions = buildCombinedPayFrequencyOptions(
-    role?.payFrequencies || [],
-    role?.customPayDaysOptions || []
-  );
-  const showPayFrequency = false; // Hide this since we use Rate Master now
   const currentStageIndex = stage === 'edit' ? STAGES.length : STAGES.findIndex((s) => s.key === stage);
   const existingPhotoUrl = registration?.photoUrl || photoUrlFromPath(registration?.photoPath);
 

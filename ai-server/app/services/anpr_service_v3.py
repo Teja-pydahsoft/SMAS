@@ -68,7 +68,10 @@ def _is_partial_plate_prefix(text: str) -> bool:
 
 def _is_numeric_tail(text: str) -> bool:
     """e.g. 2930 or UE6246 — trailing part of a split/2-line plate."""
-    return bool(NUMERIC_TAIL.match(text)) or bool(SERIES_AND_NUMBER.match(text))
+    # Guard: AP39-like prefix fragments must not be treated as tails,
+    # otherwise duplicates can incorrectly combine to AP39AP39.
+    series_number_tail = bool(SERIES_AND_NUMBER.match(text)) and not _is_partial_plate_prefix(text)
+    return bool(NUMERIC_TAIL.match(text)) or series_number_tail
 
 
 def _bbox_to_xyxy(bbox):
@@ -326,6 +329,23 @@ def _group_ocr_results(ocr_results: list, img_shape: tuple) -> dict:
 
     for prefix in prefixes:
         for tail in tails:
+            # Skip duplicated token joins (e.g. AP39 + AP39 -> AP39AP39).
+            if prefix['normalized'] == tail['normalized']:
+                continue
+
+            # Skip near-identical overlapping boxes (same region read twice).
+            px1, py1, px2, py2 = prefix['bbox_xyxy']
+            tx1, ty1, tx2, ty2 = tail['bbox_xyxy']
+            ix1, iy1 = max(px1, tx1), max(py1, ty1)
+            ix2, iy2 = min(px2, tx2), min(py2, ty2)
+            if ix2 > ix1 and iy2 > iy1:
+                inter = (ix2 - ix1) * (iy2 - iy1)
+                p_area = max((px2 - px1) * (py2 - py1), 1)
+                t_area = max((tx2 - tx1) * (ty2 - ty1), 1)
+                overlap_ratio = inter / max(min(p_area, t_area), 1)
+                if overlap_ratio > 0.75:
+                    continue
+
             combined = prefix['normalized'] + tail['normalized']
 
             # Check spatial: tail should be to the right of or below prefix
@@ -366,7 +386,12 @@ def _group_ocr_results(ocr_results: list, img_shape: tuple) -> dict:
 
     # Step 3: try joining spatially-close results left-to-right
     sorted_results = sorted(ocr_results, key=lambda r: r['bbox_xyxy'][0])
-    joined = ''.join(r['normalized'] for r in sorted_results)
+    # If OCR detected the same fragment multiple times, don't stitch duplicates.
+    unique_tokens = set(r['normalized'] for r in sorted_results)
+    if len(sorted_results) >= 2 and len(unique_tokens) == 1:
+        joined = ''
+    else:
+        joined = ''.join(r['normalized'] for r in sorted_results)
     if _is_valid_plate(joined):
         avg_conf = sum(r['confidence'] for r in sorted_results) / len(sorted_results)
         return {
@@ -380,6 +405,8 @@ def _group_ocr_results(ocr_results: list, img_shape: tuple) -> dict:
     for length in range(min(4, len(sorted_results)), 1, -1):
         for start in range(len(sorted_results) - length + 1):
             subset = sorted_results[start:start + length]
+            if len(set(r['normalized'] for r in subset)) == 1:
+                continue
             combined = ''.join(r['normalized'] for r in subset)
             if _is_valid_plate(combined):
                 avg_conf = sum(r['confidence'] for r in subset) / len(subset)

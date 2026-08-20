@@ -5,7 +5,6 @@ export const PERMISSION_MODULES = [
   { key: 'departments', label: 'Departments' },
   { key: 'registrations', label: 'Registrations' },
   { key: 'registration_roles', label: 'Roles' },
-  { key: 'shifts', label: 'Shifts' },
   { key: 'projects', label: 'Project Portfolio' },
   { key: 'project_maintenance', label: 'Project Maintenance' },
   { key: 'project_photo_capture', label: 'Project Photo Capture' },

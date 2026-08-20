@@ -270,14 +270,33 @@ export default function ManageSystemUsersPage() {
   const canWrite = can('system_users', 'write');
   const canEditRole = can('system_roles', 'write');
   const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(false);
   const [showNewUserModal, setShowNewUserModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterRoleId, setFilterRoleId] = useState('');
+  const [filterDivisionId, setFilterDivisionId] = useState('');
+  const [filterDepartmentId, setFilterDepartmentId] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [divisions, setDivisions] = useState([]);
+  const [departments, setDepartments] = useState([]);
 
   useEffect(() => {
     loadUsers();
+    Promise.all([
+      api.systemRoles.list(),
+      api.divisions.list({ isActive: 'true' }),
+      api.departments.list({ isActive: 'true' }),
+    ])
+      .then(([roleList, divisionList, departmentList]) => {
+        setRoles(Array.isArray(roleList) ? roleList : []);
+        setDivisions(Array.isArray(divisionList) ? divisionList : []);
+        setDepartments(Array.isArray(departmentList) ? departmentList : []);
+      })
+      .catch(() => {});
   }, []);
 
   async function loadUsers() {
@@ -334,29 +353,162 @@ export default function ManageSystemUsersPage() {
     loadUsers();
   }
 
+  const filteredUsers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return users.filter((user) => {
+      if (filterStatus === 'active' && !user.isActive) return false;
+      if (filterStatus === 'inactive' && user.isActive) return false;
+
+      if (filterRoleId === '__super__') {
+        if (!user.isSuperAdmin) return false;
+      } else if (filterRoleId) {
+        const roleId = user.systemRoleId?._id || user.systemRoleId || '';
+        if (String(roleId) !== filterRoleId) return false;
+      }
+
+      if (filterDivisionId === '__none__') {
+        if (user.isSuperAdmin || (user.divisionIds || []).length > 0) return false;
+      } else if (filterDivisionId) {
+        if (user.isSuperAdmin) return false;
+        const assigned = (user.divisionIds || []).some((div) => String(div?._id || div) === filterDivisionId);
+        if (!assigned) return false;
+      }
+
+      if (filterDepartmentId === '__none__') {
+        if (user.isSuperAdmin || (user.departmentIds || []).length > 0) return false;
+      } else if (filterDepartmentId) {
+        if (user.isSuperAdmin) return false;
+        const assigned = (user.departmentIds || []).some((dept) => String(dept?._id || dept) === filterDepartmentId);
+        if (!assigned) return false;
+      }
+
+      if (!q) return true;
+      const haystack = [
+        user.displayName,
+        user.username,
+        user.email,
+        user.isSuperAdmin ? 'super admin unrestricted' : user.systemRoleId?.name,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [users, searchQuery, filterRoleId, filterDivisionId, filterDepartmentId, filterStatus]);
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() || filterRoleId || filterDivisionId || filterDepartmentId || filterStatus
+  );
+
+  const departmentFilterOptions = useMemo(() => {
+    if (!filterDivisionId || filterDivisionId === '__none__') return departments;
+    return departments.filter((dept) =>
+      (dept.divisionIds || []).some((div) => String(div?._id || div) === filterDivisionId)
+    );
+  }, [departments, filterDivisionId]);
+
   if (loading && users.length === 0) {
     return <p style={{ color: 'var(--text-muted)' }}>Loading system users...</p>;
   }
 
   return (
     <div>
-      <div className="reports-section-header" style={{ marginBottom: '1rem' }}>
+      <div className="reports-section-header" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h3 className="section-title">System Users ({users.length})</h3>
+          <h3 className="section-title">
+            System Users ({hasActiveFilters ? `${filteredUsers.length} of ${users.length}` : users.length})
+          </h3>
           <p className="section-desc">Users with assigned roles and optional division, gate, and department access scope.</p>
         </div>
-        {canWrite && (
-          <button
-            type="button"
-            className="btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-            onClick={() => setShowNewUserModal(true)}
-            aria-label="New User"
-          >
-            <PlusIcon />
-            New
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
+            <label htmlFor="user-search">Search</label>
+            <div className="reg-search-wrap">
+              <svg className="reg-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                id="user-search"
+                type="search"
+                className="reg-search-input"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name, username, or email…"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
+            <label htmlFor="user-filter-role">Filter by Role</label>
+            <select
+              id="user-filter-role"
+              value={filterRoleId}
+              onChange={(e) => setFilterRoleId(e.target.value)}
+            >
+              <option value="">All roles</option>
+              <option value="__super__">Super Admin</option>
+              {roles.map((role) => (
+                <option key={role._id} value={role._id}>{role.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
+            <label htmlFor="user-filter-division">Filter by Division</label>
+            <select
+              id="user-filter-division"
+              value={filterDivisionId}
+              onChange={(e) => {
+                setFilterDivisionId(e.target.value);
+                setFilterDepartmentId('');
+              }}
+            >
+              <option value="">All divisions</option>
+              <option value="__none__">Unassigned</option>
+              {divisions.map((division) => (
+                <option key={division._id} value={division._id}>{division.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 190 }}>
+            <label htmlFor="user-filter-department">Filter by Department</label>
+            <select
+              id="user-filter-department"
+              value={filterDepartmentId}
+              onChange={(e) => setFilterDepartmentId(e.target.value)}
+            >
+              <option value="">All departments</option>
+              <option value="__none__">Unassigned</option>
+              {departmentFilterOptions.map((department) => (
+                <option key={department._id} value={department._id}>{department.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 140 }}>
+            <label htmlFor="user-filter-status">Status</label>
+            <select
+              id="user-filter-status"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          {canWrite && (
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              onClick={() => setShowNewUserModal(true)}
+              aria-label="New User"
+            >
+              <PlusIcon />
+              New
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <p className="error-msg">{error}</p>}
@@ -373,6 +525,10 @@ export default function ManageSystemUsersPage() {
               Create System User
             </button>
           )}
+        </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="empty-state card">
+          <p>No users match the current search or filters.</p>
         </div>
       ) : (
         <div className="card">
@@ -392,7 +548,7 @@ export default function ManageSystemUsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <tr key={user._id} className={!user.isActive ? 'row-inactive' : undefined}>
                     <td className="name-cell">
                       {user.displayName}
@@ -412,6 +568,7 @@ export default function ManageSystemUsersPage() {
                           items={user.divisionIds || []}
                           badgeClass="badge-info"
                           title="Divisions"
+                          subtitle={user.displayName}
                         />
                       )}
                     </td>
@@ -425,6 +582,7 @@ export default function ManageSystemUsersPage() {
                           items={user.gateIds || []}
                           badgeClass="badge-success"
                           title="Gates"
+                          subtitle={user.displayName}
                           renderLabel={(gate) => `${gate.name} (${gateModeBadgeLabel(gate, user.gateAccessModes || {})})`}
                         />
                       )}
@@ -439,6 +597,7 @@ export default function ManageSystemUsersPage() {
                           items={user.departmentIds || []}
                           badgeClass="badge-warning"
                           title="Departments"
+                          subtitle={user.displayName}
                         />
                       )}
                     </td>

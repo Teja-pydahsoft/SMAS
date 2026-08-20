@@ -17,7 +17,6 @@ export const SUPER_ADMIN_NAV_ITEMS = [
     children: [
       { path: '/organization?tab=divisions', label: 'Divisions', module: 'divisions' },
       { path: '/organization?tab=departments', label: 'Departments', module: 'departments' },
-      { path: '/organization?tab=shifts', label: 'Shifts', module: 'shifts' },
     ],
   },
   {

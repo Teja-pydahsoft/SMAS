@@ -13,6 +13,7 @@ import {
   inferPayFieldsFromLabourType,
   labourTypeFromForm,
 } from '@/lib/payFrequency';
+import { resolvePhotoUrl } from '@/lib/photoUrl';
 
 const STAGES = [
   { key: 'form', label: '1. Details & Photo' },
@@ -37,15 +38,6 @@ function resolveStage(registration) {
   return s === 'photo' ? 'form' : s;
 }
 
-function photoUrlFromPath(photoPath) {
-  if (!photoPath) return null;
-  if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
-    return photoPath;
-  }
-  const name = photoPath.replace(/\\/g, '/').split('/').pop();
-  return `/uploads/registrations/${name}`;
-}
-
 function normalizeDuplicates(result) {
   if (!result) return null;
   const faceMatches = result.faceMatches?.length
@@ -64,7 +56,7 @@ function DuplicateMatchList({ faceMatches = [], formMatches = [] }) {
         <div key={`face-${m.registrationId}`} className="reg-duplicate-match">
           <span className="reg-duplicate-match__badge reg-duplicate-match__badge--face">Face Match</span>
           {m.photoUrl && (
-            <img src={m.photoUrl} alt="" className="reg-duplicate-match__photo" />
+            <img src={resolvePhotoUrl(m.photoUrl)} alt="" className="reg-duplicate-match__photo" />
           )}
           <div className="reg-duplicate-match__info">
             <p className="reg-duplicate-match__name">{m.displayName || '—'}</p>
@@ -87,7 +79,7 @@ function DuplicateMatchList({ faceMatches = [], formMatches = [] }) {
             <div key={`form-${m.registrationId}`} className="reg-duplicate-match">
               <span className="reg-duplicate-match__badge reg-duplicate-match__badge--form">Form Match</span>
               {m.photoUrl && (
-                <img src={m.photoUrl} alt="" className="reg-duplicate-match__photo" />
+                <img src={resolvePhotoUrl(m.photoUrl)} alt="" className="reg-duplicate-match__photo" />
               )}
               <div className="reg-duplicate-match__info">
                 <p className="reg-duplicate-match__name">{m.displayName || '—'}</p>
@@ -353,6 +345,9 @@ export default function RegistrationFlow({
       if (photoBlob) {
         const result = await api.registrations.uploadPhoto(reg._id, photoBlob);
         reg = result.registration;
+        if (result.photoUrl && !reg.photoUrl) {
+          reg = { ...(reg.toObject?.() || reg), photoUrl: result.photoUrl };
+        }
         setRegistration(reg);
         setPhotoBlob(null);
         clearGatePhotoForRegistration();
@@ -471,10 +466,10 @@ export default function RegistrationFlow({
   }
 
   const currentStageIndex = stage === 'edit' ? STAGES.length : STAGES.findIndex((s) => s.key === stage);
-  const existingPhotoUrl = registration?.photoUrl || photoUrlFromPath(registration?.photoPath);
+  const existingPhotoUrl = resolvePhotoUrl(registration?.photoUrl || registration?.photoPath);
 
   const showFlowHeader = !availableRoles && !inModal;
-  const useFlowLayout = stage === 'form' || stage === 'edit';
+  const useFlowLayout = stage === 'form' || stage === 'edit' || stage === 'review';
 
   return (
     <div className={inModal ? 'reg-flow-in-modal' : undefined}>
@@ -674,67 +669,95 @@ export default function RegistrationFlow({
       )}
 
       {stage === 'review' && registration && (
-        <div>
-          {/* Pay frequency is now hidden from the UI */}
-          {registration.payAmount != null && (
-            <div className="form-group" style={{ marginBottom: '1rem' }}>
-              <label>Pay Amount (per day)</label>
-              <p style={{ margin: 0 }}>{registration.payAmount}</p>
-            </div>
-          )}
-          <DynamicFormFields fields={form.fields} values={registration.formData} onChange={() => {}} readOnly />
-          {registration.photoPath && (
-            <div style={{ marginTop: '1rem' }}>
-              <label>Captured Photo</label>
-              {existingPhotoUrl && (
-                <img
-                  src={existingPhotoUrl}
-                  alt="Captured"
-                  style={{ maxWidth: 200, borderRadius: 'var(--radius)', marginTop: '0.5rem', border: '1px solid var(--border)' }}
+        <div className="reg-flow-layout">
+          <div className="reg-flow-layout__camera">
+            <h4 className="reg-flow-section-title">Captured Photo</h4>
+            <p className="reg-flow-hint">Review the identity photo before approving this registration.</p>
+            {existingPhotoUrl ? (
+              <div className="reg-flow-layout__photo-preview">
+                <img src={existingPhotoUrl} alt="Captured" className="reg-flow-review-photo" />
+              </div>
+            ) : (
+              <div className="reg-flow-edit-photo reg-flow-edit-photo--empty">No photo on file</div>
+            )}
+            <p className="reg-flow-photo-status">Photo uploaded and face embedding saved</p>
+          </div>
+
+          <div className="reg-flow-layout__fields">
+            <h4 className="reg-flow-section-title">Review details</h4>
+            <div className="reg-flow-group">
+              {form && (
+                <DynamicFormFields
+                  fields={form.fields.filter((f) =>
+                    ['name', 'fullname', 'aadhaar', 'aadhaarnumber', 'phone', 'mobile'].includes(
+                      f.fieldId.toLowerCase()
+                    )
+                  )}
+                  values={registration.formData}
+                  onChange={() => {}}
+                  readOnly
                 />
               )}
-              <p style={{ color: 'var(--success)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-                Photo uploaded and face embedding saved
-              </p>
             </div>
-          )}
-          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-            <button type="button" className="btn-secondary" onClick={() => setStage('form')}>
-              Edit Details / Photo
-            </button>
-          </div>
-          {checkingReviewDuplicates && (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '1rem' }}>
-              Checking for duplicate entries…
-            </p>
-          )}
-          {reviewDuplicates?.hasDuplicate && (
-            <div className="reg-duplicate-warning" style={{ marginTop: '1rem' }}>
-              <div className="reg-duplicate-warning__header">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                  <line x1="12" y1="9" x2="12" y2="13" />
-                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-                <strong>Possible duplicate detected</strong>
+            <div className="reg-flow-group">
+              {form && (
+                <DynamicFormFields
+                  fields={form.fields.filter(
+                    (f) =>
+                      !['name', 'fullname', 'aadhaar', 'aadhaarnumber', 'phone', 'mobile'].includes(
+                        f.fieldId.toLowerCase()
+                      )
+                  )}
+                  values={registration.formData}
+                  onChange={() => {}}
+                  readOnly
+                />
+              )}
+            </div>
+
+            {checkingReviewDuplicates && (
+              <p className="reg-flow-hint" style={{ marginTop: '0.5rem' }}>
+                Checking for duplicate entries…
+              </p>
+            )}
+            {reviewDuplicates?.hasDuplicate && (
+              <div className="reg-duplicate-warning">
+                <div className="reg-duplicate-warning__header">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  <strong>Possible duplicate detected</strong>
+                </div>
+                <p className="reg-duplicate-warning__desc">
+                  An existing registration may match this person. Please review carefully before approving.
+                </p>
+                <DuplicateMatchList
+                  faceMatches={reviewDuplicates.faceMatches}
+                  formMatches={reviewDuplicates.formMatches}
+                />
               </div>
-              <p className="reg-duplicate-warning__desc">
-                An existing registration may match this person. Please review carefully before approving.
-              </p>
-              <DuplicateMatchList
-                faceMatches={reviewDuplicates.faceMatches}
-                formMatches={reviewDuplicates.formMatches}
-              />
+            )}
+            {error && <p className="error-msg">{error}</p>}
+            <div className="reg-flow-footer reg-flow-footer--review">
+              <button type="button" className="btn-enterprise-secondary" onClick={() => setStage('form')}>
+                Edit Details / Photo
+              </button>
+              <div className="reg-flow-footer__actions">
+                <button type="button" className="btn-enterprise-secondary" onClick={() => handleVerify(false)} disabled={loading}>
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  className="btn-enterprise-primary btn-enterprise-primary--approve"
+                  onClick={() => handleVerify(true)}
+                  disabled={loading}
+                >
+                  {loading ? 'Processing...' : 'Approve & Complete'}
+                </button>
+              </div>
             </div>
-          )}
-          {error && <p className="error-msg">{error}</p>}
-          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'flex-end', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
-            <button type="button" className="btn-enterprise-secondary" onClick={() => handleVerify(false)} disabled={loading}>
-              Reject
-            </button>
-            <button type="button" className="btn-enterprise-primary" style={{ background: '#10b981', color: '#fff' }} onClick={() => handleVerify(true)} disabled={loading}>
-              Approve & Complete
-            </button>
           </div>
         </div>
       )}

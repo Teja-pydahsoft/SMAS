@@ -953,11 +953,15 @@ router.post(
       }
     }
 
-    const updated = await Registration.findById(registration._id).populate('roleId', 'name slug');
+    const updated = await Registration.findById(registration._id)
+      .populate('roleId', 'name slug')
+      .populate('formId', 'fields');
+    const obj = updated.toObject();
+    const enriched = enrichRegistrationResponse(obj, obj.formId?.fields || []);
 
     res.json({
-      registration: updated,
-      photoUrl: photoUrlFromPath(photoUrl),
+      registration: enriched,
+      photoUrl: enriched.photoUrl,
     });
   })
 );

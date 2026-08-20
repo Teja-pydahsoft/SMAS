@@ -363,6 +363,7 @@ function DepartmentsTab({ canWrite }) {
   const [departments, setDepartments] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [divisionFilter, setDivisionFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -394,18 +395,49 @@ function DepartmentsTab({ canWrite }) {
 
   if (loading && departments.length === 0) return <p style={{ color: 'var(--text-muted)' }}>Loading departments...</p>;
 
+  const filteredDepartments = departments.filter((dept) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    const divisionNames = (dept.divisionIds || []).map((div) => div?.name || '').join(' ');
+    return [dept.name, dept.description, divisionNames].filter(Boolean).join(' ').toLowerCase().includes(q);
+  });
+  const hasSearch = Boolean(searchQuery.trim());
+
   return (
     <div>
-      <div className="reports-section-header" style={{ marginBottom: '1rem' }}>
+      <div className="reports-section-header" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h3 className="section-title">All Departments ({departments.length})</h3>
+          <h3 className="section-title">
+            All Departments ({hasSearch ? `${filteredDepartments.length} of ${departments.length}` : departments.length})
+          </h3>
           <p className="section-desc">Departments linked to their divisions</p>
         </div>
-        <div className="reports-section-actions">
-          <select value={divisionFilter} onChange={(e) => setDivisionFilter(e.target.value)} aria-label="Filter by division">
-            <option value="">All divisions</option>
-            {divisions.map((d) => <option key={d._id} value={d._id}>{d.name}</option>)}
-          </select>
+        <div className="reports-section-actions" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
+            <label htmlFor="org-dept-search">Search</label>
+            <div className="reg-search-wrap">
+              <svg className="reg-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                id="org-dept-search"
+                type="search"
+                className="reg-search-input"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search departments…"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
+            <label htmlFor="org-dept-division">Filter by Division</label>
+            <select id="org-dept-division" value={divisionFilter} onChange={(e) => setDivisionFilter(e.target.value)} aria-label="Filter by division">
+              <option value="">All divisions</option>
+              {divisions.map((d) => <option key={d._id} value={d._id}>{d.name}</option>)}
+            </select>
+          </div>
           {canWrite && (
             <button type="button" className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={() => setShowModal(true)}>
               <PlusIcon /> New
@@ -422,6 +454,10 @@ function DepartmentsTab({ canWrite }) {
           <p>No departments yet.</p>
           {canWrite && <button type="button" className="btn-primary" style={{ marginTop: '1rem' }} onClick={() => setShowModal(true)}>Create Department</button>}
         </div>
+      ) : filteredDepartments.length === 0 ? (
+        <div className="empty-state card">
+          <p>No departments match “{searchQuery.trim()}”.</p>
+        </div>
       ) : (
         <div className="card">
           <div className="table-scroll">
@@ -437,7 +473,7 @@ function DepartmentsTab({ canWrite }) {
                 </tr>
               </thead>
               <tbody>
-                {departments.map((dept) => (
+                {filteredDepartments.map((dept) => (
                   <tr key={dept._id} className={!dept.isActive ? 'row-inactive' : undefined}>
                     <td className="name-cell">{dept.name}</td>
                     <td>

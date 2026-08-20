@@ -18,7 +18,6 @@ export const APP_NAV_ITEMS = [
     children: [
       { path: '/organization?tab=divisions', label: 'Divisions', module: 'divisions' },
       { path: '/organization?tab=departments', label: 'Departments', module: 'departments' },
-      { path: '/shifts/manage', label: 'Shifts', module: 'shifts' },
     ],
   },
   {

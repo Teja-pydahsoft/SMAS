@@ -277,6 +277,9 @@
   align-items: flex-end;
   gap: 0.75rem;
   padding: 0.9rem 1rem;
+  overflow: visible;
+  position: relative;
+  z-index: 30;
 }
 
 .vehicle-reports-filters__field {
@@ -298,8 +301,23 @@
   max-width: 200px;
 }
 
+.vehicle-reports-filters__field--department {
+  overflow: visible;
+  position: relative;
+  z-index: 50;
+}
+
 .vehicle-reports-filters__control {
   min-height: 36px;
+}
+
+.vehicle-reports-filters .rc-searchable-select-wrap {
+  position: relative;
+  z-index: 50;
+}
+
+.vehicle-reports-filters .rc-searchable-select-menu {
+  z-index: 9999;
 }
 
 .vehicle-reports-filters__actions {

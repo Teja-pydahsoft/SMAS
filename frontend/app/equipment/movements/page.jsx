@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense, useMemo } from 'react';
 import CameraCapture from '../../../components/CameraCapture';
 import PageTabs from '@/components/PageTabs';
 import PageShell from '@/components/PageShell';
+import SearchableSelect from '@/components/SearchableSelect';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AdminIcon from '@/components/admin/AdminIcons';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
@@ -30,6 +31,16 @@ function MovementsContent() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [overridePlate, setOverridePlate] = useState('');
   const [scanStatus, setScanStatus] = useState('Waiting for Vehicle');
+
+  const scanDivisionDepartments = useMemo(() => {
+    return departments.filter((d) =>
+      d.divisionIds?.some((div) => (div._id || div) === scanDivisionId)
+    );
+  }, [departments, scanDivisionId]);
+
+  const selectedScanDepartmentName = useMemo(() => {
+    return scanDivisionDepartments.find((d) => d._id === scanDepartmentId)?.name || '';
+  }, [scanDivisionDepartments, scanDepartmentId]);
 
   useEffect(() => {
     const headers = { 'Authorization': `Bearer ${localStorage.getItem('smas_token') || ''}` };
@@ -211,7 +222,10 @@ function MovementsContent() {
                     <select 
                       className="admin-input"
                       value={scanDivisionId}
-                      onChange={e => { setScanDivisionId(e.target.value); setScanDepartmentId(''); }}
+                      onChange={e => {
+                        setScanDivisionId(e.target.value);
+                        setScanDepartmentId('');
+                      }}
                     >
                       <option value="">Select Division...</option>
                       {divisions.map(d => (
@@ -221,17 +235,18 @@ function MovementsContent() {
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.25rem', display: 'block' }}>Department *</label>
-                    <select 
+                    <SearchableSelect
+                      options={scanDivisionDepartments.map((d) => d.name)}
+                      value={selectedScanDepartmentName}
+                      onChange={(name) => {
+                        const selectedDepartment = scanDivisionDepartments.find((d) => d.name === name);
+                        setScanDepartmentId(selectedDepartment?._id || '');
+                      }}
+                      placeholder="Select Department..."
+                      emptyValue=""
                       className="admin-input"
-                      value={scanDepartmentId}
-                      onChange={e => setScanDepartmentId(e.target.value)}
                       disabled={!scanDivisionId}
-                    >
-                      <option value="">Select Department...</option>
-                      {departments.filter(d => d.divisionIds?.some(div => (div._id || div) === scanDivisionId)).map(d => (
-                        <option key={d._id} value={d._id}>{d.name}</option>
-                      ))}
-                    </select>
+                    />
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '0.25rem', display: 'block' }}>Direction</label>

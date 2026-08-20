@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PageShell from '@/components/PageShell';
 import AdminIcon from '@/components/admin/AdminIcons';
+import SearchableSelect from '@/components/SearchableSelect';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 
 function exportToCSV(filename, rows) {
@@ -129,6 +130,10 @@ export default function VehicleReportsPage() {
     // setTimeout to allow state to settle before fetch
     setTimeout(() => fetchData(1), 0);
   };
+
+  const selectedDepartmentName = useMemo(() => {
+    return departments.find((d) => d._id === filters.departmentId)?.name || '';
+  }, [departments, filters.departmentId]);
 
   const handleExportCSV = () => {
     if (data.length === 0) return alert('No data to export');
@@ -272,11 +277,18 @@ export default function VehicleReportsPage() {
                   <option value="Exit">Exit</option>
                 </select>
               </div>
-              <div className="vehicle-reports-filters__field">
-                <select className="admin-input vehicle-reports-filters__control" name="departmentId" value={filters.departmentId} onChange={handleFilterChange}>
-                  <option value="">All Departments</option>
-                  {departments.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
-                </select>
+              <div className="vehicle-reports-filters__field vehicle-reports-filters__field--department">
+                <SearchableSelect
+                  options={departments.map((d) => d.name)}
+                  value={selectedDepartmentName}
+                  onChange={(name) => {
+                    const selected = departments.find((d) => d.name === name);
+                    setFilters((prev) => ({ ...prev, departmentId: selected?._id || '' }));
+                  }}
+                  placeholder="All Departments"
+                  emptyValue=""
+                  className="admin-input vehicle-reports-filters__control"
+                />
               </div>
             </>
           )}

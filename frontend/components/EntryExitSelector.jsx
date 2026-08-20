@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import SearchableSelect from '@/components/SearchableSelect';
 import { eventActionLabel, isAutoGateEvent } from '@/lib/entryExit';
 
 function emptySelection() {
@@ -195,21 +196,19 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
             </select>
           </div>
         ) : (
-          <div className="form-group" style={{ marginBottom: 0 }}>
+          <div className="form-group" style={{ marginBottom: 0, overflow: 'visible', position: 'relative', zIndex: 40 }}>
             <label htmlFor="entry-exit-department">Department</label>
-            <select
-              id="entry-exit-department"
-              value={draft.departmentId}
+            <SearchableSelect
+              options={departmentOptions.map((dept) => dept.name)}
+              value={departmentOptions.find((d) => d._id === draft.departmentId)?.name || ''}
+              onChange={(name) => {
+                const selected = departmentOptions.find((d) => d.name === name);
+                updateDraft({ departmentId: selected?._id || '' });
+              }}
+              placeholder="Select department"
+              emptyValue=""
               disabled={disabled || !draft.divisionId || departmentOptions.length === 0}
-              onChange={(e) => updateDraft({ departmentId: e.target.value })}
-            >
-              <option value="">Select department</option>
-              {departmentOptions.map((dept) => (
-                <option key={dept._id} value={dept._id}>
-                  {dept.name}
-                </option>
-              ))}
-            </select>
+            />
           </div>
         )}
 

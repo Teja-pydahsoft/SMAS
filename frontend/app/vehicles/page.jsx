@@ -104,6 +104,10 @@ export default function VehiclesPage() {
     if (filter.status && filter.status !== '') {
       if (v.status !== filter.status) return false;
     }
+    if (filter.departmentId) {
+      const vehicleDeptId = v.departmentId?._id || v.departmentId || v.activeMovement?.departmentId?._id || v.activeMovement?.departmentId;
+      if (String(vehicleDeptId || '') !== String(filter.departmentId)) return false;
+    }
     return true;
   });
 

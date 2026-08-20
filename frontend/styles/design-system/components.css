@@ -955,7 +955,7 @@
 }
 
 /* ── Entry/exit ── */
-.entry-exit-selector { margin-bottom: var(--space-4); }
+.entry-exit-selector { margin-bottom: var(--space-4); overflow: visible; position: relative; z-index: 25; }
 .entry-exit-selector__type { margin-bottom: var(--space-4); }
 
 .entry-exit-selector__type-label {
@@ -1079,6 +1079,18 @@
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px var(--space-4);
   margin-bottom: var(--space-4);
+  overflow: visible;
+  position: relative;
+  z-index: 20;
+}
+
+.gate-select-grid .rc-searchable-select-wrap {
+  position: relative;
+  z-index: 50;
+}
+
+.gate-select-grid .rc-searchable-select-menu {
+  z-index: 9999;
 }
 
 .gate-select-stack {

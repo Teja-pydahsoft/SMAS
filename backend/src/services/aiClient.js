@@ -38,6 +38,7 @@ function mimeFromFilename(filename = '') {
  * timeout so a hung AI server can't pile up pending requests in this process.
  */
 const AI_FACE_TIMEOUT_MS = parseInt(process.env.AI_FACE_TIMEOUT_MS || '60000', 10);
+const AI_VEHICLE_TIMEOUT_MS = parseInt(process.env.AI_VEHICLE_TIMEOUT_MS || '180000', 10);
 const AI_ADMIN_TIMEOUT_MS = parseInt(process.env.AI_ADMIN_TIMEOUT_MS || '15000', 10);
 const AI_HEALTH_TIMEOUT_MS = parseInt(process.env.AI_HEALTH_TIMEOUT_MS || '5000', 10);
 
@@ -88,7 +89,7 @@ export async function analyzeVehicle(images) {
     formData.append(key, new Blob([image.buffer], { type: image.mimeType }), image.filename);
   }
 
-  return aiFetch('/vehicle/analyze', { method: 'POST', body: formData }, AI_FACE_TIMEOUT_MS);
+  return aiFetch('/vehicle/analyze', { method: 'POST', body: formData }, AI_VEHICLE_TIMEOUT_MS);
 }
 
 export async function compareFaceEmbeddings(embedding1, embedding2) {

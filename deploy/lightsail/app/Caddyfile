@@ -8,7 +8,16 @@
 	# API and uploaded photos go straight to the Express backend,
 	# bypassing the Next.js rewrite proxy entirely.
 	handle /api/* {
-		reverse_proxy backend:3001
+		# Vehicle ANPR can take 1–3 minutes on CPU. Default Caddy header timeout
+		# would otherwise cut the request and the portal shows a 500.
+		reverse_proxy backend:3001 {
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 180s
+				read_timeout 180s
+				write_timeout 180s
+			}
+		}
 	}
 
 	handle /uploads/* {

@@ -14,6 +14,7 @@ import PageTabs from '@/components/PageTabs';
 
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   
@@ -30,11 +31,13 @@ export default function VehiclesPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [vData, rData] = await Promise.all([
+      const [vData, rData, summaryData] = await Promise.all([
         api.vehicles.list(),
-        api.vehicles.registrations.list({ status: 'Pending' }).catch(() => []) // Graceful fail if issues
+        api.vehicles.registrations.list({ status: 'Pending' }).catch(() => []),
+        api.vehicles.summary().catch(() => null),
       ]);
       setVehicles(Array.isArray(vData) ? vData : []);
+      setSummary(summaryData);
       setPendingCount(Array.isArray(rData) ? rData.filter(r => r.status === 'Pending').length : 0);
     } catch (err) {
       console.error('Error fetching vehicles:', err);
@@ -65,10 +68,12 @@ export default function VehiclesPage() {
   };
 
   const handleDeleteVehicle = async (vehicle) => {
-    if (window.confirm(`Are you sure you want to delete vehicle ${vehicle.plateNumber}? This cannot be undone.`)) {
+    if (window.confirm(`Delete vehicle ${vehicle.plateNumber} from Vehicle Master? Registration history will be kept.`)) {
       try {
         await api.vehicles.delete(vehicle._id);
         setVehicles(prev => prev.filter(v => v._id !== vehicle._id));
+        const summaryData = await api.vehicles.summary().catch(() => null);
+        setSummary(summaryData);
       } catch (err) {
         console.error('Failed to delete vehicle:', err);
         alert(err.message || 'Failed to delete vehicle');
@@ -173,10 +178,19 @@ export default function VehiclesPage() {
       <div className="admin-page-content" style={{ paddingTop: 0, marginTop: '-0.5rem' }}>
         
         {/* ROW 1: Summary Cards */}
+        {summary && !summary.isSynced && (
+          <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '0.875rem 1rem', marginBottom: '1rem', fontSize: '0.875rem', color: '#92400e' }}>
+            Vehicle Master shows <strong>{summary.fleetCount}</strong> vehicles but only <strong>{summary.registrationTotal}</strong> registration records exist.
+            {summary.fleetWithoutRegistration > 0 && summary.orphanFleetPlates?.length > 0 && (
+              <> Missing registration for: <strong>{summary.orphanFleetPlates.join(', ')}</strong>.</>
+            )}
+          </div>
+        )}
         <div className="admin-metrics-grid vehicle-master-metrics" style={{ marginBottom: '1.5rem' }}>
           <VehicleSummaryCard 
             title="Total Equipment" 
             count={loading ? '-' : vehicles.length} 
+            subtitle={summary ? `${summary.registrationTotal} registration records` : undefined}
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>}
             iconType="secondary"
           />

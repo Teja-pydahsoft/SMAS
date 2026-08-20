@@ -572,6 +572,7 @@ export const api = {
   },
   vehicles: {
     dashboardStats: () => request('/vehicles/dashboard'),
+    summary: () => request('/vehicles/summary'),
     movements: (params = {}) => request(`/vehicles/movements${toQuery(params)}`),
     list: () => request('/vehicles'),
     delete: (id) => request(`/vehicles/${id}`, { method: 'DELETE' }),

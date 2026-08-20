@@ -645,8 +645,16 @@ router.put(
 router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    const registration = await VehicleRegistration.findByIdAndDelete(req.params.id);
+    const registration = await VehicleRegistration.findById(req.params.id);
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
+
+    await VehicleRegistration.findByIdAndDelete(req.params.id);
+
+    // Keep Vehicle Master in sync when an approved registration is removed.
+    if (registration.status === 'Approved') {
+      await Vehicle.findOneAndDelete({ normalizedPlateNumber: registration.normalizedPlateNumber });
+    }
+
     res.json({ message: 'Registration deleted successfully' });
   })
 );

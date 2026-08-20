@@ -12,6 +12,7 @@ export default function VehicleRegistrationsPage() {
   const router = useRouter();
   
   const [registrations, setRegistrations] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -32,9 +33,13 @@ export default function VehicleRegistrationsPage() {
   const fetchRegistrations = () => {
     setLoading(true);
     setError(null);
-    api.vehicles.registrations.list({}) // Fetch all, we'll filter on client
-      .then(data => {
+    Promise.all([
+      api.vehicles.registrations.list({}),
+      api.vehicles.summary().catch(() => null),
+    ])
+      .then(([data, summaryData]) => {
         setRegistrations(Array.isArray(data) ? data : []);
+        setSummary(summaryData);
         setLoading(false);
       })
       .catch(err => {
@@ -117,10 +122,15 @@ export default function VehicleRegistrationsPage() {
        // For now, redirect to the details page to complete the workflow
        router.push(`/vehicles/registrations/${id}`);
     } else if (actionType === 'delete') {
-       if (window.confirm('Are you sure you want to delete this registration? This cannot be undone.')) {
+       const reg = registrations.find((item) => item._id === id);
+       const willRemoveFleet = reg?.status === 'Approved';
+       const confirmMsg = willRemoveFleet
+         ? 'Delete this approved registration? The vehicle will also be removed from Vehicle Master.'
+         : 'Are you sure you want to delete this registration? This cannot be undone.';
+       if (window.confirm(confirmMsg)) {
          try {
            await api.vehicles.registrations.delete(id);
-           setRegistrations(prev => prev.filter(r => r._id !== id));
+           fetchRegistrations();
          } catch (err) {
            console.error('Failed to delete registration:', err);
            alert(err.message || 'Failed to delete registration');
@@ -217,7 +227,23 @@ export default function VehicleRegistrationsPage() {
         `}} />
         
         {/* SUMMARY CARDS */}
+        {summary && !summary.isSynced && (
+          <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '0.875rem 1rem', fontSize: '0.875rem', color: '#92400e' }}>
+            Vehicle Master has <strong>{summary.fleetCount}</strong> vehicles but this page shows <strong>{summary.registrationTotal}</strong> registration records.
+            {summary.fleetWithoutRegistration > 0 && (
+              <> {summary.fleetWithoutRegistration} vehicle(s) in master have no registration record{summary.orphanFleetPlates?.length ? `: ${summary.orphanFleetPlates.join(', ')}` : ''}.</>
+            )}
+            {summary.registrationNotInFleet > 0 && (
+              <> {summary.registrationNotInFleet} registration(s) are not currently in Vehicle Master.</>
+            )}
+          </div>
+        )}
+
         <div className="registration-stats-grid">
+          <div className="admin-panel glass-panel" style={{ display: 'flex', flexDirection: 'column', padding: '1.5rem' }}>
+            <span className="text-muted" style={{ fontWeight: '600', textTransform: 'uppercase', fontSize: '0.875rem' }}>In Vehicle Master</span>
+            <span style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--primary)' }}>{summary?.fleetCount ?? '—'}</span>
+          </div>
           <div className="admin-panel glass-panel" style={{ display: 'flex', flexDirection: 'column', padding: '1.5rem' }}>
             <span className="text-muted" style={{ fontWeight: '600', textTransform: 'uppercase', fontSize: '0.875rem' }}>Pending Registrations</span>
             <span style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--warning)' }}>{kpis.pending}</span>
@@ -227,12 +253,8 @@ export default function VehicleRegistrationsPage() {
             <span style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--success)' }}>{kpis.totalApproved}</span>
           </div>
           <div className="admin-panel glass-panel" style={{ display: 'flex', flexDirection: 'column', padding: '1.5rem' }}>
-            <span className="text-muted" style={{ fontWeight: '600', textTransform: 'uppercase', fontSize: '0.875rem' }}>Total Rejected</span>
-            <span style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--danger)' }}>{kpis.totalRejected}</span>
-          </div>
-          <div className="admin-panel glass-panel" style={{ display: 'flex', flexDirection: 'column', padding: '1.5rem' }}>
             <span className="text-muted" style={{ fontWeight: '600', textTransform: 'uppercase', fontSize: '0.875rem' }}>Total Requests</span>
-            <span style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--primary)' }}>{kpis.totalRequests}</span>
+            <span style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{kpis.totalRequests}</span>
           </div>
         </div>
 

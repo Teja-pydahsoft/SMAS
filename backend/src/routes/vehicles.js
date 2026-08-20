@@ -3,8 +3,13 @@ import Vehicle from '../models/Vehicle.js';
 import EquipmentMovement from '../models/EquipmentMovement.js';
 import VehicleRegistration from '../models/VehicleRegistration.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { getVehicleModuleSummary } from '../services/vehicleSummaryService.js';
 
 const router = Router();
+
+router.get('/summary', asyncHandler(async (req, res) => {
+  res.json(await getVehicleModuleSummary());
+}));
 
 router.get('/dashboard', asyncHandler(async (req, res) => {
   const todayStart = new Date();
@@ -165,26 +170,22 @@ router.delete(
     const vehicle = await Vehicle.findByIdAndDelete(req.params.id);
     if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
 
-    const baseKeys = [
-      String(vehicle.normalizedPlateNumber || '').toLowerCase().replace(/[^a-z0-9]/g, ''),
-      String(vehicle.plateNumber || '').toLowerCase().replace(/[^a-z0-9]/g, ''),
-    ].filter(Boolean);
-    const plateKeys = new Set(baseKeys);
-    const swaps = { o: '0', 0: 'o', i: '1', 1: 'i', s: '5', 5: 's' };
-    for (const key of baseKeys) {
-      for (let i = 0; i < key.length; i++) {
-        const swap = swaps[key[i]];
-        if (!swap) continue;
-        plateKeys.add(key.slice(0, i) + swap + key.slice(i + 1));
-      }
-    }
-    if (plateKeys.size > 0) {
-      await VehicleRegistration.deleteMany({ normalizedPlateNumber: { $in: [...plateKeys] } });
+    // Remove only stale pending requests for this plate. Keep Approved/Rejected history.
+    const plateKey = normalizePlateKey(vehicle.normalizedPlateNumber || vehicle.plateNumber);
+    if (plateKey) {
+      await VehicleRegistration.deleteMany({
+        normalizedPlateNumber: plateKey,
+        status: 'Pending',
+      });
     }
 
     res.json({ message: 'Vehicle deleted successfully' });
   })
 );
+
+function normalizePlateKey(plate) {
+  return String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '').toLowerCase();
+}
 
 router.post(
   '/',

@@ -238,7 +238,14 @@ export default function NewVehicleRegistrationPage() {
       });
 
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed to submit registration');
+      if (!res.ok) {
+        if (res.status === 409 && result.foundInMaster) {
+          setFoundInMaster(true);
+          setExistingVehicle(result.vehicle || { plateNumber: formData.plateNumber });
+          setMatchType(result.matchType || 'exact');
+        }
+        throw new Error(result.error || 'Failed to submit registration');
+      }
       
       setSubmitSuccess(true);
     } catch (err) {

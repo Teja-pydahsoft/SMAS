@@ -54,6 +54,47 @@ function generateLightOcrVariants(plate) {
   return [...variants].slice(0, 15);
 }
 
+function normalizePlateKey(plate) {
+  return String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '').toLowerCase();
+}
+
+function plateLookupKeys(plate) {
+  const normalized = normalizePlateKey(plate);
+  if (!normalized) return [];
+  const keys = new Set([normalized]);
+  for (const variant of generateLightOcrVariants(normalized)) {
+    const key = normalizePlateKey(variant);
+    if (key) keys.add(key);
+  }
+  return [...keys];
+}
+
+async function findExistingByPlate(plate) {
+  const normalized = normalizePlateKey(plate);
+  const keys = plateLookupKeys(plate);
+  if (!normalized || keys.length === 0) {
+    return { vehicle: null, pendingReg: null, matchType: null, matchedPlate: null, normalized };
+  }
+
+  const vehicle = await Vehicle.findOne({ normalizedPlateNumber: { $in: keys } }).populate('typeId');
+  const pendingReg = await VehicleRegistration.findOne({
+    normalizedPlateNumber: { $in: keys },
+    status: 'Pending',
+  });
+
+  let matchType = null;
+  let matchedPlate = null;
+  if (vehicle) {
+    matchType = vehicle.normalizedPlateNumber === normalized ? 'exact' : 'variant';
+    matchedPlate = vehicle.plateNumber;
+  } else if (pendingReg) {
+    matchType = pendingReg.normalizedPlateNumber === normalized ? 'exact_pending' : 'variant_pending';
+    matchedPlate = pendingReg.plateNumber;
+  }
+
+  return { vehicle, pendingReg, matchType, matchedPlate, normalized };
+}
+
 function parseJsonField(value, fallback = null) {
   if (!value) return fallback;
   if (typeof value === 'object') return value;
@@ -150,34 +191,7 @@ router.post(
       }
 
       const ocrConfidence = aiResult.confidence?.ocr || 0;
-      const normalizedPlateNumber = plateNumber.toLowerCase().replace(/\s+/g, '');
-
-      // Step 1: Exact Vehicle Master lookup
-      let vehicle = await Vehicle.findOne({ normalizedPlateNumber }).populate('typeId');
-      let pendingReg = await VehicleRegistration.findOne({ normalizedPlateNumber, status: 'Pending' });
-      let matchType = vehicle ? 'exact' : (pendingReg ? 'exact_pending' : null);
-      let matchedPlate = vehicle?.plateNumber || pendingReg?.plateNumber || null;
-
-      // Step 2: If no exact match, try light OCR variant correction
-      if (!vehicle && !pendingReg) {
-        const variants = generateLightOcrVariants(plateNumber);
-        if (variants.length > 0) {
-          const normalizedVariants = variants.map(v => v.toLowerCase().replace(/\s+/g, ''));
-          const variantVehicle = await Vehicle.findOne({ normalizedPlateNumber: { $in: normalizedVariants } }).populate('typeId');
-          if (variantVehicle) {
-            vehicle = variantVehicle;
-            matchType = 'variant';
-            matchedPlate = variantVehicle.plateNumber;
-          } else {
-            const variantPending = await VehicleRegistration.findOne({ normalizedPlateNumber: { $in: normalizedVariants }, status: 'Pending' });
-            if (variantPending) {
-              pendingReg = variantPending;
-              matchType = 'variant_pending';
-              matchedPlate = variantPending.plateNumber;
-            }
-          }
-        }
-      }
+      const { vehicle, pendingReg, matchType, matchedPlate } = await findExistingByPlate(plateNumber);
 
       console.log('[POST /analyze] 6. Lookup completed.', matchType || 'no_match');
 
@@ -314,17 +328,40 @@ router.post(
       return res.status(400).json({ error: 'Plate number is required. AI returned null and no manual plate number was provided.' });
     }
     
-    const normalizedPlateNumber = plateNumber.toLowerCase().replace(/\s+/g, '');
-    
-    // Validate duplicate plates
-    const existingVehicle = await Vehicle.findOne({ normalizedPlateNumber });
+    const { vehicle: existingVehicle, pendingReg: existingRegistration, matchType, matchedPlate, normalized: normalizedPlateNumber } = await findExistingByPlate(plateNumber);
     if (existingVehicle) {
-      return res.status(409).json({ error: 'Vehicle with this plate number already exists in Vehicle Master' });
+      return res.status(409).json({
+        error: matchType === 'variant'
+          ? `Vehicle already exists in Vehicle Master as ${existingVehicle.plateNumber}`
+          : 'Vehicle with this plate number already exists in Vehicle Master',
+        foundInMaster: true,
+        matchType,
+        matchedPlate,
+        vehicle: {
+          _id: existingVehicle._id,
+          plateNumber: existingVehicle.plateNumber,
+          type: existingVehicle.typeId ? existingVehicle.typeId.name : 'Unknown',
+          equipmentName: existingVehicle.metadata?.equipmentName || 'N/A',
+          status: existingVehicle.status,
+          registrationDate: existingVehicle.createdAt,
+        },
+      });
     }
-    
-    const existingRegistration = await VehicleRegistration.findOne({ normalizedPlateNumber, status: 'Pending' });
+
     if (existingRegistration) {
-      return res.status(409).json({ error: 'A pending registration for this plate number already exists' });
+      return res.status(409).json({
+        error: 'A pending registration for this plate number already exists',
+        foundInMaster: true,
+        matchType: matchType || 'exact_pending',
+        matchedPlate,
+        vehicle: {
+          plateNumber: existingRegistration.plateNumber,
+          type: 'Pending Approval',
+          equipmentName: existingRegistration.data?.equipmentName || 'N/A',
+          status: 'Pending',
+          registrationDate: existingRegistration.createdAt,
+        },
+      });
     }
 
     const uniquePrefix = Date.now() + '-' + Math.round(Math.random() * 1e9);
@@ -433,7 +470,7 @@ router.post(
     }
     
     const finalPlateNumber = plateNumber || registration.plateNumber;
-    const normalizedPlateNumber = finalPlateNumber.toLowerCase().replace(/\s+/g, '');
+    const { vehicle: existingVehicle, normalized: normalizedPlateNumber } = await findExistingByPlate(finalPlateNumber);
 
     let finalTypeId = typeId || registration.data?.typeId;
     let finalCategoryId = categoryId || registration.data?.categoryId;
@@ -453,7 +490,6 @@ router.post(
     }
 
     // Duplicate check
-    const existingVehicle = await Vehicle.findOne({ normalizedPlateNumber });
     if (existingVehicle) {
        return res.status(409).json({ error: 'Vehicle with this plate number already exists' });
     }

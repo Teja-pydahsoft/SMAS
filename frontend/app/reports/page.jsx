@@ -1843,7 +1843,10 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const [shiftFilter, setShiftFilter] = useState('all');
   const [shiftOptions, setShiftOptions] = useState([]);
   const [divisionFilter, setDivisionFilter] = useState(divisionRequired ? '' : 'all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
   const [divisions, setDivisions] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
   const [selectionFilters, setSelectionFilters] = useState({});
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [printing, setPrinting] = useState(false);
@@ -1875,6 +1878,29 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       .then((list) => setShiftOptions(Array.isArray(list) ? list : []))
       .catch(() => setShiftOptions([]));
   }, []);
+
+  useEffect(() => {
+    setDepartmentFilter('all');
+    if (divisionRequired && !divisionFilter) {
+      setDepartments([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setLoadingDepartments(true);
+    const params = { isActive: 'true' };
+    if (divisionFilter && divisionFilter !== 'all') params.divisionId = divisionFilter;
+    api.departments.list(params)
+      .then((list) => {
+        if (!cancelled) setDepartments(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!cancelled) setDepartments([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDepartments(false);
+      });
+    return () => { cancelled = true; };
+  }, [divisionFilter, divisionRequired]);
 
   const load = useCallback(async (silent = false) => {
     if (divisionRequired && !divisionFilter) {
@@ -1927,6 +1953,9 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const selectionColumns = collectSelectionColumns(allPeople);
   const roleOptions = (data?.roles || []).map(r => ({ id: r.roleId, name: r.roleName }));
   const selectedDivision = divisions.find(d => d._id === divisionFilter);
+  const selectedDivisionName = selectedDivision?.name || '';
+  const selectedDepartment = departments.find(d => d._id === departmentFilter);
+  const selectedDepartmentName = selectedDepartment?.name || '';
   // Union of configured shifts and shift names present in today's rows (covers deleted shifts)
   const shiftNameOptions = [...new Set([
     ...shiftOptions.map(s => s.name),
@@ -1949,11 +1978,14 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     const matchShift =
       shiftFilter === 'all' ||
       (shiftFilter === 'none' ? !p.shiftName : p.shiftName === shiftFilter);
+    const matchDepartment =
+      departmentFilter === 'all' ||
+      (p.currentDepartmentName || '') === selectedDepartmentName;
     const matchSelections = selectionColumns.every(label => {
       const wanted = selectionFilters[label];
       return selectionFilterMatches(selectionValueFor(p, label), wanted);
     });
-    return matchSearch && matchStatus && matchPayFreq && matchRole && matchShift && matchSelections;
+    return matchSearch && matchStatus && matchPayFreq && matchRole && matchShift && matchDepartment && matchSelections;
   }).sort((a, b) => {
     const res = compareSortValues(dailySortValue(a, sort.key), dailySortValue(b, sort.key));
     return sort.dir === 'asc' ? res : -res;
@@ -2052,14 +2084,49 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               value={search} onChange={e => setSearch(e.target.value)} aria-label="Search" />
           </div>
           {(divisionRequired || divisions.length > 0) && (
-            <select className="rc-select" value={divisionFilter} onChange={e => setDivisionFilter(e.target.value)} aria-label="Filter by division">
-              <option value={divisionRequired ? '' : 'all'}>
-                {divisionRequired ? 'Select Division' : 'All Divisions'}
-              </option>
-              {divisions.map(d => (
-                <option key={d._id} value={d._id}>{d.name}</option>
-              ))}
-            </select>
+            <div style={{ display: 'inline-flex', minWidth: 160 }}>
+              <SearchableSelect
+                options={divisions.map(d => d.name)}
+                value={selectedDivisionName}
+                onChange={(name) => {
+                  if (!name) {
+                    setDivisionFilter(divisionRequired ? '' : 'all');
+                    return;
+                  }
+                  const selected = divisions.find(d => d.name === name);
+                  setDivisionFilter(selected?._id || (divisionRequired ? '' : 'all'));
+                }}
+                placeholder={divisionRequired ? 'Select Division' : 'All Divisions'}
+                emptyValue=""
+                className="rc-select"
+              />
+            </div>
+          )}
+          {(divisionRequired || divisions.length > 0) && (
+            <div style={{ display: 'inline-flex', minWidth: 160 }}>
+              <SearchableSelect
+                options={departments.map(d => d.name)}
+                value={selectedDepartmentName}
+                onChange={(name) => {
+                  if (!name) {
+                    setDepartmentFilter('all');
+                    return;
+                  }
+                  const selected = departments.find(d => d.name === name);
+                  setDepartmentFilter(selected?._id || 'all');
+                }}
+                placeholder={
+                  divisionRequired && !divisionFilter
+                    ? 'Select division first'
+                    : loadingDepartments
+                      ? 'Loading…'
+                      : 'All Departments'
+                }
+                emptyValue=""
+                className="rc-select"
+                disabled={(divisionRequired && !divisionFilter) || loadingDepartments}
+              />
+            </div>
           )}
           <select className="rc-select" value={roleFilter} onChange={e => setRoleFilter(e.target.value)} aria-label="Filter by role">
             <option value="all">All Roles</option>
@@ -2154,7 +2221,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || shiftFilter !== 'all' || Object.values(selectionFilters).some(selectionFilterHasActiveValue) ? 'No matching people' : `No attendance ${isToday ? 'today' : `on ${dayLabel}`}`}
+          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || shiftFilter !== 'all' || departmentFilter !== 'all' || Object.values(selectionFilters).some(selectionFilterHasActiveValue) ? 'No matching people' : `No attendance ${isToday ? 'today' : `on ${dayLabel}`}`}
           desc={search ? 'Try adjusting your search or filters.' : `No gate activity recorded ${isToday ? 'today' : 'for this date'} yet.`}
         />
       ) : (
@@ -2345,8 +2412,10 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
 
   const allPeople = data?.people || [];
   const selectedDivision = divisions.find((d) => d._id === divisionFilter);
+  const selectedDivisionName = selectedDivision?.name || '';
   const selectedDepartment = departments.find((d) => d._id === departmentFilter)
-    || (data?.departmentName ? { name: data.departmentName } : null);
+    || (departmentFilter && data?.departmentName ? { name: data.departmentName } : null);
+  const selectedDepartmentName = selectedDepartment?.name || '';
 
   const filtered = allPeople.filter((p) => {
     const q = search.toLowerCase();
@@ -2415,35 +2484,47 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
               disabled={!ready}
             />
           </div>
-          <select
-            className="rc-select"
-            value={divisionFilter}
-            onChange={(e) => setDivisionFilter(e.target.value)}
-            aria-label="Select division"
-          >
-            <option value="">Select Division</option>
-            {divisions.map((d) => (
-              <option key={d._id} value={d._id}>{d.name}</option>
-            ))}
-          </select>
-          <select
-            className="rc-select"
-            value={departmentFilter}
-            onChange={(e) => setDepartmentFilter(e.target.value)}
-            aria-label="Select department"
-            disabled={!divisionFilter || loadingDepartments}
-          >
-            <option value="">
-              {!divisionFilter
-                ? 'Select division first'
-                : loadingDepartments
-                  ? 'Loading…'
-                  : 'Select Department'}
-            </option>
-            {departments.map((d) => (
-              <option key={d._id} value={d._id}>{d.name}</option>
-            ))}
-          </select>
+          <div style={{ display: 'inline-flex', minWidth: 160 }}>
+            <SearchableSelect
+              options={divisions.map((d) => d.name)}
+              value={selectedDivisionName}
+              onChange={(name) => {
+                if (!name) {
+                  setDivisionFilter('');
+                  return;
+                }
+                const selected = divisions.find((d) => d.name === name);
+                setDivisionFilter(selected?._id || '');
+              }}
+              placeholder="Select Division"
+              emptyValue=""
+              className="rc-select"
+            />
+          </div>
+          <div style={{ display: 'inline-flex', minWidth: 160 }}>
+            <SearchableSelect
+              options={departments.map((d) => d.name)}
+              value={selectedDepartmentName}
+              onChange={(name) => {
+                if (!name) {
+                  setDepartmentFilter('');
+                  return;
+                }
+                const selected = departments.find((d) => d.name === name);
+                setDepartmentFilter(selected?._id || '');
+              }}
+              placeholder={
+                !divisionFilter
+                  ? 'Select division first'
+                  : loadingDepartments
+                    ? 'Loading…'
+                    : 'Select Department'
+              }
+              emptyValue=""
+              className="rc-select"
+              disabled={!divisionFilter || loadingDepartments}
+            />
+          </div>
           <select
             className="rc-select"
             value={filterStatus}

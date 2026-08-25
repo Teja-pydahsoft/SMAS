@@ -212,33 +212,28 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
           </div>
         )}
 
-        {(draft.scanType === 'gate' && isAutoGateEvent(draft.eventType)) ||
-        (draft.scanType === 'department' && isAutoGateEvent(draft.eventType)) ? (
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Action</label>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label htmlFor="entry-exit-event">Action</label>
+          <select
+            id="entry-exit-event"
+            value={draft.eventType}
+            disabled={disabled || !draft.divisionId || (draft.scanType === 'gate' && !draft.gateId)}
+            onChange={(e) => updateDraft({ eventType: e.target.value })}
+          >
+            {eventOptions.map((eventType) => (
+              <option key={eventType} value={eventType}>
+                {eventActionLabel(draft.scanType, eventType)}
+              </option>
+            ))}
+          </select>
+          {isAutoGateEvent(draft.eventType) && (
             <p className="entry-exit-selector__auto-hint field-hint" style={{ marginTop: '0.35rem' }}>
               {draft.scanType === 'department'
-                ? 'Check-in or check-out is chosen automatically from each person\'s department status.'
-                : 'Entry or exit is chosen automatically from each person\'s current division status.'}
+                ? 'Check-in or check-out is chosen automatically from each person\'s department status. You can also pick Check-in or Check-out manually.'
+                : 'Entry or exit is chosen automatically from each person\'s current division status. You can also pick Entry or Exit manually.'}
             </p>
-          </div>
-        ) : (
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label htmlFor="entry-exit-event">Action</label>
-            <select
-              id="entry-exit-event"
-              value={draft.eventType}
-              disabled={disabled || !draft.divisionId}
-              onChange={(e) => updateDraft({ eventType: e.target.value })}
-            >
-              {eventOptions.map((eventType) => (
-                <option key={eventType} value={eventType}>
-                  {eventActionLabel(draft.scanType, eventType)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {divisionOptions.length === 0 && (

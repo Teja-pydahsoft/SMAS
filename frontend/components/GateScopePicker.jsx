@@ -13,7 +13,7 @@ export default function GateScopePicker({
   loading = false,
   error = '',
   showWelcome = true,
-  welcomeHint = 'Select a division first, then choose the department (or gate) to open. Combined entry & exit gates detect entry or exit automatically from each person\'s status.',
+  welcomeHint = 'Select a division first, then choose the department (or gate) to open. Combined entry & exit gates support Auto (smart detect) as well as manual Entry or Exit.',
   compact = false,
 }) {
   const divisions = scope?.divisions || [];
@@ -47,15 +47,17 @@ export default function GateScopePicker({
     };
   }, [departmentPickerDivision]);
 
-  function selectDepartment(division, dept) {
+  function selectDepartment(division, dept, eventType = 'auto') {
     setDepartmentPickerDivision(null);
     onSelect({
       scanType: 'department',
       divisionId: division._id,
       departmentId: dept._id,
-      eventType: 'auto',
+      eventType,
     });
   }
+
+  const departmentEventOptions = ['auto', 'entry', 'exit'];
 
   const departmentModal =
     portalReady &&
@@ -91,17 +93,20 @@ export default function GateScopePicker({
                 <li key={dept._id} className="gate-landing__gate">
                   <div className="gate-landing__gate-info">
                     <span className="gate-landing__gate-name">{dept.name}</span>
-                    <span className="gate-landing__gate-type">Check-in / check-out</span>
+                    <span className="gate-landing__gate-type">Auto or manual check-in / out</span>
                   </div>
                   <div className="gate-landing__gate-actions">
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      disabled={!canGateWrite}
-                      onClick={() => selectDepartment(departmentPickerDivision, dept)}
-                    >
-                      {makeEntryButtonLabel('department', 'auto')}
-                    </button>
+                    {departmentEventOptions.map((eventType) => (
+                      <button
+                        key={`${dept._id}-${eventType}`}
+                        type="button"
+                        className={eventType === 'auto' ? 'btn-primary' : 'btn-secondary'}
+                        disabled={!canGateWrite}
+                        onClick={() => selectDepartment(departmentPickerDivision, dept, eventType)}
+                      >
+                        {makeEntryButtonLabel('department', eventType)}
+                      </button>
+                    ))}
                   </div>
                 </li>
               ))}
@@ -157,42 +162,24 @@ export default function GateScopePicker({
                       </span>
                     </div>
                     <div className="gate-landing__gate-actions">
-                      {(gate.allowedEvents || []).includes('auto') ? (
+                      {(gate.allowedEvents || ['entry']).map((eventType) => (
                         <button
+                          key={`${gate._id}-${eventType}`}
                           type="button"
-                          className="btn-primary"
+                          className={eventType === 'auto' ? 'btn-primary' : 'btn-secondary'}
                           disabled={!canGateWrite}
                           onClick={() =>
                             onSelect({
                               scanType: 'gate',
                               divisionId: division._id,
                               gateId: gate._id,
-                              eventType: 'auto',
+                              eventType,
                             })
                           }
                         >
-                          {makeEntryButtonLabel('gate', 'auto')}
+                          {makeEntryButtonLabel('gate', eventType)}
                         </button>
-                      ) : (
-                        (gate.allowedEvents || ['entry']).map((eventType) => (
-                          <button
-                            key={`${gate._id}-${eventType}`}
-                            type="button"
-                            className="btn-primary"
-                            disabled={!canGateWrite}
-                            onClick={() =>
-                              onSelect({
-                                scanType: 'gate',
-                                divisionId: division._id,
-                                gateId: gate._id,
-                                eventType,
-                              })
-                            }
-                          >
-                            {makeEntryButtonLabel('gate', eventType)}
-                          </button>
-                        ))
-                      )}
+                      ))}
                     </div>
                   </li>
                 ))}

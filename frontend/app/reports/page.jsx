@@ -245,6 +245,30 @@ function istDateOf(value) {
   return todayDateStringIst(d);
 }
 
+/** IST hour of day (0–23) for a timestamp, or null when invalid. */
+function istHourOf(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (isNaN(d)) return null;
+  const hourStr = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).format(d);
+  const hour = Number(hourStr);
+  return Number.isNaN(hour) ? null : hour;
+}
+
+/** Day = gate-in before 6:00 PM IST; Night = 6:00 PM IST onwards. */
+function matchesDayNightPeriod(gateEntryAt, period) {
+  if (!period || period === 'all') return true;
+  const hour = istHourOf(gateEntryAt);
+  if (hour === null) return false;
+  if (period === 'day') return hour < 18;
+  if (period === 'night') return hour >= 18;
+  return true;
+}
+
 /** Compact date like "Jul 26" (IST) — shown under overnight exit times. */
 function formatShortDate(value) {
   if (!value) return '';
@@ -1842,6 +1866,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const [roleFilter, setRoleFilter] = useState('all');
   const [shiftFilter, setShiftFilter] = useState('all');
   const [shiftOptions, setShiftOptions] = useState([]);
+  const [dayNightFilter, setDayNightFilter] = useState('all');
   const [divisionFilter, setDivisionFilter] = useState(divisionRequired ? '' : 'all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [divisions, setDivisions] = useState([]);
@@ -1978,6 +2003,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     const matchShift =
       shiftFilter === 'all' ||
       (shiftFilter === 'none' ? !p.shiftName : p.shiftName === shiftFilter);
+    const matchDayNight = matchesDayNightPeriod(p.gateEntryAt, dayNightFilter);
     const matchDepartment =
       departmentFilter === 'all' ||
       (p.currentDepartmentName || '') === selectedDepartmentName;
@@ -1985,7 +2011,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       const wanted = selectionFilters[label];
       return selectionFilterMatches(selectionValueFor(p, label), wanted);
     });
-    return matchSearch && matchStatus && matchPayFreq && matchRole && matchShift && matchDepartment && matchSelections;
+    return matchSearch && matchStatus && matchPayFreq && matchRole && matchShift && matchDayNight && matchDepartment && matchSelections;
   }).sort((a, b) => {
     const res = compareSortValues(dailySortValue(a, sort.key), dailySortValue(b, sort.key));
     return sort.dir === 'asc' ? res : -res;
@@ -2070,6 +2096,16 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
             displayLabel={isToday ? `Today · ${formatDate(activityDate)}` : formatDate(activityDate)}
             className="rc-activity-date--filter"
           />
+          <select
+            className="rc-select"
+            value={dayNightFilter}
+            onChange={(e) => setDayNightFilter(e.target.value)}
+            aria-label="Filter by day or night gate entry"
+          >
+            <option value="all">All Day &amp; Night</option>
+            <option value="day">Day (before 6 PM)</option>
+            <option value="night">Night (6 PM onwards)</option>
+          </select>
           {divisionRequired && (
             <>
               <input type="date" className="rc-select" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} aria-label="From date" />
@@ -2191,6 +2227,12 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
             <span className="daily-pass-dot daily-pass-dot--inside" />{insideCount} Inside
           </span>
           <span className="rc-filter-pill rc-filter-pill--muted">{activeCount} Active {isToday ? 'Today' : 'This Day'}</span>
+          {dayNightFilter === 'day' && (
+            <span className="rc-filter-pill rc-filter-pill--muted">Day · before 6 PM</span>
+          )}
+          {dayNightFilter === 'night' && (
+            <span className="rc-filter-pill rc-filter-pill--muted">Night · 6 PM onwards</span>
+          )}
           {divisionRequired && (
             <span className="rc-filter-pill rc-filter-pill--muted">{periodLabel}</span>
           )}
@@ -2221,8 +2263,16 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || shiftFilter !== 'all' || departmentFilter !== 'all' || Object.values(selectionFilters).some(selectionFilterHasActiveValue) ? 'No matching people' : `No attendance ${isToday ? 'today' : `on ${dayLabel}`}`}
-          desc={search ? 'Try adjusting your search or filters.' : `No gate activity recorded ${isToday ? 'today' : 'for this date'} yet.`}
+          title={search || filterStatus !== 'all' || payFreqFilter !== 'all' || roleFilter !== 'all' || shiftFilter !== 'all' || dayNightFilter !== 'all' || departmentFilter !== 'all' || Object.values(selectionFilters).some(selectionFilterHasActiveValue) ? 'No matching people' : `No attendance ${isToday ? 'today' : `on ${dayLabel}`}`}
+          desc={
+            search
+              ? 'Try adjusting your search or filters.'
+              : dayNightFilter === 'day'
+                ? `No gate entries before 6 PM ${isToday ? 'today' : `on ${dayLabel}`}.`
+                : dayNightFilter === 'night'
+                  ? `No gate entries from 6 PM onwards ${isToday ? 'today' : `on ${dayLabel}`}.`
+                  : `No gate activity recorded ${isToday ? 'today' : 'for this date'} yet.`
+          }
         />
       ) : (
         <div className="rc-table-wrap">

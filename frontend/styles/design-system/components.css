@@ -334,6 +334,20 @@
   color: var(--text-primary);
 }
 
+.active-activity-alert__force {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #f0b4b4;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.active-activity-alert__force .active-activity-alert__hint {
+  margin: 0;
+}
+
 /* ── Gate day pass section ── */
 .gate-day-pass-section {
   background: var(--surface-base);

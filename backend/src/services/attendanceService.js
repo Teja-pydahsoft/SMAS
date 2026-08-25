@@ -536,6 +536,89 @@ export async function validateGateScan(pass, eventType, registrationId, targetDi
   return { ok: false, error: 'Invalid event type' };
 }
 
+/**
+ * Force-close an open department visit on a day pass (used before gate exit).
+ * Creates an audit GateLog for the department check-out and clears current department.
+ * Skips the normal 2-minute checkout wait — this is an explicit operator override.
+ */
+export async function forceCheckoutActiveDepartment({
+  pass,
+  registrationId,
+  divisionId,
+  matchScore = 1,
+  operator = {},
+  photoPath = null,
+  sourceLogId = null,
+} = {}) {
+  if (!pass) {
+    return { ok: true, pass: null, departmentLog: null, activeDepartment: null };
+  }
+
+  const state = getPassSessionState(pass);
+  if (!state.currentDepartmentId) {
+    return { ok: true, pass, departmentLog: null, activeDepartment: null };
+  }
+
+  const department = await Department.findById(state.currentDepartmentId);
+  const activeDepartment = activeDepartmentFromState(state);
+  const now = new Date();
+
+  const departmentLog = await GateLog.create({
+    registrationId,
+    roleId: pass.roleId || null,
+    divisionId,
+    departmentId: state.currentDepartmentId,
+    scanType: SCAN_TYPES.DEPARTMENT,
+    eventType: GATE_EVENT_TYPES.EXIT,
+    matchScore,
+    matched: true,
+    accessGranted: true,
+    photoPath: photoPath || undefined,
+    gateId: 'department',
+    scannedBy: operator.scannedBy || null,
+    scannedByName: operator.scannedByName || '',
+    scannedByUsername: operator.scannedByUsername || '',
+    metadata: {
+      forceCheckout: true,
+      forcedBeforeGateExit: true,
+      sourceGateLogId: sourceLogId ? String(sourceLogId) : null,
+      departmentName: state.currentDepartmentName || department?.name || '',
+    },
+  });
+
+  let updatedPass = pass;
+  if (department) {
+    await updateDayPassAfterDepartmentScan(pass, department, GATE_EVENT_TYPES.EXIT, now);
+    updatedPass = await getActiveDayPass(registrationId, divisionId);
+  } else {
+    // Department record missing — still clear session state so gate exit can proceed.
+    const payload = { ...(pass.qrPayload || {}) };
+    const visits = Array.isArray(payload.departmentVisits) ? [...payload.departmentVisits] : [];
+    for (let i = 0; i < visits.length; i++) {
+      if (String(visits[i].departmentId) === String(state.currentDepartmentId) && !visits[i].exitAt) {
+        visits[i] = { ...visits[i], exitAt: now.toISOString() };
+      }
+    }
+    payload.departmentVisits = visits;
+    payload.currentDepartmentId = null;
+    payload.currentDepartmentName = null;
+    payload.updatedAt = now.toISOString();
+    pass.qrPayload = payload;
+    pass.markModified('qrPayload');
+    await pass.save();
+    updatedPass = pass;
+  }
+
+  await syncDepartmentVisitsFromLogs(updatedPass, registrationId, divisionId);
+
+  return {
+    ok: true,
+    pass: updatedPass,
+    departmentLog,
+    activeDepartment,
+  };
+}
+
 function activeDepartmentFromState(state) {
   if (!state.currentDepartmentId) return null;
   return {

@@ -102,6 +102,8 @@ function EntryExitContent() {
   const [setupLoading, setSetupLoading] = useState(true);
   // Remark picker — shown after a successful department check-in
   const [remarkPicker, setRemarkPicker] = useState(null); // { logId, personName, departmentName } | null
+  const [lastQrPassCode, setLastQrPassCode] = useState('');
+  const [forceCheckoutLoading, setForceCheckoutLoading] = useState(false);
 
   const divisions = useMemo(() => accessScope?.divisions || [], [accessScope]);
 
@@ -174,9 +176,11 @@ function EntryExitContent() {
     setDayPass(null);
     setSessionState(null);
     setPhotoBlob(null);
+    setLastQrPassCode('');
     setError('');
     setShowDayPass(false);
     setRemarkPicker(null);
+    setForceCheckoutLoading(false);
   }, []);
 
   // After a successful department CHECK-IN, prompt for an optional remark
@@ -319,6 +323,7 @@ function EntryExitContent() {
 
       setLoading(true);
       resetScanState();
+      setLastQrPassCode(passCode);
 
       try {
         const options =
@@ -337,6 +342,57 @@ function EntryExitContent() {
     },
     [loading, canScan, scanType, urlGateId, urlDivisionId, urlDepartmentId, eventType, resetScanState, maybePromptRemark]
   );
+
+  const handleForceCheckout = useCallback(async () => {
+    if (forceCheckoutLoading || loading) return;
+    if (scanType !== 'gate') return;
+    if (!result?.canForceCheckout && result?.reason !== 'department_still_active') return;
+
+    const options =
+      scanType === 'gate'
+        ? { gateId: urlGateId, forceDepartmentCheckout: true }
+        : { divisionId: urlDivisionId, departmentId: urlDepartmentId, forceDepartmentCheckout: true };
+
+    // Prefer exit explicitly so force checkout always runs on gate exit.
+    const forceEventType = eventType === 'auto' ? 'exit' : eventType;
+
+    setForceCheckoutLoading(true);
+    setError('');
+
+    try {
+      let res;
+      if (photoBlob) {
+        res = await api.gate.scan(photoBlob, forceEventType, {
+          ...options,
+          scanType: 'gate',
+          registrationId: result?.registration?._id || null,
+        });
+      } else if (lastQrPassCode) {
+        res = await api.gate.qrScan(lastQrPassCode, forceEventType, options);
+      } else {
+        setError('Scan again, then use Force department out & gate exit.');
+        return;
+      }
+      applyResult(res, setResult, setSessionState, setDayPass, setError);
+    } catch (e) {
+      applyErrorData(e, setResult, setSessionState, setDayPass, setError);
+    } finally {
+      setForceCheckoutLoading(false);
+    }
+  }, [
+    forceCheckoutLoading,
+    loading,
+    scanType,
+    result?.canForceCheckout,
+    result?.reason,
+    result?.registration?._id,
+    urlGateId,
+    urlDivisionId,
+    urlDepartmentId,
+    eventType,
+    photoBlob,
+    lastQrPassCode,
+  ]);
 
   // ── registration redirect ─────────────────────────────────────────────────
 
@@ -565,6 +621,12 @@ function EntryExitContent() {
             showSuccess={showSuccess}
             showDenied={showDenied}
             showSecurityReview={showSecurityReview}
+            onForceCheckout={
+              scanType === 'gate' && (result?.canForceCheckout || result?.reason === 'department_still_active')
+                ? handleForceCheckout
+                : undefined
+            }
+            forceCheckoutLoading={forceCheckoutLoading}
           />
         </div>
       )}

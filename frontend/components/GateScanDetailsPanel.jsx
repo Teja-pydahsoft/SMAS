@@ -59,6 +59,8 @@ export default function GateScanDetailsPanel({
   showSuccess,
   showDenied,
   showSecurityReview,
+  onForceCheckout,
+  forceCheckoutLoading = false,
 }) {
   const hasScanResult = showSuccess || showDenied || showSecurityReview;
   const activeSession = sessionState || result?.sessionState;
@@ -124,6 +126,15 @@ export default function GateScanDetailsPanel({
                   : 'Applied automatically from person status'}
               </p>
             )}
+            {result.forcedDepartmentCheckout && (
+              <p className="field-hint">
+                Forced check-out of{' '}
+                <strong>
+                  {result.forcedDepartmentCheckout.departmentName || 'active department'}
+                </strong>{' '}
+                before gate exit
+              </p>
+            )}
             <p className="gate-details-panel__match-score">
               {result.qrScan
                 ? 'QR Code Verified'
@@ -173,6 +184,9 @@ export default function GateScanDetailsPanel({
               activeDivision={result?.activeDivision}
               sessionState={activeSession}
               scanType={scanType}
+              canForceCheckout={Boolean(result?.canForceCheckout)}
+              onForceCheckout={onForceCheckout}
+              forceCheckoutLoading={forceCheckoutLoading}
             />
 
             <GateMatchedPerson

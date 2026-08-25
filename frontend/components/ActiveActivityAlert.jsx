@@ -11,6 +11,9 @@ export default function ActiveActivityAlert({
   activeDivision,
   sessionState,
   scanType,
+  canForceCheckout = false,
+  onForceCheckout,
+  forceCheckoutLoading = false,
 }) {
   const deptName =
     activeDepartment?.departmentName ||
@@ -54,6 +57,11 @@ export default function ActiveActivityAlert({
     detail = error || 'Wait a short time after check-in before checking out.';
   }
 
+  const showForce =
+    canForceCheckout &&
+    reason === 'department_still_active' &&
+    typeof onForceCheckout === 'function';
+
   return (
     <div className="active-activity-alert" role="status">
       <p className="active-activity-alert__title">{title}</p>
@@ -76,6 +84,23 @@ export default function ActiveActivityAlert({
           </li>
         )}
       </ul>
+      {showForce && (
+        <div className="active-activity-alert__force">
+          <p className="active-activity-alert__hint">
+            Or force check-out of{deptName ? ` "${deptName}"` : ' the department'} and complete gate exit now.
+          </p>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={forceCheckoutLoading}
+            onClick={onForceCheckout}
+          >
+            {forceCheckoutLoading
+              ? 'Force checking out...'
+              : 'Force department out & gate exit'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -21,12 +21,12 @@ export function eventActionLabel(scanType, eventType) {
 
 export function makeEntryButtonLabel(scanType, eventType) {
   if (eventType === 'auto') {
-    return scanType === 'department' ? 'Open for check-in / check-out' : 'Open gate';
+    return scanType === 'department' ? 'Auto check-in / out' : 'Auto entry / exit';
   }
   if (scanType === 'department') {
-    return eventType === 'entry' ? 'Make Check-in' : 'Make Check-out';
+    return eventType === 'entry' ? 'Check-in' : 'Check-out';
   }
-  return eventType === 'entry' ? 'Make Entry' : 'Make Exit';
+  return eventType === 'entry' ? 'Entry' : 'Exit';
 }
 
 export function isAutoGateEvent(eventType) {

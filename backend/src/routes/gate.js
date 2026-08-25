@@ -38,6 +38,7 @@ import {
   assertNotDuplicateScan,
   GATE_DENIAL_REASONS,
   todayDateString,
+  forceCheckoutActiveDepartment,
 } from '../services/attendanceService.js';
 import { startOfDayIst, endOfDayIst } from '../utils/istTime.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
@@ -365,6 +366,54 @@ function buildScanDenialResponse({
     suggestedEventType,
     resolvedEventType,
     personInside,
+    // Gate exit blocked by open department — UI may offer force dept out + gate out.
+    canForceCheckout: reason === GATE_DENIAL_REASONS.DEPARTMENT_STILL_ACTIVE,
+  };
+}
+
+function parseForceDepartmentCheckout(value) {
+  return value === true || value === 'true' || value === '1' || value === 1;
+}
+
+/**
+ * When an operator confirms force checkout on gate exit, close the open
+ * department visit first so validateGateScan can proceed.
+ */
+async function applyForceDepartmentCheckoutIfRequested({
+  forceDepartmentCheckout,
+  resolvedEventType,
+  activePass,
+  registrationId,
+  divisionId,
+  matchScore,
+  operator,
+  sourceLogId,
+}) {
+  if (
+    !forceDepartmentCheckout ||
+    resolvedEventType !== GATE_EVENT_TYPES.EXIT ||
+    !activePass
+  ) {
+    return { activePass, forcedDepartmentCheckout: null };
+  }
+
+  const result = await forceCheckoutActiveDepartment({
+    pass: activePass,
+    registrationId,
+    divisionId,
+    matchScore,
+    operator,
+    sourceLogId,
+  });
+
+  return {
+    activePass: result.pass || activePass,
+    forcedDepartmentCheckout: result.activeDepartment
+      ? {
+          ...result.activeDepartment,
+          departmentLogId: result.departmentLog?._id || null,
+        }
+      : null,
   };
 }
 
@@ -465,7 +514,9 @@ router.post(
       gateId,
       divisionId: bodyDivisionId,
       departmentId,
+      forceDepartmentCheckout: forceCheckoutRaw,
     } = req.body;
+    const forceDepartmentCheckout = parseForceDepartmentCheckout(forceCheckoutRaw);
 
     if (!passCode?.trim()) {
       return res.status(400).json({ error: 'passCode is required' });
@@ -585,13 +636,15 @@ router.post(
     });
 
     return withRegistrationScanLock(matchedRegistration._id, async () => {
-    const [populated, activePass] = await Promise.all([
+    const [populated, initialActivePass] = await Promise.all([
       formatRegistrationForScan(matchedRegistration),
       getActiveDayPass(matchedRegistration._id, divisionId),
     ]);
+    let activePass = initialActivePass;
     let dayPass = activePass ? await formatPassResponse(activePass) : null;
     let sessionState = getPassSessionState(activePass);
     let resolvedEventType = eventType;
+    let forcedDepartmentCheckout = null;
 
     if (effectiveScanType === SCAN_TYPES.GATE) {
       if (gateRecord.gateType === GATE_TYPES.BOTH) {
@@ -655,6 +708,32 @@ router.post(
           dayPass,
           requiredSteps: getRequiredSteps(gateDup.reason),
         });
+      }
+
+      ({ activePass, forcedDepartmentCheckout } = await applyForceDepartmentCheckoutIfRequested({
+        forceDepartmentCheckout,
+        resolvedEventType,
+        activePass,
+        registrationId: matchedRegistration._id,
+        divisionId,
+        matchScore,
+        operator: operatorFields(req.user),
+        sourceLogId: log._id,
+      }));
+      if (forcedDepartmentCheckout) {
+        sessionState = getPassSessionState(activePass);
+        dayPass = activePass ? await formatPassResponse(activePass) : dayPass;
+        log.metadata = {
+          ...(log.metadata || {}),
+          forceDepartmentCheckout: true,
+          forcedDepartmentId: forcedDepartmentCheckout.departmentId,
+          forcedDepartmentName: forcedDepartmentCheckout.departmentName,
+          forcedDepartmentLogId: forcedDepartmentCheckout.departmentLogId
+            ? String(forcedDepartmentCheckout.departmentLogId)
+            : null,
+        };
+        log.markModified('metadata');
+        await log.save();
       }
 
       const gateCheck = await validateGateScan(
@@ -808,6 +887,7 @@ router.post(
       resolvedEventType,
       autoResolved: isAutoEvent,
       qrScan: true,
+      forcedDepartmentCheckout,
     });
     });
   })
@@ -840,7 +920,9 @@ router.post(
       departmentId,
       divisionId: bodyDivisionId,
       scanType = SCAN_TYPES.GATE,
+      forceDepartmentCheckout: forceCheckoutRaw,
     } = req.body;
+    const forceDepartmentCheckout = parseForceDepartmentCheckout(forceCheckoutRaw);
 
     if (!req.file) return res.status(400).json({ error: 'Photo is required' });
     const isAutoEvent = eventType === GATE_EVENT_TYPES.AUTO;
@@ -984,15 +1066,17 @@ router.post(
     }
 
     return withRegistrationScanLock(matchedRegistration._id, async () => {
-    const [populated, activePass] = await Promise.all([
+    const [populated, initialActivePass] = await Promise.all([
       formatRegistrationForScan(matchedRegistration),
       getActiveDayPass(matchedRegistration._id, divisionId),
     ]);
+    let activePass = initialActivePass;
     let dayPass = activePass ? await formatPassResponse(activePass) : null;
     let sessionState = getPassSessionState(activePass);
 
     let resolvedEventType = eventType;
     let personInside = null;
+    let forcedDepartmentCheckout = null;
 
     if (scanType === SCAN_TYPES.GATE) {
       if (gateRecord.gateType === GATE_TYPES.BOTH) {
@@ -1057,6 +1141,32 @@ router.post(
           dayPass,
           requiredSteps: getRequiredSteps(gateDup.reason),
         });
+      }
+
+      ({ activePass, forcedDepartmentCheckout } = await applyForceDepartmentCheckoutIfRequested({
+        forceDepartmentCheckout,
+        resolvedEventType,
+        activePass,
+        registrationId: matchedRegistration._id,
+        divisionId,
+        matchScore,
+        operator: operatorFields(req.user),
+        sourceLogId: log._id,
+      }));
+      if (forcedDepartmentCheckout) {
+        sessionState = getPassSessionState(activePass);
+        dayPass = activePass ? await formatPassResponse(activePass) : dayPass;
+        log.metadata = {
+          ...(log.metadata || {}),
+          forceDepartmentCheckout: true,
+          forcedDepartmentId: forcedDepartmentCheckout.departmentId,
+          forcedDepartmentName: forcedDepartmentCheckout.departmentName,
+          forcedDepartmentLogId: forcedDepartmentCheckout.departmentLogId
+            ? String(forcedDepartmentCheckout.departmentLogId)
+            : null,
+        };
+        log.markModified('metadata');
+        await log.save();
       }
 
       const gateCheck = await validateGateScan(
@@ -1227,6 +1337,7 @@ router.post(
       photoUrl,
       resolvedEventType,
       autoResolved: isAutoEvent,
+      forcedDepartmentCheckout,
     });
     });
   })

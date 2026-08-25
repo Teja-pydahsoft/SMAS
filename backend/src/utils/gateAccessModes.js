@@ -28,16 +28,19 @@ export function resolveGateAccessMode(gateType, storedMode) {
 
 /**
  * Build allowedEvents for the access-scope picker / entry-exit selector.
- * Restricted "both" gates expose entry and/or exit instead of auto.
+ * Full "both" access exposes auto plus manual entry and exit.
+ * Restricted "both" gates expose only the assigned entry and/or exit mode.
  */
 export function allowedEventsForGateAccess(gateType, accessMode) {
   const mode = resolveGateAccessMode(gateType, accessMode);
   if (mode === GATE_ACCESS_MODES.ENTRY) return [GATE_EVENT_TYPES.ENTRY];
   if (mode === GATE_ACCESS_MODES.EXIT) return [GATE_EVENT_TYPES.EXIT];
-  if (gateType === GATE_TYPES.BOTH) return [GATE_EVENT_TYPES.AUTO];
+  if (gateType === GATE_TYPES.BOTH) {
+    return [GATE_EVENT_TYPES.AUTO, GATE_EVENT_TYPES.ENTRY, GATE_EVENT_TYPES.EXIT];
+  }
   if (gateType === GATE_TYPES.ENTRY) return [GATE_EVENT_TYPES.ENTRY];
   if (gateType === GATE_TYPES.EXIT) return [GATE_EVENT_TYPES.EXIT];
-  return [GATE_EVENT_TYPES.AUTO];
+  return [GATE_EVENT_TYPES.AUTO, GATE_EVENT_TYPES.ENTRY, GATE_EVENT_TYPES.EXIT];
 }
 
 /**

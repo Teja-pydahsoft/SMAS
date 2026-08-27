@@ -2355,21 +2355,24 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
 }
 
 /**
- * Department Activity — pick a division, then a department, and view
- * entered / currently-in / exit counts for that department on the selected day.
+ * Department Activity — loads all department check-ins by default (All Status),
+ * with optional division/department filters. Switch between department check-ins
+ * and division-only people (no department) via tabs.
  */
 function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [divisionFilter, setDivisionFilter] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [divisionFilter, setDivisionFilter] = useState('all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
   const [divisions, setDivisions] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
   const [sort, setSort] = useState({ key: 'entry', dir: 'desc' });
+  const [listTab, setListTab] = useState('department'); // 'department' | 'divisionOnly'
+  const [showFilters, setShowFilters] = useState(false);
   const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
   const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
   const intervalRef = useRef(null);
@@ -2396,15 +2399,12 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
   }, []);
 
   useEffect(() => {
-    setDepartmentFilter('');
-    setData(null);
-    if (!divisionFilter) {
-      setDepartments([]);
-      return undefined;
-    }
+    setDepartmentFilter('all');
     let cancelled = false;
     setLoadingDepartments(true);
-    api.departments.list({ divisionId: divisionFilter, isActive: 'true' })
+    const params = { isActive: 'true' };
+    if (divisionFilter && divisionFilter !== 'all') params.divisionId = divisionFilter;
+    api.departments.list(params)
       .then((list) => {
         if (!cancelled) setDepartments(Array.isArray(list) ? list : []);
       })
@@ -2418,11 +2418,6 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
   }, [divisionFilter]);
 
   const load = useCallback(async (silent = false) => {
-    if (!divisionFilter || !departmentFilter) {
-      setData(null);
-      setLoading(false);
-      return;
-    }
     if (!silent) setLoading(true);
     setError('');
     try {
@@ -2432,59 +2427,64 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
         setLoading(false);
         return;
       }
-      const result = await api.reports.departmentActivity({
+      const params = {
         dateFrom: effectiveFrom,
         dateTo: effectiveTo,
-        divisionId: divisionFilter,
-        departmentId: departmentFilter,
-      });
+      };
+      if (divisionFilter && divisionFilter !== 'all') params.divisionId = divisionFilter;
+      if (departmentFilter && departmentFilter !== 'all') params.departmentId = departmentFilter;
+      const result = await api.reports.departmentActivity(params);
       setData(result);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [divisionFilter, departmentFilter, activityDate, effectiveFrom, effectiveTo]);
+  }, [divisionFilter, departmentFilter, effectiveFrom, effectiveTo]);
 
   useEffect(() => {
-    if (!divisionFilter || !departmentFilter) {
-      setData(null);
-      setLoading(false);
-      return undefined;
-    }
     setData(null);
     load();
     if (effectiveFrom === todayDateStringIst() && effectiveTo === todayDateStringIst()) {
       intervalRef.current = setInterval(() => load(true), 30000);
     }
     return () => clearInterval(intervalRef.current);
-  }, [load, divisionFilter, departmentFilter, isToday, effectiveFrom, effectiveTo]);
+  }, [load, effectiveFrom, effectiveTo]);
 
   const allPeople = data?.people || [];
+  const divisionOnlyPeople = data?.divisionOnlyPeople || [];
   const selectedDivision = divisions.find((d) => d._id === divisionFilter);
   const selectedDivisionName = selectedDivision?.name || '';
   const selectedDepartment = departments.find((d) => d._id === departmentFilter)
-    || (departmentFilter && data?.departmentName ? { name: data.departmentName } : null);
+    || (departmentFilter !== 'all' && data?.departmentName ? { name: data.departmentName } : null);
   const selectedDepartmentName = selectedDepartment?.name || '';
+  const showDivisionCol = divisionFilter === 'all';
+  const showDepartmentCol = departmentFilter === 'all';
 
-  const filtered = allPeople.filter((p) => {
+  const matchesFilters = (p) => {
     const q = search.toLowerCase();
     const matchSearch = !q
       || (p.displayName || '').toLowerCase().includes(q)
       || (p.registrationCode || '').toLowerCase().includes(q)
-      || (p.roleName || '').toLowerCase().includes(q);
+      || (p.roleName || '').toLowerCase().includes(q)
+      || (p.departmentName || '').toLowerCase().includes(q)
+      || (p.divisionName || '').toLowerCase().includes(q);
     const matchStatus =
       filterStatus === 'all'
       || (filterStatus === 'inside' && p.currentlyIn)
       || (filterStatus === 'exited' && p.hadExit && !p.currentlyIn)
       || (filterStatus === 'entered' && p.hadEntry);
     return matchSearch && matchStatus;
-  }).sort((a, b) => {
+  };
+
+  const sortPeople = (list) => [...list].sort((a, b) => {
     const valueFor = (person, key) => {
       switch (key) {
         case 'name': return person.displayName || '';
         case 'role': return person.roleName || '';
         case 'code': return person.registrationCode || '';
+        case 'division': return person.divisionName || '';
+        case 'department': return person.departmentName || '';
         case 'entry': return person.entryAt ? new Date(person.entryAt).getTime() : 0;
         case 'exit': return person.exitAt ? new Date(person.exitAt).getTime() : 0;
         case 'status': return person.currentlyIn ? 2 : person.hadExit ? 1 : 0;
@@ -2495,120 +2495,268 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
     return sort.dir === 'asc' ? res : -res;
   });
 
+  const filtered = sortPeople(allPeople.filter(matchesFilters));
+  const filteredDivisionOnly = sortPeople(divisionOnlyPeople.filter(matchesFilters));
+
   const enteredCount = data?.enteredCount ?? 0;
   const inCount = data?.inCount ?? 0;
   const exitCount = data?.exitCount ?? 0;
-  const ready = Boolean(divisionFilter && departmentFilter);
+  const isDivisionOnlyTab = listTab === 'divisionOnly';
+  const activeRows = isDivisionOnlyTab ? filteredDivisionOnly : filtered;
 
-  const openPerson = (registrationId) => {
+  const openPerson = (registrationId, personDivisionId) => {
+    const divisionId = personDivisionId
+      || (divisionFilter !== 'all' ? divisionFilter : '');
     if (effectiveFrom === todayDateStringIst() && effectiveTo === todayDateStringIst()) {
-      onViewPerson(registrationId, divisionFilter);
+      onViewPerson(registrationId, divisionId);
     } else {
-      onViewPerson(registrationId, divisionFilter, effectiveFrom, effectiveTo);
+      onViewPerson(registrationId, divisionId, effectiveFrom, effectiveTo);
     }
   };
 
+  const renderPersonRow = (person, { showDivision = false, showDepartment = false } = {}) => (
+    <tr
+      key={person.rowKey || `${person.registrationId}-${person.departmentId || 'div'}`}
+      className="rc-table__row"
+      onClick={() => openPerson(person.registrationId, person.divisionId)}
+      tabIndex={0}
+      role="button"
+      aria-label={`View report for ${person.displayName || 'Unnamed'}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openPerson(person.registrationId, person.divisionId);
+        }
+      }}
+    >
+      <td>
+        <div className="rc-table__person">
+          <div className="rc-table__status-dot-wrap">
+            <span className={`rc-table__status-dot ${person.currentlyIn ? 'rc-table__status-dot--inside' : ''}`} />
+          </div>
+          <Avatar url={person.photoUrl} name={person.displayName} size={34} />
+          <span className="rc-table__name">{person.displayName || 'Unnamed'}</span>
+        </div>
+      </td>
+      <td><span className="rc-table__muted">{person.roleName || '—'}</span></td>
+      <td><code className="rc-table__code">{person.registrationCode}</code></td>
+      {showDivision && (
+        <td><span className="rc-table__muted">{person.divisionName || '—'}</span></td>
+      )}
+      {showDepartment && (
+        <td><span className="rc-table__muted">{person.departmentName || '—'}</span></td>
+      )}
+      <td className="rc-table__time">{person.entryAt ? formatTime(person.entryAt) : '—'}</td>
+      <td className="rc-table__time">
+        {person.exitAt ? (
+          <span className="rc-table__time-stack">
+            <span>{formatTime(person.exitAt)}</span>
+            {istDateOf(person.exitAt) !== activityDate && (
+              <span className="rc-table__time-date" title="Exited on a different day">
+                {formatShortDate(person.exitAt)}
+              </span>
+            )}
+          </span>
+        ) : person.currentlyIn ? (
+          <span className="rc-badge-live">In</span>
+        ) : '—'}
+      </td>
+      <td className="rc-table__time">
+        {calcDuration(
+          person.entryAt,
+          person.exitAt || (person.currentlyIn && isToday ? new Date() : null)
+        )}
+      </td>
+      <td>
+        {person.currentlyIn ? (
+          <span className="badge badge-success rc-status-badge">In</span>
+        ) : person.hadExit ? (
+          <span className="badge badge-info rc-status-badge">Exited</span>
+        ) : (
+          <span className="badge badge-info rc-status-badge">Entered</span>
+        )}
+      </td>
+      <td className="rc-table__muted">{person.remark || '—'}</td>
+      <td>
+        <button
+          className="rc-table__view-btn"
+          onClick={(e) => { e.stopPropagation(); openPerson(person.registrationId, person.divisionId); }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+          View
+        </button>
+      </td>
+    </tr>
+  );
+
+  const renderTable = (rows, { showDivision = false, showDepartment = false } = {}) => (
+    <div className="rc-table-wrap">
+      <table className="rc-table">
+        <thead>
+          <tr>
+            <SortHeader label="Person" columnKey="name" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+            <SortHeader label="Role" columnKey="role" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+            <SortHeader label="Code" columnKey="code" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+            {showDivision && (
+              <SortHeader label="Division" columnKey="division" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+            )}
+            {showDepartment && (
+              <SortHeader label="Department" columnKey="department" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+            )}
+            <SortHeader label="Entry Time" columnKey="entry" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+            <SortHeader label="Exit Time" columnKey="exit" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+            <th>Duration</th>
+            <SortHeader label="Status" columnKey="status" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
+            <th>Remark</th>
+            <th aria-label="Actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((person) => renderPersonRow(person, { showDivision, showDepartment }))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <div>
-      <div className="rc-filters-bar">
-        <div className="rc-filters-bar__left">
-          <ActivityDatePicker
-            value={activityDate}
-            onChange={onDateChange}
-            displayLabel={isToday ? `Today · ${formatDate(activityDate)}` : formatDate(activityDate)}
-            className="rc-activity-date--filter"
+      {/* Mobile toolbar — search + filter toggle + refresh */}
+      <div className="hide-on-desktop rc-mobile-toolbar" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
+        <div className="rc-search-wrap" style={{ flex: 1, minWidth: 0 }}>
+          <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="search"
+            className="rc-search-input"
+            placeholder="Search..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            disabled={loading}
           />
-          <input type="date" className="rc-select" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} aria-label="From date" />
-          <input type="date" className="rc-select" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} aria-label="To date" />
-          <div className="rc-search-wrap">
-            <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              type="search"
-              className="rc-search-input"
-              placeholder="Search name, code, role…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search"
-              disabled={!ready}
+        </div>
+        <button
+          type="button"
+          className={`btn-secondary btn-sm ${showFilters ? 'btn-primary' : ''}`}
+          onClick={() => setShowFilters(!showFilters)}
+          style={{ padding: '0 8px', flexShrink: 0 }}
+          aria-label="Toggle Filters"
+          aria-expanded={showFilters}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+        </button>
+        <button
+          type="button"
+          className="btn-secondary btn-sm"
+          onClick={() => load()}
+          disabled={loading}
+          style={{ padding: '0 8px', flexShrink: 0 }}
+          aria-label="Refresh"
+        >
+          {loading ? <Spinner size={14} /> : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+          )}
+        </button>
+      </div>
+
+      <div className={`rc-filters-bar rc-filters-bar--dept-grid ${!showFilters ? 'hide-on-mobile' : ''}`}>
+        <div className="rc-filters-bar__left">
+          <div className="rc-filters-bar__cell rc-filters-bar__cell--full">
+            <ActivityDatePicker
+              value={activityDate}
+              onChange={onDateChange}
+              displayLabel={isToday ? `Today · ${formatDate(activityDate)}` : formatDate(activityDate)}
+              className="rc-activity-date--filter"
             />
           </div>
-          <div style={{ display: 'inline-flex', minWidth: 160 }}>
+          <div className="rc-filters-bar__cell">
+            <input type="date" className="rc-select" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} aria-label="From date" />
+          </div>
+          <div className="rc-filters-bar__cell">
+            <input type="date" className="rc-select" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} aria-label="To date" />
+          </div>
+          <div className="rc-filters-bar__cell rc-filters-bar__cell--full hide-on-mobile">
+            <div className="rc-search-wrap" style={{ width: '100%' }}>
+              <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="search"
+                className="rc-search-input"
+                placeholder="Search name, code, role…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Search"
+              />
+            </div>
+          </div>
+          <div className="rc-filters-bar__cell">
             <SearchableSelect
               options={divisions.map((d) => d.name)}
               value={selectedDivisionName}
               onChange={(name) => {
                 if (!name) {
-                  setDivisionFilter('');
+                  setDivisionFilter('all');
                   return;
                 }
                 const selected = divisions.find((d) => d.name === name);
-                setDivisionFilter(selected?._id || '');
+                setDivisionFilter(selected?._id || 'all');
               }}
-              placeholder="Select Division"
+              placeholder="All Divisions"
               emptyValue=""
               className="rc-select"
             />
           </div>
-          <div style={{ display: 'inline-flex', minWidth: 160 }}>
+          <div className="rc-filters-bar__cell">
             <SearchableSelect
               options={departments.map((d) => d.name)}
               value={selectedDepartmentName}
               onChange={(name) => {
                 if (!name) {
-                  setDepartmentFilter('');
+                  setDepartmentFilter('all');
                   return;
                 }
                 const selected = departments.find((d) => d.name === name);
-                setDepartmentFilter(selected?._id || '');
+                setDepartmentFilter(selected?._id || 'all');
               }}
-              placeholder={
-                !divisionFilter
-                  ? 'Select division first'
-                  : loadingDepartments
-                    ? 'Loading…'
-                    : 'Select Department'
-              }
+              placeholder={loadingDepartments ? 'Loading…' : 'All Departments'}
               emptyValue=""
               className="rc-select"
-              disabled={!divisionFilter || loadingDepartments}
+              disabled={loadingDepartments}
             />
           </div>
-          <select
-            className="rc-select"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            aria-label="Filter by status"
-            disabled={!ready}
-          >
-            <option value="all">All Status</option>
-            <option value="inside">Currently In</option>
-            <option value="entered">Entered</option>
-            <option value="exited">Exited</option>
-          </select>
+          <div className="rc-filters-bar__cell rc-filters-bar__cell--full">
+            <select
+              className="rc-select"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              aria-label="Filter by status"
+            >
+              <option value="all">All Status</option>
+              <option value="inside">Currently In</option>
+              <option value="entered">Entered</option>
+              <option value="exited">Exited</option>
+            </select>
+          </div>
         </div>
         <div className="rc-filters-bar__right">
-          {ready && (
-            <>
-              <span className="rc-filter-pill">
-                <span className="daily-pass-dot daily-pass-dot--inside" />
-                {enteredCount} Entered
-              </span>
-              <span className="rc-filter-pill">
-                <span className="daily-pass-dot daily-pass-dot--inside" />
-                {inCount} In
-              </span>
-              <span className="rc-filter-pill rc-filter-pill--muted">
-                {exitCount} Exit
-              </span>
-              <span className="rc-filter-pill rc-filter-pill--muted">{periodLabel}</span>
-            </>
-          )}
+          <span className="rc-filter-pill">
+            <span className="daily-pass-dot daily-pass-dot--inside" />
+            {enteredCount} Entered
+          </span>
+          <span className="rc-filter-pill">
+            <span className="daily-pass-dot daily-pass-dot--inside" />
+            {inCount} In
+          </span>
+          <span className="rc-filter-pill rc-filter-pill--muted">
+            {exitCount} Exit
+          </span>
+          <span className="rc-filter-pill rc-filter-pill--muted hide-on-mobile">{periodLabel}</span>
           <button
-            className="btn-secondary btn-sm"
+            className="btn-secondary btn-sm hide-on-mobile"
             onClick={() => load()}
-            disabled={loading || !ready}
+            disabled={loading}
           >
             {loading ? <Spinner size={14} /> : (
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -2623,126 +2771,62 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
 
       {error && <p className="error-msg" style={{ marginBottom: '1rem' }}>{error}</p>}
 
-      {!divisionFilter ? (
-        <EmptyState
-          icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1M9 13h1m4 0h1M9 17h1m4 0h1" /></svg>}
-          title="Select a division"
-          desc={`Choose a division, then a department, to view department activity for ${isToday ? 'today' : dayLabel}.`}
-        />
-      ) : !departmentFilter ? (
-        <EmptyState
-          icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
-          title={loadingDepartments ? 'Loading departments…' : departments.length === 0 ? 'No departments' : 'Select a department'}
-          desc={
-            loadingDepartments
-              ? 'Fetching departments for this division.'
-              : departments.length === 0
-                ? `${selectedDivision?.name || 'This division'} has no active departments.`
-                : `Choose a department in ${selectedDivision?.name || 'this division'} to view entered, in, and exit counts.`
-          }
-        />
-      ) : loading && !data ? (
+      <div className="rc-tab-nav" style={{ marginBottom: '1rem' }} role="tablist" aria-label="Department activity views">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!isDivisionOnlyTab}
+          className={`rc-tab-btn ${!isDivisionOnlyTab ? 'rc-tab-btn--active' : ''}`}
+          onClick={() => setListTab('department')}
+        >
+          Department Activity
+          <span className="rc-filter-pill" style={{ margin: 0, padding: '0 8px', fontSize: '0.75rem' }}>
+            {filtered.length}
+          </span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isDivisionOnlyTab}
+          className={`rc-tab-btn ${isDivisionOnlyTab ? 'rc-tab-btn--active' : ''}`}
+          onClick={() => setListTab('divisionOnly')}
+        >
+          Division Only
+          <span className="rc-filter-pill" style={{ margin: 0, padding: '0 8px', fontSize: '0.75rem' }}>
+            {filteredDivisionOnly.length}
+          </span>
+        </button>
+      </div>
+
+      {loading && !data ? (
         <div className="rc-table-loading">
           {[...Array(5)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : activeRows.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-          title={search || filterStatus !== 'all' ? 'No matching people' : `No department activity ${isToday ? 'today' : `on ${dayLabel}`}`}
+          title={
+            search || filterStatus !== 'all'
+              ? 'No matching people'
+              : isDivisionOnlyTab
+                ? `No division-only activity ${isToday ? 'today' : `on ${dayLabel}`}`
+                : `No department activity ${isToday ? 'today' : `on ${dayLabel}`}`
+          }
           desc={
             search || filterStatus !== 'all'
               ? 'Try adjusting your search or filters.'
-              : `No check-ins recorded for ${selectedDepartment?.name || 'this department'} ${isToday ? 'today' : 'on this date'} yet.`
+              : isDivisionOnlyTab
+                ? `Everyone with division entry also checked into a department ${isToday ? 'today' : 'on this date'}.`
+                : `No department check-ins recorded ${isToday ? 'today' : 'on this date'} yet.`
           }
         />
       ) : (
-        <div className="rc-table-wrap">
-          <table className="rc-table">
-            <thead>
-              <tr>
-                <SortHeader label="Person" columnKey="name" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-                <SortHeader label="Role" columnKey="role" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-                <SortHeader label="Code" columnKey="code" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-                <SortHeader label="Entry Time" columnKey="entry" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-                <SortHeader label="Exit Time" columnKey="exit" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-                <th>Duration</th>
-                <SortHeader label="Status" columnKey="status" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-                <th>Remark</th>
-                <th aria-label="Actions"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((person) => (
-                <tr
-                  key={person.registrationId}
-                  className="rc-table__row"
-                  onClick={() => openPerson(person.registrationId)}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`View report for ${person.displayName || 'Unnamed'}`}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      openPerson(person.registrationId);
-                    }
-                  }}
-                >
-                  <td>
-                    <div className="rc-table__person">
-                      <div className="rc-table__status-dot-wrap">
-                        <span className={`rc-table__status-dot ${person.currentlyIn ? 'rc-table__status-dot--inside' : ''}`} />
-                      </div>
-                      <Avatar url={person.photoUrl} name={person.displayName} size={34} />
-                      <span className="rc-table__name">{person.displayName || 'Unnamed'}</span>
-                    </div>
-                  </td>
-                  <td><span className="rc-table__muted">{person.roleName || '—'}</span></td>
-                  <td><code className="rc-table__code">{person.registrationCode}</code></td>
-                  <td className="rc-table__time">{person.entryAt ? formatTime(person.entryAt) : '—'}</td>
-                  <td className="rc-table__time">
-                    {person.exitAt ? (
-                      <span className="rc-table__time-stack">
-                        <span>{formatTime(person.exitAt)}</span>
-                        {istDateOf(person.exitAt) !== activityDate && (
-                          <span className="rc-table__time-date" title="Exited on a different day">
-                            {formatShortDate(person.exitAt)}
-                          </span>
-                        )}
-                      </span>
-                    ) : person.currentlyIn ? (
-                      <span className="rc-badge-live">In</span>
-                    ) : '—'}
-                  </td>
-                  <td className="rc-table__time">
-                    {calcDuration(
-                      person.entryAt,
-                      person.exitAt || (person.currentlyIn && isToday ? new Date() : null)
-                    )}
-                  </td>
-                  <td>
-                    {person.currentlyIn ? (
-                      <span className="badge badge-success rc-status-badge">In</span>
-                    ) : person.hadExit ? (
-                      <span className="badge badge-info rc-status-badge">Exited</span>
-                    ) : (
-                      <span className="badge badge-info rc-status-badge">Entered</span>
-                    )}
-                  </td>
-                  <td className="rc-table__muted">{person.remark || '—'}</td>
-                  <td>
-                    <button
-                      className="rc-table__view-btn"
-                      onClick={(e) => { e.stopPropagation(); openPerson(person.registrationId); }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        renderTable(activeRows, {
+          showDivision: isDivisionOnlyTab
+            ? (showDivisionCol || Boolean(selectedDivisionName))
+            : showDivisionCol,
+          showDepartment: !isDivisionOnlyTab && showDepartmentCol,
+        })
       )}
     </div>
   );

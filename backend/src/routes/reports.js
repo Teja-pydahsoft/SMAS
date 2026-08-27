@@ -71,17 +71,13 @@ router.get(
   requirePermission('reports', 'read'),
   asyncHandler(async (req, res) => {
     const divisionIds = await resolveRequestDivisionIds(req);
-    const requestedDivisionId = req.query.divisionId ? String(req.query.divisionId) : '';
-
-    if (!requestedDivisionId) {
-      return res.status(400).json({ error: 'divisionId is required' });
-    }
-    if (Array.isArray(divisionIds) && !divisionIds.includes(requestedDivisionId)) {
+    // Empty array = requested division is outside the user's scope
+    if (Array.isArray(divisionIds) && divisionIds.length === 0 && req.query.divisionId) {
       return res.status(403).json({ error: 'Division is outside your access scope' });
     }
 
     const data = await getDepartmentActivity({
-      divisionId: requestedDivisionId,
+      divisionIds,
       departmentId: req.query.departmentId || null,
       date: req.query.date || null,
       dateFrom: req.query.dateFrom || null,

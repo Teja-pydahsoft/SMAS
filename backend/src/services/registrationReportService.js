@@ -2149,107 +2149,26 @@ export async function recalculateAttendanceHistory({
 }
 
 /**
- * Department activity for a single division + department on a work date.
- * Counts (unique people):
- *   - enteredCount — had at least one department entry
- *   - inCount      — currently checked into the department (open visit)
- *   - exitCount    — had at least one department exit
+ * Build person activity rows from chronological gate/department logs.
+ * When `groupByDepartment` is true, one row per registration+department.
  */
-export async function getDepartmentActivity({
-  divisionId = null,
-  departmentId = null,
-  date = null,
-  dateFrom = null,
-  dateTo = null,
-} = {}) {
-  const today = todayDateString();
-  const validDate =
-    typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
-  const from =
-    typeof dateFrom === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) ? dateFrom : validDate;
-  const to =
-    typeof dateTo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateTo) ? dateTo : validDate;
-  const [rangeFrom, rangeTo] = from <= to ? [from, to] : [to, from];
-
-  if (!divisionId || !mongoose.Types.ObjectId.isValid(divisionId)) {
-    const err = new Error('divisionId is required');
-    err.status = 400;
-    throw err;
-  }
-  if (!departmentId || !mongoose.Types.ObjectId.isValid(departmentId)) {
-    const err = new Error('departmentId is required');
-    err.status = 400;
-    throw err;
-  }
-
-  const department = await Department.findById(departmentId).lean();
-  if (!department) {
-    const err = new Error('Department not found');
-    err.status = 404;
-    throw err;
-  }
-
-  const belongsToDivision = (department.divisionIds || []).some(
-    (id) => id.toString() === String(divisionId)
-  );
-  if (!belongsToDivision) {
-    const err = new Error('Department does not belong to the selected division');
-    err.status = 400;
-    throw err;
-  }
-
-  const dayStart = startOfDayIst(rangeFrom);
-  const dayEnd = endOfDayIst(rangeTo);
-
-  const logs = await GateLog.find(
-    grantedGateLogFilter({
-      divisionId,
-      departmentId,
-      scanType: SCAN_TYPES.DEPARTMENT,
-      registrationId: { $ne: null },
-      createdAt: { $gte: dayStart, $lte: dayEnd },
-    })
-  )
-    .sort({ createdAt: 1 })
-    .lean();
-
-  const logsByReg = new Map();
+function buildActivityPeopleFromLogs(logs, regMap, { groupByDepartment = false } = {}) {
+  const logsByKey = new Map();
   for (const log of logs) {
-    const regId = log.registrationId?.toString();
+    const regId = log.registrationId?._id?.toString()
+      || log.registrationId?.toString();
     if (!regId) continue;
-    if (!logsByReg.has(regId)) logsByReg.set(regId, []);
-    logsByReg.get(regId).push(log);
+    const deptId = log.departmentId?._id?.toString()
+      || log.departmentId?.toString()
+      || '';
+    const key = groupByDepartment ? `${regId}::${deptId}` : regId;
+    if (!logsByKey.has(key)) logsByKey.set(key, []);
+    logsByKey.get(key).push(log);
   }
 
-  const regIds = [...logsByReg.keys()];
-  if (regIds.length === 0) {
-    return {
-      date: validDate,
-      dateFrom: rangeFrom,
-      dateTo: rangeTo,
-      divisionId: String(divisionId),
-      departmentId: String(departmentId),
-      departmentName: department.name,
-      enteredCount: 0,
-      inCount: 0,
-      exitCount: 0,
-      people: [],
-    };
-  }
-
-  const registrations = await Registration.find({
-    _id: { $in: regIds.map((id) => new mongoose.Types.ObjectId(id)) },
-    status: REGISTRATION_STATUS.VERIFIED,
-  })
-    .select('-faceEmbedding')
-    .populate('roleId', 'name slug')
-    .populate('formId', 'fields')
-    .lean();
-
-  const regMap = new Map(registrations.map((r) => [r._id.toString(), r]));
   const people = [];
-
-  for (const [regId, personLogs] of logsByReg) {
+  for (const [key, personLogs] of logsByKey) {
+    const regId = key.split('::')[0];
     const reg = regMap.get(regId);
     if (!reg) continue;
 
@@ -2259,11 +2178,28 @@ export async function getDepartmentActivity({
     let entryEvents = 0;
     let exitEvents = 0;
     let lastRemark = '';
+    let divisionId = null;
+    let divisionName = null;
+    let departmentId = null;
+    let departmentName = null;
 
     for (const log of personLogs) {
       const at = log.createdAt;
       const remark =
         typeof log.remark === 'string' && log.remark.trim() ? log.remark.trim() : '';
+
+      const logDivisionId = log.divisionId?._id?.toString() || log.divisionId?.toString() || null;
+      const logDivisionName = log.divisionId?.name || null;
+      const logDepartmentId = log.departmentId?._id?.toString() || log.departmentId?.toString() || null;
+      const logDepartmentName = log.departmentId?.name || null;
+      if (logDivisionId) {
+        divisionId = logDivisionId;
+        divisionName = logDivisionName || divisionName;
+      }
+      if (logDepartmentId) {
+        departmentId = logDepartmentId;
+        departmentName = logDepartmentName || departmentName;
+      }
 
       if (log.eventType === GATE_EVENT_TYPES.ENTRY) {
         entryEvents += 1;
@@ -2283,11 +2219,16 @@ export async function getDepartmentActivity({
 
     people.push({
       registrationId: regId,
+      rowKey: key,
       displayName: display.displayName,
       registrationCode: reg.registrationCode,
       photoUrl: photoUrlFromPath(reg.photoPath),
       roleId: reg.roleId?._id?.toString() || null,
       roleName: reg.roleId?.name || null,
+      divisionId,
+      divisionName,
+      departmentId,
+      departmentName,
       entryAt: firstEntryAt || openEntryAt || null,
       exitAt: currentlyIn ? null : lastExitAt,
       currentlyIn,
@@ -2305,16 +2246,190 @@ export async function getDepartmentActivity({
     return be - ae;
   });
 
+  return people;
+}
+
+/**
+ * Department activity for a work date / range.
+ * Division and department filters are optional — omit both to return all
+ * department check-ins (All Status style), plus people who entered a division
+ * but never checked into any department (`divisionOnlyPeople`).
+ *
+ * Counts (unique people / rows):
+ *   - enteredCount — had at least one department entry
+ *   - inCount      — currently checked into a department (open visit)
+ *   - exitCount    — had at least one department exit
+ */
+export async function getDepartmentActivity({
+  divisionId = null,
+  divisionIds = null,
+  departmentId = null,
+  date = null,
+  dateFrom = null,
+  dateTo = null,
+} = {}) {
+  const today = todayDateString();
+  const validDate =
+    typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
+  const from =
+    typeof dateFrom === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateFrom) ? dateFrom : validDate;
+  const to =
+    typeof dateTo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateTo) ? dateTo : validDate;
+  const [rangeFrom, rangeTo] = from <= to ? [from, to] : [to, from];
+
+  const divisionScoped = Array.isArray(divisionIds);
+  let effectiveDivisionIds = null;
+  if (divisionId && mongoose.Types.ObjectId.isValid(divisionId)) {
+    effectiveDivisionIds = [String(divisionId)];
+  } else if (divisionScoped) {
+    effectiveDivisionIds = divisionIds.map((id) => String(id));
+    if (effectiveDivisionIds.length === 0) {
+      return {
+        date: validDate,
+        dateFrom: rangeFrom,
+        dateTo: rangeTo,
+        divisionId: null,
+        departmentId: null,
+        departmentName: null,
+        enteredCount: 0,
+        inCount: 0,
+        exitCount: 0,
+        divisionOnlyCount: 0,
+        people: [],
+        divisionOnlyPeople: [],
+      };
+    }
+  }
+
+  let department = null;
+  const hasDepartmentFilter = Boolean(departmentId && mongoose.Types.ObjectId.isValid(departmentId));
+  if (hasDepartmentFilter) {
+    department = await Department.findById(departmentId).lean();
+    if (!department) {
+      const err = new Error('Department not found');
+      err.status = 404;
+      throw err;
+    }
+    if (effectiveDivisionIds?.length === 1) {
+      const belongsToDivision = (department.divisionIds || []).some(
+        (id) => id.toString() === effectiveDivisionIds[0]
+      );
+      if (!belongsToDivision) {
+        const err = new Error('Department does not belong to the selected division');
+        err.status = 400;
+        throw err;
+      }
+    }
+  }
+
+  const dayStart = startOfDayIst(rangeFrom);
+  const dayEnd = endOfDayIst(rangeTo);
+  const divisionObjIds = effectiveDivisionIds ? toObjectIdArray(effectiveDivisionIds) : null;
+
+  const deptLogFilter = grantedGateLogFilter({
+    scanType: SCAN_TYPES.DEPARTMENT,
+    registrationId: { $ne: null },
+    createdAt: { $gte: dayStart, $lte: dayEnd },
+  });
+  if (divisionObjIds) deptLogFilter.divisionId = { $in: divisionObjIds };
+  if (hasDepartmentFilter) deptLogFilter.departmentId = department._id;
+
+  const gateLogFilter = grantedGateLogFilter({
+    scanType: SCAN_TYPES.GATE,
+    registrationId: { $ne: null },
+    createdAt: { $gte: dayStart, $lte: dayEnd },
+  });
+  if (divisionObjIds) gateLogFilter.divisionId = { $in: divisionObjIds };
+
+  const [deptLogs, gateLogs] = await Promise.all([
+    GateLog.find(deptLogFilter)
+      .populate('divisionId', 'name slug')
+      .populate('departmentId', 'name slug')
+      .sort({ createdAt: 1 })
+      .lean(),
+    GateLog.find(gateLogFilter)
+      .populate('divisionId', 'name slug')
+      .sort({ createdAt: 1 })
+      .lean(),
+  ]);
+
+  const deptRegIds = new Set(
+    deptLogs.map((log) => log.registrationId?.toString()).filter(Boolean)
+  );
+  // Division-only = gate activity in range, but no department check-in at all
+  // (even in other departments). When a department filter is active, still
+  // exclude anyone who visited any department so the section stays "no dept".
+  const anyDeptFilter = grantedGateLogFilter({
+    scanType: SCAN_TYPES.DEPARTMENT,
+    registrationId: { $ne: null },
+    createdAt: { $gte: dayStart, $lte: dayEnd },
+  });
+  if (divisionObjIds) anyDeptFilter.divisionId = { $in: divisionObjIds };
+  const anyDeptRegIds = hasDepartmentFilter
+    ? new Set(
+        (await GateLog.distinct('registrationId', anyDeptFilter))
+          .map((id) => id?.toString())
+          .filter(Boolean)
+      )
+    : deptRegIds;
+
+  const divisionOnlyLogs = gateLogs.filter((log) => {
+    const regId = log.registrationId?.toString();
+    return regId && !anyDeptRegIds.has(regId);
+  });
+
+  const allRegIds = [
+    ...new Set([
+      ...deptLogs.map((log) => log.registrationId?.toString()).filter(Boolean),
+      ...divisionOnlyLogs.map((log) => log.registrationId?.toString()).filter(Boolean),
+    ]),
+  ];
+
+  if (allRegIds.length === 0) {
+    return {
+      date: validDate,
+      dateFrom: rangeFrom,
+      dateTo: rangeTo,
+      divisionId: effectiveDivisionIds?.length === 1 ? effectiveDivisionIds[0] : null,
+      departmentId: hasDepartmentFilter ? String(department._id) : null,
+      departmentName: department?.name || null,
+      enteredCount: 0,
+      inCount: 0,
+      exitCount: 0,
+      divisionOnlyCount: 0,
+      people: [],
+      divisionOnlyPeople: [],
+    };
+  }
+
+  const registrations = await Registration.find({
+    _id: { $in: allRegIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    status: REGISTRATION_STATUS.VERIFIED,
+  })
+    .select('-faceEmbedding')
+    .populate('roleId', 'name slug')
+    .populate('formId', 'fields')
+    .lean();
+
+  const regMap = new Map(registrations.map((r) => [r._id.toString(), r]));
+  const groupByDepartment = !hasDepartmentFilter;
+  const people = buildActivityPeopleFromLogs(deptLogs, regMap, { groupByDepartment });
+  const divisionOnlyPeople = buildActivityPeopleFromLogs(divisionOnlyLogs, regMap, {
+    groupByDepartment: false,
+  });
+
   return {
     date: validDate,
     dateFrom: rangeFrom,
     dateTo: rangeTo,
-    divisionId: String(divisionId),
-    departmentId: String(departmentId),
-    departmentName: department.name,
+    divisionId: effectiveDivisionIds?.length === 1 ? effectiveDivisionIds[0] : null,
+    departmentId: hasDepartmentFilter ? String(department._id) : null,
+    departmentName: department?.name || null,
     enteredCount: people.filter((p) => p.hadEntry).length,
     inCount: people.filter((p) => p.currentlyIn).length,
     exitCount: people.filter((p) => p.hadExit).length,
+    divisionOnlyCount: divisionOnlyPeople.length,
     people,
+    divisionOnlyPeople,
   };
 }

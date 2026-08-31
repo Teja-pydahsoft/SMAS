@@ -13,6 +13,7 @@ export default function MobileVehicleNav({ onClose }) {
     { path: '/vehicles/registrations?status=Pending', label: 'Vehicle Registrations', icon: 'registrations', description: 'Manage pending vehicle requests' },
     { path: '/vehicles', label: 'Vehicle Master', icon: 'companies', description: 'Complete database of all vehicles' },
     { path: '/vehicles/reports', label: 'Vehicle Reports', icon: 'reports', description: 'Analytics and exportable data' },
+    { path: '/vehicles/settings', label: 'Vehicle Settings', icon: 'settings', description: 'Configure vehicle settings like OCR and QR' },
   ];
 
   return (

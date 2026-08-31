@@ -11,6 +11,8 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { createMulter } from '../utils/storage.js';
 import { isObjectStorageEnabled, uploadPhoto } from '../services/objectStorage.js';
 import VehicleCategory from '../models/VehicleCategory.js';
+import QRCode from 'qrcode';
+import SystemSetting from '../models/SystemSetting.js';
 
 const router = Router();
 
@@ -156,6 +158,19 @@ router.post(
   },
   asyncHandler(async (req, res) => {
     try {
+      const settings = await SystemSetting.findOne({ singleton: 'singleton' });
+      const ocrEnabled = settings?.vehicleSettings?.ocrEnabled !== false;
+      
+      if (!ocrEnabled) {
+        return res.json({
+          foundInMaster: false,
+          plateNumber: '',
+          needsVerification: true,
+          ocrDetails: null,
+          message: 'OCR is disabled in settings'
+        });
+      }
+
       const files = req.files;
       console.log('[POST /analyze] 3. Files detected.');
       if (!files || !files.front || !files.frontPlate) {
@@ -656,6 +671,31 @@ router.delete(
     }
 
     res.json({ message: 'Registration deleted successfully' });
+  })
+);
+
+// GET /api/vehicles/registrations/:id/qr
+router.get(
+  '/:id/qr',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid registration ID format' });
+    }
+    
+    const registration = await VehicleRegistration.findById(id);
+    if (!registration) {
+      return res.status(404).json({ error: 'Registration not found' });
+    }
+    
+    const qrDataUrl = await QRCode.toDataURL(registration.plateNumber, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 600,
+      color: { dark: '#000000', light: '#ffffff' }
+    });
+    
+    res.json({ qrDataUrl });
   })
 );
 

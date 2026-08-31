@@ -13,6 +13,13 @@ import VehicleDrawer from '@/components/vehicles/VehicleDrawer';
 import PageTabs from '@/components/PageTabs';
 
 export default function VehiclesPage() {
+  const tabs = [
+    { label: 'Vehicles', path: '/vehicles' },
+    { label: 'Categories', path: '/vehicles/categories' },
+    { label: 'Types', path: '/vehicles/types' },
+    { label: 'Settings', path: '/vehicles/settings' }
+  ];
+
   const [vehicles, setVehicles] = useState([]);
   const [summary, setSummary] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -179,7 +186,8 @@ export default function VehiclesPage() {
       description="Manage all registered logistics equipment across the organization."
       toolbar={toolbar}
     >
-      <div className="admin-page-content" style={{ paddingTop: 0, marginTop: '-0.5rem' }}>
+      <PageTabs tabs={tabs} />
+      <div className="admin-page-content" style={{ paddingTop: 0, marginTop: '0.5rem' }}>
         
         {/* ROW 1: Summary Cards */}
         {summary && !summary.isSynced && (

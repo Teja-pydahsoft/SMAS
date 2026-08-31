@@ -33,6 +33,7 @@ export const APP_NAV_ITEMS = [
       { path: '/registrations?roleSlug=driver', label: 'Driver Registration', icon: 'registrations', module: 'registrations' },
       { path: '/equipment/movements', label: 'Entry & Exit', icon: 'entryExit', module: 'equipment_movements' },
       { path: '/vehicles/reports', label: 'Reports', icon: 'reports', module: 'vehicle_reports' },
+      { path: '/vehicles/settings', label: 'Settings', icon: 'settings', module: 'vehicles' },
     ],
   },
   {

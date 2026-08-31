@@ -4,6 +4,7 @@ import EquipmentMovement from '../models/EquipmentMovement.js';
 import VehicleRegistration from '../models/VehicleRegistration.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { getVehicleModuleSummary } from '../services/vehicleSummaryService.js';
+import SystemSetting from '../models/SystemSetting.js';
 
 const router = Router();
 
@@ -145,6 +146,46 @@ router.post(
     }
     
     res.json(result);
+  })
+);
+
+// GET /api/vehicles/settings
+router.get(
+  '/settings',
+  asyncHandler(async (req, res) => {
+    let settings = await SystemSetting.findOne({ singleton: 'singleton' });
+    if (!settings) {
+      settings = await SystemSetting.create({ singleton: 'singleton' });
+    }
+    // ensure vehicleSettings exists
+    if (!settings.vehicleSettings) {
+      settings.vehicleSettings = { ocrEnabled: true, qrEnabled: false };
+      await settings.save();
+    }
+    res.json(settings.vehicleSettings);
+  })
+);
+
+// PUT /api/vehicles/settings
+router.put(
+  '/settings',
+  asyncHandler(async (req, res) => {
+    const { ocrEnabled, qrEnabled } = req.body;
+    let settings = await SystemSetting.findOne({ singleton: 'singleton' });
+    if (!settings) settings = new SystemSetting({ singleton: 'singleton' });
+    
+    settings.vehicleSettings = {
+      ocrEnabled: ocrEnabled !== undefined ? ocrEnabled : true,
+      qrEnabled: qrEnabled !== undefined ? qrEnabled : false
+    };
+    
+    // business rule: if ocr is off, turn on the qr by default
+    if (!settings.vehicleSettings.ocrEnabled) {
+      settings.vehicleSettings.qrEnabled = true;
+    }
+    
+    await settings.save();
+    res.json(settings.vehicleSettings);
   })
 );
 

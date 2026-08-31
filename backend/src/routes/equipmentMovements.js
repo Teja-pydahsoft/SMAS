@@ -108,6 +108,37 @@ router.post(
   })
 );
 
+// Step 1.5: QR Scan and resolve details by plate number directly
+router.post(
+  '/qr-scan',
+  asyncHandler(async (req, res) => {
+    const { plateNumber } = req.body;
+    if (!plateNumber?.trim()) {
+      return res.status(400).json({ error: 'Plate number is required' });
+    }
+
+    const normalized = plateNumber.toLowerCase().replace(/\s+/g, '');
+    const vehicle = await Vehicle.findOne({ normalizedPlateNumber: normalized }).populate('typeId');
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found in master' });
+    }
+
+    const activeMovement = await EquipmentMovement.findOne({ vehicleId: vehicle._id, status: 'Inside' }).populate('departmentId');
+    
+    // Format response identical to /analyze, so the frontend UI can reuse the exact same Confirmation step/layout!
+    res.json({
+      success: true,
+      aiResult: { frontPlateNumber: vehicle.plateNumber, confidence: { ocr: 100 } },
+      vehicle,
+      driver: null,
+      driverMatchScore: 0,
+      activeMovement,
+      snapshotUrl: '', // no snapshot for QR scans
+      message: 'QR scan completed'
+    });
+  })
+);
+
 // Step 2: Confirm Movement
 router.post(
   '/capture',

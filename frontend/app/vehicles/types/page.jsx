@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import PageShell from '@/components/PageShell';
+import PageTabs from '@/components/PageTabs';
 import AdminIcon from '@/components/admin/AdminIcons';
 import { api } from '@/lib/api/client';
 
@@ -16,6 +17,13 @@ export default function VehicleTypesPage() {
   const [editingType, setEditingType] = useState(null);
   const [formData, setFormData] = useState({ name: '', description: '', isActive: true });
   const [saving, setSaving] = useState(false);
+
+  const tabs = [
+    { label: 'Vehicles', path: '/vehicles' },
+    { label: 'Categories', path: '/vehicles/categories' },
+    { label: 'Types', path: '/vehicles/types' },
+    { label: 'Settings', path: '/vehicles/settings' }
+  ];
 
   const fetchTypes = async () => {
     setLoading(true);
@@ -88,6 +96,7 @@ export default function VehicleTypesPage() {
         </button>
       }
     >
+      <PageTabs tabs={tabs} />
       {error && (
         <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '16px', borderRadius: '4px', marginBottom: '24px' }}>
           {error}

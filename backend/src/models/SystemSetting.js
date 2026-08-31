@@ -20,6 +20,10 @@ const systemSettingSchema = new mongoose.Schema(
         },
       ],
     },
+    vehicleSettings: {
+      ocrEnabled: { type: Boolean, default: true },
+      qrEnabled: { type: Boolean, default: false },
+    },
   },
   { timestamps: true }
 );

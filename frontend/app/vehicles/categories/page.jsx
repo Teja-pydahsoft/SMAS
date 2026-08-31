@@ -20,7 +20,8 @@ export default function VehicleCategoriesPage() {
   const tabs = [
     { label: 'Vehicles', path: '/vehicles' },
     { label: 'Categories', path: '/vehicles/categories' },
-    { label: 'Types', path: '/vehicles/types' }
+    { label: 'Types', path: '/vehicles/types' },
+    { label: 'Settings', path: '/vehicles/settings' }
   ];
 
   const toolbar = (

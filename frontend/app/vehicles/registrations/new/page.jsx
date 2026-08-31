@@ -55,7 +55,17 @@ export default function NewVehicleRegistrationPage() {
   const [isAddingNewType, setIsAddingNewType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
 
+  const [ocrEnabled, setOcrEnabled] = useState(true);
+
   useEffect(() => {
+    api.vehicles.settings()
+      .then(data => {
+        if (data && data.ocrEnabled !== undefined) {
+          setOcrEnabled(data.ocrEnabled);
+        }
+      })
+      .catch(err => console.error('Failed to load vehicle settings:', err));
+
     Promise.all([
       api.vehicles.types.list().catch(() => []),
       api.vehicles.categories.list().catch(() => [])
@@ -104,8 +114,12 @@ export default function NewVehicleRegistrationPage() {
       
       const allCaptured = Object.values(newFiles).every(f => f !== null);
       if (allCaptured) {
-        // Defer to avoid double-trigger from stale closure
-        setTimeout(() => analyzeRegistration(newFiles), 0);
+        if (ocrEnabled) {
+          // Defer to avoid double-trigger from stale closure
+          setTimeout(() => analyzeRegistration(newFiles), 0);
+        } else {
+          setAiStatus('completed');
+        }
       }
       
       return newFiles;
@@ -337,8 +351,18 @@ export default function NewVehicleRegistrationPage() {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                   <div className="admin-form-group" style={{ margin: 0 }}>
-                    <label style={{ fontWeight: '600' }}>Plate Number (Auto-filled by AI)</label>
-                    <input type="text" className="admin-input" value={formData.plateNumber} onChange={(e) => setFormData({...formData, plateNumber: e.target.value})} style={{ backgroundColor: 'var(--surface-base)', textTransform: 'uppercase' }} placeholder="Auto-filled by OCR" />
+                    <label style={{ fontWeight: '600' }}>
+                      {ocrEnabled ? 'Plate Number (Auto-filled by AI)' : 'Plate Number *'}
+                    </label>
+                    <input 
+                      type="text" 
+                      className="admin-input" 
+                      value={formData.plateNumber} 
+                      onChange={(e) => setFormData({...formData, plateNumber: e.target.value})} 
+                      style={{ backgroundColor: 'var(--surface-base)', textTransform: 'uppercase' }} 
+                      placeholder={ocrEnabled ? 'Auto-filled by OCR' : 'Enter Plate Number'} 
+                      required={!ocrEnabled}
+                    />
                   </div>
                   
 
@@ -479,10 +503,14 @@ export default function NewVehicleRegistrationPage() {
 
             {/* OCR Status Panel */}
             <div className="admin-panel glass-panel" style={{ padding: '1.5rem', backgroundColor: aiStatus === 'completed' ? 'rgba(16, 185, 129, 0.05)' : 'var(--surface-sunken)', border: aiStatus === 'completed' ? '1px solid var(--success)' : '1px solid var(--border-color)' }}>
-              <h2 style={{ fontSize: '1.125rem', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-secondary)' }}>Analysis Status</h2>
+              <h2 style={{ fontSize: '1.125rem', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-secondary)' }}>
+                {ocrEnabled ? 'Analysis Status' : 'Capture Status'}
+              </h2>
               
               {aiStatus === 'idle' && (
-                <div style={{ color: 'var(--text-muted)' }}>Waiting for both images to trigger OCR Analysis...</div>
+                <div style={{ color: 'var(--text-muted)' }}>
+                  {ocrEnabled ? 'Waiting for both images to trigger OCR Analysis...' : 'Waiting for both images to be captured...'}
+                </div>
               )}
               {aiStatus === 'processing' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
@@ -492,43 +520,57 @@ export default function NewVehicleRegistrationPage() {
               )}
               {aiStatus === 'completed' && (
                 <div>
-                  {needsVerification && (
-                    <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                      <span style={{ fontSize: '0.8125rem', color: '#92400e', fontWeight: '600' }}>
-                        Please verify the detected registration number before submitting.
-                      </span>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Detected Plate</span>
-                      <div style={{ fontSize: '1rem', color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                        {formData.plateNumber || 'Unknown'}
-                      </div>
-                      <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Confidence</span>
-                      <div style={{ fontSize: '1.25rem', color: (aiResult?.confidence?.ocr || 0) > 80 ? 'var(--success)' : (aiResult?.confidence?.ocr || 0) > 50 ? 'var(--warning)' : 'var(--danger)', fontWeight: 'bold' }}>
-                        {Math.round(aiResult?.confidence?.ocr || 0)}%
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Master Lookup</span>
-                      <div style={{ marginTop: '0.25rem' }}>
-                        {matchType === 'variant' ? (
-                          <span className="admin-badge admin-badge--warning">Possible Match</span>
-                        ) : foundInMaster ? (
-                          <span className="admin-badge admin-badge--warning">Already Registered</span>
-                        ) : (
-                          <span className="admin-badge admin-badge--success">New Vehicle</span>
-                        )}
-                      </div>
-                      {matchType === 'variant' && existingVehicle && (
-                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                          Matched: <strong>{existingVehicle.plateNumber}</strong>
+                  {ocrEnabled ? (
+                    <>
+                      {needsVerification && (
+                        <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                          <span style={{ fontSize: '0.8125rem', color: '#92400e', fontWeight: '600' }}>
+                            Please verify the detected registration number before submitting.
+                          </span>
                         </div>
                       )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Detected Plate</span>
+                          <div style={{ fontSize: '1rem', color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                            {formData.plateNumber || 'Unknown'}
+                          </div>
+                          <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Confidence</span>
+                          <div style={{ fontSize: '1.25rem', color: (aiResult?.confidence?.ocr || 0) > 80 ? 'var(--success)' : (aiResult?.confidence?.ocr || 0) > 50 ? 'var(--warning)' : 'var(--danger)', fontWeight: 'bold' }}>
+                            {Math.round(aiResult?.confidence?.ocr || 0)}%
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span className="text-muted" style={{ fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 'bold' }}>Master Lookup</span>
+                          <div style={{ marginTop: '0.25rem' }}>
+                            {matchType === 'variant' ? (
+                              <span className="admin-badge admin-badge--warning">Possible Match</span>
+                            ) : foundInMaster ? (
+                              <span className="admin-badge admin-badge--warning">Already Registered</span>
+                            ) : (
+                              <span className="admin-badge admin-badge--success">New Vehicle</span>
+                            )}
+                          </div>
+                          {matchType === 'variant' && existingVehicle && (
+                            <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              Matched: <strong>{existingVehicle.plateNumber}</strong>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <div style={{ color: 'var(--success)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        All Photos Captured
+                      </div>
+                      <div className="text-muted" style={{ fontSize: '0.875rem' }}>
+                        OCR is disabled. Please enter the vehicle plate number and other metadata manually in the form to register.
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>

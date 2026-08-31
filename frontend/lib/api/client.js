@@ -584,6 +584,8 @@ export const api = {
     movements: (params = {}) => request(`/vehicles/movements${toQuery(params)}`),
     list: () => request('/vehicles'),
     delete: (id) => request(`/vehicles/${id}`, { method: 'DELETE' }),
+    settings: () => request('/vehicles/settings'),
+    updateSettings: (data) => request('/vehicles/settings', { method: 'PUT', body: JSON.stringify(data) }),
     types: {
       list: () => request('/vehicles/types'),
       create: (data) => request('/vehicles/types', { method: 'POST', body: JSON.stringify(data) }),
@@ -598,6 +600,7 @@ export const api = {
       approve: (id, data) => request(`/vehicles/registrations/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
       reject: (id, data) => request(`/vehicles/registrations/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
       delete: (id) => request(`/vehicles/registrations/${id}`, { method: 'DELETE' }),
+      qr: (id) => request(`/vehicles/registrations/${id}/qr`),
       updatePhoto: (id, photoKey, file) => {
         const form = new FormData();
         form.append('photo', file);

@@ -16,6 +16,228 @@ export default function VehicleRegistrationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // QR Modal and Printing State
+  const [selectedRegForQr, setSelectedRegForQr] = useState(null);
+  const [qrDataUrl, setQrDataUrl] = useState(null);
+  const [loadingQr, setLoadingQr] = useState(false);
+
+  const openQrModal = async (registration) => {
+    setSelectedRegForQr(registration);
+    setQrDataUrl(null);
+    setLoadingQr(true);
+    try {
+      const data = await api.vehicles.registrations.qr(registration._id);
+      if (data && data.qrDataUrl) {
+        setQrDataUrl(data.qrDataUrl);
+      }
+    } catch (err) {
+      console.error('Failed to load QR code:', err);
+      alert('Failed to load QR code');
+    } finally {
+      setLoadingQr(false);
+    }
+  };
+
+  const closeQrModal = () => {
+    setSelectedRegForQr(null);
+    setQrDataUrl(null);
+  };
+
+  const handlePrintQr = (registration, qrUrl) => {
+    if (!qrUrl) return;
+
+    const printRootId = 'pass-print-root';
+    let printRoot = document.getElementById(printRootId);
+    if (printRoot) printRoot.remove();
+
+    printRoot = document.createElement('div');
+    printRoot.id = printRootId;
+    printRoot.setAttribute('aria-hidden', 'true');
+
+    printRoot.innerHTML = `
+      <div class="vehicle-qr-print-page">
+        <div class="vehicle-qr-print-top">
+          <h1 class="vehicle-qr-print-header-text">SMAS VEHICLE PASS</h1>
+          <div class="vehicle-qr-print-code-container">
+            <img src="${qrUrl}" class="vehicle-qr-print-img" alt="QR Code" />
+          </div>
+          <p class="vehicle-qr-print-hint">SCAN AT GATE FOR ACCESS</p>
+        </div>
+        <div class="vehicle-qr-print-bottom">
+          <div class="vehicle-qr-print-plate">${registration.plateNumber || 'UNKNOWN'}</div>
+          <div class="vehicle-qr-print-grid">
+            <div class="vehicle-qr-print-field">
+              <span class="label">EQUIPMENT:</span>
+              <span class="value">${registration.data?.equipmentName || 'N/A'}</span>
+            </div>
+            <div class="vehicle-qr-print-field">
+              <span class="label">VEHICLE TYPE:</span>
+              <span class="value">${registration.data?.vehicleType || 'Unknown'}</span>
+            </div>
+            <div class="vehicle-qr-print-field">
+              <span class="label">DEPARTMENT:</span>
+              <span class="value">${registration.data?.departmentId ? 'Assigned Department' : 'General'}</span>
+            </div>
+            <div class="vehicle-qr-print-field">
+              <span class="label">STATUS:</span>
+              <span class="value">${registration.status || 'Active'}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(printRoot);
+
+    const styleId = 'vehicle-qr-print-style';
+    let styleTag = document.getElementById(styleId);
+    if (styleTag) styleTag.remove();
+
+    styleTag = document.createElement('style');
+    styleTag.id = styleId;
+    styleTag.textContent = `
+      #pass-print-root {
+        display: none;
+      }
+      @media print {
+        @page {
+          size: A4 portrait;
+          margin: 0;
+        }
+        body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #fff !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        body > *:not(#pass-print-root) {
+          display: none !important;
+        }
+        #pass-print-root {
+          display: block !important;
+          width: 210mm;
+          height: 297mm;
+          box-sizing: border-box;
+          padding: 10mm;
+        }
+        .vehicle-qr-print-page {
+          width: 190mm;
+          height: 277mm;
+          display: flex;
+          flex-direction: column;
+          box-sizing: border-box;
+        }
+        .vehicle-qr-print-top {
+          flex: 3;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: space-between;
+          border: 3pt solid #000;
+          border-bottom: none;
+          padding: 12mm;
+          box-sizing: border-box;
+        }
+        .vehicle-qr-print-header-text {
+          font-size: 28pt;
+          font-weight: 850;
+          letter-spacing: 2px;
+          margin: 0 0 5mm 0;
+          text-align: center;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .vehicle-qr-print-code-container {
+          flex: 1;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          width: 100%;
+        }
+        .vehicle-qr-print-img {
+          width: 140mm;
+          height: 140mm;
+          object-fit: contain;
+        }
+        .vehicle-qr-print-hint {
+          font-size: 14pt;
+          font-weight: 700;
+          letter-spacing: 1.5px;
+          margin: 5mm 0 0 0;
+          color: #475569;
+          text-align: center;
+        }
+        .vehicle-qr-print-bottom {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          border: 3pt solid #000;
+          border-top: 3pt dashed #000;
+          padding: 8mm;
+          box-sizing: border-box;
+          background: #fff;
+        }
+        .vehicle-qr-print-plate {
+          font-size: 36pt;
+          font-weight: 900;
+          font-family: monospace;
+          letter-spacing: 3px;
+          text-transform: uppercase;
+          border: 3.5pt solid #000;
+          padding: 2mm 8mm;
+          border-radius: 4mm;
+          margin-bottom: 6mm;
+          background: #f8fafc;
+          text-align: center;
+        }
+        .vehicle-qr-print-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 4mm 10mm;
+          width: 100%;
+          padding: 0 5mm;
+          box-sizing: border-box;
+        }
+        .vehicle-qr-print-field {
+          display: flex;
+          flex-direction: column;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .vehicle-qr-print-field .label {
+          font-size: 9pt;
+          font-weight: 750;
+          color: #475569;
+          margin-bottom: 1mm;
+          text-transform: uppercase;
+        }
+        .vehicle-qr-print-field .value {
+          font-size: 14pt;
+          font-weight: 800;
+          color: #0f172a;
+        }
+      }
+    `;
+
+    document.head.appendChild(styleTag);
+    document.body.classList.add('pass-printing');
+
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.body.classList.remove('pass-printing');
+      printRoot.remove();
+      styleTag.remove();
+      window.removeEventListener('afterprint', cleanup);
+    };
+
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(cleanup, 60_000);
+    window.print();
+  };
+
   // Filter state
   const [filters, setFilters] = useState({
     plateNumber: '',
@@ -362,6 +584,9 @@ export default function VehicleRegistrationsPage() {
                         </td>
                         <td style={{ textAlign: 'right' }}>
                           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                            <button className="admin-btn admin-btn--sm admin-btn--secondary" onClick={(e) => { e.stopPropagation(); openQrModal(r); }}>
+                              QR Code
+                            </button>
                             <button className="admin-btn admin-btn--sm admin-btn--ghost" onClick={(e) => handleAction(e, r._id, 'view')}>
                               View
                             </button>
@@ -412,9 +637,18 @@ export default function VehicleRegistrationsPage() {
                       <div className="reg-mobile-type">{r.data?.equipmentName || 'N/A'}</div>
                       <div className="reg-mobile-type" style={{ marginBottom: '4px' }}>{r.data?.vehicleType || 'Unknown Type'}</div>
                       
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
                         <span className={`admin-badge admin-badge--${ocrBadge.color}`} style={{ fontSize: '0.65rem', padding: '2px 4px' }}>{ocrBadge.text}</span>
-                        <span className="text-muted" style={{ fontSize: '0.65rem' }}>{new Date(r.createdAt).toLocaleDateString()}</span>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <button 
+                            className="admin-btn admin-btn--sm admin-btn--secondary" 
+                            style={{ padding: '2px 6px', fontSize: '10px', height: 'auto', minHeight: 'auto' }}
+                            onClick={(e) => { e.stopPropagation(); openQrModal(r); }}
+                          >
+                            QR
+                          </button>
+                          <span className="text-muted" style={{ fontSize: '0.65rem' }}>{new Date(r.createdAt).toLocaleDateString()}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -468,6 +702,65 @@ export default function VehicleRegistrationsPage() {
           )}
         </div>
       </div>
+
+      {/* QR Code Modal */}
+      {selectedRegForQr && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="admin-panel glass-panel admin-fade-in" style={{ width: '100%', maxWidth: '450px', padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
+            <button 
+              onClick={closeQrModal}
+              style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+              aria-label="Close"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+
+            <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.25rem', textAlign: 'center', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Vehicle Pass QR Code
+            </h3>
+
+            {loadingQr ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '240px' }}>
+                <div className="dash-loading__spinner"></div>
+              </div>
+            ) : qrDataUrl ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                <div style={{ border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', background: '#fff', marginBottom: '1.5rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                  <img src={qrDataUrl} alt="Vehicle QR Code" style={{ width: '220px', height: '220px', display: 'block' }} />
+                </div>
+                
+                <div style={{ width: '100%', backgroundColor: 'var(--surface-sunken)', borderRadius: '8px', padding: '1rem', marginBottom: '2rem', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem', fontWeight: '600' }}>Plate Number</span>
+                    <strong style={{ fontFamily: 'monospace', fontSize: '1rem' }}>{selectedRegForQr.plateNumber}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem', fontWeight: '600' }}>Equipment</span>
+                    <span style={{ fontWeight: '700', fontSize: '0.875rem' }}>{selectedRegForQr.data?.equipmentName || 'N/A'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875rem', fontWeight: '600' }}>Vehicle Type</span>
+                    <span style={{ fontSize: '0.875rem', fontWeight: '600' }}>{selectedRegForQr.data?.vehicleType || 'Unknown'}</span>
+                  </div>
+                </div>
+
+                <button 
+                  className="admin-btn admin-btn--primary" 
+                  onClick={() => handlePrintQr(selectedRegForQr, qrDataUrl)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', height: '42px' }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                  Print QR Code Pass (A4)
+                </button>
+              </div>
+            ) : (
+              <div style={{ padding: '2rem', color: 'var(--danger)', textAlign: 'center' }}>
+                Failed to generate QR Code.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </PageShell>
   );
 }

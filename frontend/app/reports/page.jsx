@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
@@ -433,8 +433,54 @@ function entryLocationTitle(entry) {
   return parts.join(' · ') || entry.label || '';
 }
 
-function EntryLocationMeta({ entry, compact = false }) {
+function timelineEventTitle(entry) {
+  const isDept = entry?.scanType === 'department';
+  if (isDept && entry?.departmentName) return entry.departmentName;
+  if (entry?.gateName) return entry.gateName;
+  if (entry?.scanType === 'activity') return (entry?.label || '').trim() || 'Activity detected';
+  const label = (entry?.label || '').trim();
+  if (!label) return 'Access event';
+  return label.replace(/\s*[—–-]\s*(Entry|Exit|Check-in|Check-out|In|Out)\s*$/i, '').trim() || label;
+}
+
+function scanByWhomLabel(entry) {
+  const name = (entry?.scannedByName || '').trim();
+  const username = (entry?.scannedByUsername || '').trim();
+  if (name && username && name.toLowerCase() !== username.toLowerCase()) {
+    return `${name} (@${username})`;
+  }
+  if (name) return name;
+  if (username) return `@${username}`;
+  if (entry?.scanType === 'activity') return 'Activity Monitor';
+  return '';
+}
+
+function EntryLocationMeta({ entry, compact = false, pills = false }) {
   const isDept = entry.scanType === 'department';
+
+  if (pills) {
+    const items = [];
+    if (entry.divisionName) items.push({ key: 'div', text: entry.divisionName });
+    if (isDept && entry.departmentName && timelineEventTitle(entry) !== entry.departmentName) {
+      items.push({ key: 'dept', text: entry.departmentName, dept: true });
+    }
+    if (!isDept && entry.gateName && timelineEventTitle(entry) !== entry.gateName) {
+      items.push({ key: 'gate', text: entry.gateName });
+    }
+    if (!items.length) return null;
+    return (
+      <div className="rc-entry-loc rc-entry-loc--pills">
+        {items.map((item) => (
+          <span
+            key={item.key}
+            className={`rc-entry-loc__pill ${item.dept ? 'rc-entry-loc__pill--dept' : ''}`.trim()}
+          >
+            {item.text}
+          </span>
+        ))}
+      </div>
+    );
+  }
 
   if (compact) {
     return (
@@ -530,9 +576,31 @@ function ScanDetailLightbox({ entry, workDate = '', onClose }) {
 
   if (!entry) return null;
   const isEntry = !isExitScan(entry);
-  const kind = isDeptScan(entry) ? 'Department' : entry.scanType === 'activity' ? 'Activity' : 'Gate';
+  const isDept = isDeptScan(entry);
+  const isGate = !isDept && entry.scanType !== 'activity';
+  const kind = isDept ? 'Department' : entry.scanType === 'activity' ? 'Activity' : 'Gate';
   const action = scanActivityLabel(entry);
   const at = entry.at || entry.entryAt;
+  const title = timelineEventTitle(entry);
+  const detailRows = [];
+
+  if (title) detailRows.push({ label: isDept ? 'Department' : isGate ? 'Gate' : 'Location', value: title });
+  if (entry.divisionName) detailRows.push({ label: 'Division / Unit', value: entry.divisionName });
+  const byWhom = scanByWhomLabel(entry);
+  detailRows.push({ label: 'By Whom', value: byWhom || '—' });
+  if (isDept && entry.departmentName && entry.departmentName !== title) {
+    detailRows.push({ label: 'Department', value: entry.departmentName });
+  }
+  if (isGate && entry.gateName && entry.gateName !== title) {
+    detailRows.push({ label: 'Gate', value: entry.gateName });
+  }
+  if (entry.matchScore != null) {
+    detailRows.push({ label: 'Face Match', value: `${Math.round(Number(entry.matchScore) * 100)}%` });
+  }
+  if (entry.remark?.trim()) detailRows.push({ label: 'Remark', value: entry.remark.trim() });
+  if (entry.entryAt && entry.exitAt) {
+    detailRows.push({ label: 'Duration', value: calcDuration(entry.entryAt, entry.exitAt) });
+  }
 
   return (
     <div className="rc-scan-lightbox" onClick={onClose} role="presentation">
@@ -555,22 +623,34 @@ function ScanDetailLightbox({ entry, workDate = '', onClose }) {
           <div className="rc-scan-lightbox__badges">
             <span className={`badge ${isEntry ? 'badge-success' : 'badge-info'}`}>{action}</span>
             <span className="badge badge-secondary">{kind}</span>
-          </div>
-          <p className="rc-scan-lightbox__time">
-            {formatTime(at)}
-            {workDate && istDateOf(at) && istDateOf(at) !== workDate && (
-              <span className="rc-scan-lightbox__date"> · {formatShortDate(at)}</span>
+            {entry.status === 'Active' && (
+              <span className="badge badge-warning">
+                <span className="today-timeline__pulse" aria-hidden /> Active
+              </span>
             )}
-          </p>
-          {entry.label && <p className="rc-scan-lightbox__label">{entry.label}</p>}
-          <EntryLocationMeta entry={entry} />
-          {entry.matchScore != null && (
-            <p className="rc-scan-lightbox__meta">
-              Match: {Math.round(Number(entry.matchScore) * 100)}%
-            </p>
-          )}
-          {entry.remark?.trim() && (
-            <p className="rc-scan-lightbox__meta">Remark: {entry.remark.trim()}</p>
+          </div>
+          <div className="rc-scan-lightbox__datetime">
+            <time className="rc-scan-lightbox__date-line" dateTime={at || undefined}>
+              {at ? formatDate(at) : '—'}
+            </time>
+            <time className="rc-scan-lightbox__time-line" dateTime={at || undefined}>
+              {at ? formatTime(at) : '—'}
+            </time>
+            {workDate && istDateOf(at) && istDateOf(at) !== workDate && (
+              <p className="rc-scan-lightbox__date-note">
+                Event date differs from selected work date ({formatDate(workDate)})
+              </p>
+            )}
+          </div>
+          {detailRows.length > 0 && (
+            <div className="rc-scan-lightbox__details">
+              {detailRows.map((row) => (
+                <div key={row.label} className="rc-scan-lightbox__detail-row">
+                  <span className="rc-scan-lightbox__detail-label">{row.label}</span>
+                  <span className="rc-scan-lightbox__detail-value">{row.value}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -588,6 +668,8 @@ function TimelineEvent({ entry, isLast, showPhoto = true, onOpen }) {
     entry.isEntry;
   const isActive = entry.status === 'Active';
   const time = entry.at || entry.entryAt;
+  const eventBadge = isActivity ? 'SEEN' : (entry.eventType || (isEntry ? 'ENTRY' : 'EXIT'));
+  const kindBadge = isActivity ? 'Activity' : isGate ? 'Gate' : 'Dept';
 
   return (
     <div className={`rc-timeline__item ${isLast ? 'rc-timeline__item--last' : ''}`}>
@@ -612,14 +694,19 @@ function TimelineEvent({ entry, isLast, showPhoto = true, onOpen }) {
       </div>
       <div className={`rc-timeline__card ${isActive ? 'rc-timeline__card--active' : ''}`}>
         <div className={`rc-timeline__card-body ${!showPhoto ? 'rc-timeline__card-body--no-photo' : ''}`}>
-          <div className="rc-timeline__card-main">
+          {showPhoto && (
+            <div className="rc-timeline__card-photo">
+              <ScanPhoto url={entry.photoUrl} label={`${eventBadge} photo`} size="sm" onClick={() => onOpen?.(entry)} />
+            </div>
+          )}
+          <div className="rc-timeline__card-content">
             <div className="rc-timeline__card-top">
               <div className="rc-timeline__badges">
                 <span className={`badge ${isActivity ? 'badge-warning' : isEntry ? 'badge-success' : 'badge-info'}`}>
-                  {isActivity ? 'SEEN' : (entry.eventType || (isEntry ? 'ENTRY' : 'EXIT'))}
+                  {eventBadge}
                 </span>
                 <span className={`badge ${isActivity ? 'badge-secondary' : isGate ? 'badge-secondary' : 'badge-warning'}`}>
-                  {isActivity ? 'Activity' : isGate ? 'Gate' : 'Dept'}
+                  {kindBadge}
                 </span>
                 {isActive && (
                   <span className="badge badge-warning">
@@ -627,17 +714,21 @@ function TimelineEvent({ entry, isLast, showPhoto = true, onOpen }) {
                   </span>
                 )}
               </div>
-              <span className="rc-timeline__time">{time ? formatTime(time) : '—'}</span>
+              <time className="rc-timeline__time" dateTime={time || undefined}>
+                {time ? formatTime(time) : '—'}
+              </time>
             </div>
-            <p className="rc-timeline__label">{entry.label}</p>
-            <EntryLocationMeta entry={entry} />
+            <p className="rc-timeline__label">{timelineEventTitle(entry)}</p>
+            <EntryLocationMeta entry={entry} pills />
+            {entry.remark?.trim() && (
+              <p className="rc-timeline__remark">{entry.remark.trim()}</p>
+            )}
             {entry.entryAt && entry.exitAt && (
               <p className="rc-timeline__meta rc-timeline__meta--duration">
-                Duration: {calcDuration(entry.entryAt, entry.exitAt)}
+                Duration {calcDuration(entry.entryAt, entry.exitAt)}
               </p>
             )}
           </div>
-          {showPhoto && <ScanPhoto url={entry.photoUrl} label={`${entry.eventType || 'Scan'} photo`} onClick={() => onOpen?.(entry)} />}
         </div>
       </div>
     </div>
@@ -1534,7 +1625,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
               </div>
 
               {/* Inner tabs */}
-              <div className="sub-nav" style={{ marginBottom: '1rem' }}>
+              <div className="sub-nav rc-dialog__sub-nav" style={{ marginBottom: '1rem' }}>
                 {innerTabs.map(t => (
                   <button key={t.id} type="button"
                     className={`sub-nav-item ${activeInnerTab === t.id ? 'active' : ''}`}
@@ -2354,178 +2445,373 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   );
 }
 
-/**
- * Department Activity — loads all department check-ins by default (All Status),
- * with optional division/department filters. Switch between department check-ins
- * and division-only people (no department) via tabs.
- */
-function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [divisionFilter, setDivisionFilter] = useState('all');
-  const [departmentFilter, setDepartmentFilter] = useState('all');
-  const [divisions, setDivisions] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [loadingDepartments, setLoadingDepartments] = useState(false);
-  const [sort, setSort] = useState({ key: 'entry', dir: 'desc' });
-  const [listTab, setListTab] = useState('department'); // 'department' | 'divisionOnly'
-  const [showFilters, setShowFilters] = useState(false);
-  const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
-  const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
-  const intervalRef = useRef(null);
-
-  const activityDate = selectedDate || todayDateStringIst();
-  const isToday = activityDate === todayDateStringIst();
-  const dayLabel = isToday ? 'Today' : formatDate(activityDate);
-  const effectiveFrom = rangeFrom || activityDate;
-  const effectiveTo = rangeTo || activityDate;
-  const periodLabel = `${formatDate(effectiveFrom)} — ${formatDate(effectiveTo)}`;
-
-  const handleSort = useCallback((key) => {
-    setSort((prev) => (
-      prev.key === key
-        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
-        : { key, dir: 'asc' }
-    ));
-  }, []);
-
-  useEffect(() => {
-    api.reports.divisions()
-      .then((res) => setDivisions(Array.isArray(res?.divisions) ? res.divisions : []))
-      .catch(() => setDivisions([]));
-  }, []);
-
-  useEffect(() => {
-    setDepartmentFilter('all');
-    let cancelled = false;
-    setLoadingDepartments(true);
-    const params = { isActive: 'true' };
-    if (divisionFilter && divisionFilter !== 'all') params.divisionId = divisionFilter;
-    api.departments.list(params)
-      .then((list) => {
-        if (!cancelled) setDepartments(Array.isArray(list) ? list : []);
-      })
-      .catch(() => {
-        if (!cancelled) setDepartments([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingDepartments(false);
-      });
-    return () => { cancelled = true; };
-  }, [divisionFilter]);
-
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    setError('');
-    try {
-      if (effectiveFrom > effectiveTo) {
-        setError('From date cannot be after To date.');
-        setData(null);
-        setLoading(false);
-        return;
-      }
-      const params = {
-        dateFrom: effectiveFrom,
-        dateTo: effectiveTo,
-      };
-      if (divisionFilter && divisionFilter !== 'all') params.divisionId = divisionFilter;
-      if (departmentFilter && departmentFilter !== 'all') params.departmentId = departmentFilter;
-      const result = await api.reports.departmentActivity(params);
-      setData(result);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [divisionFilter, departmentFilter, effectiveFrom, effectiveTo]);
-
-  useEffect(() => {
-    setData(null);
-    load();
-    if (effectiveFrom === todayDateStringIst() && effectiveTo === todayDateStringIst()) {
-      intervalRef.current = setInterval(() => load(true), 30000);
-    }
-    return () => clearInterval(intervalRef.current);
-  }, [load, effectiveFrom, effectiveTo]);
-
-  const allPeople = data?.people || [];
-  const divisionOnlyPeople = data?.divisionOnlyPeople || [];
-  const selectedDivision = divisions.find((d) => d._id === divisionFilter);
-  const selectedDivisionName = selectedDivision?.name || '';
-  const selectedDepartment = departments.find((d) => d._id === departmentFilter)
-    || (departmentFilter !== 'all' && data?.departmentName ? { name: data.departmentName } : null);
-  const selectedDepartmentName = selectedDepartment?.name || '';
-  const showDivisionCol = divisionFilter === 'all';
-  const showDepartmentCol = departmentFilter === 'all';
-
-  const matchesFilters = (p) => {
-    const q = search.toLowerCase();
-    const matchSearch = !q
-      || (p.displayName || '').toLowerCase().includes(q)
-      || (p.registrationCode || '').toLowerCase().includes(q)
-      || (p.roleName || '').toLowerCase().includes(q)
-      || (p.departmentName || '').toLowerCase().includes(q)
-      || (p.divisionName || '').toLowerCase().includes(q);
-    const matchStatus =
-      filterStatus === 'all'
-      || (filterStatus === 'inside' && p.currentlyIn)
-      || (filterStatus === 'exited' && p.hadExit && !p.currentlyIn)
-      || (filterStatus === 'entered' && p.hadEntry);
-    return matchSearch && matchStatus;
+function activityGroupStats(people = []) {
+  return {
+    total: people.length,
+    enteredCount: people.filter((p) => p.hadEntry).length,
+    inCount: people.filter((p) => p.currentlyIn).length,
+    exitCount: people.filter((p) => p.hadExit).length,
   };
+}
 
-  const sortPeople = (list) => [...list].sort((a, b) => {
-    const valueFor = (person, key) => {
-      switch (key) {
-        case 'name': return person.displayName || '';
-        case 'role': return person.roleName || '';
-        case 'code': return person.registrationCode || '';
-        case 'division': return person.divisionName || '';
-        case 'department': return person.departmentName || '';
-        case 'entry': return person.entryAt ? new Date(person.entryAt).getTime() : 0;
-        case 'exit': return person.exitAt ? new Date(person.exitAt).getTime() : 0;
-        case 'status': return person.currentlyIn ? 2 : person.hadExit ? 1 : 0;
-        default: return '';
+function compareHierarchyHighToLow(a, b) {
+  const inDiff = (b.inCount || 0) - (a.inCount || 0);
+  if (inDiff !== 0) return inDiff;
+  const totalDiff = (b.total || 0) - (a.total || 0);
+  if (totalDiff !== 0) return totalDiff;
+  const enteredDiff = (b.enteredCount || 0) - (a.enteredCount || 0);
+  if (enteredDiff !== 0) return enteredDiff;
+  return (a.departmentName || a.divisionName || '').localeCompare(
+    b.departmentName || b.divisionName || '',
+    undefined,
+    { sensitivity: 'base' }
+  );
+}
+
+/** Flat department + division rows, departments and units sorted high → low by activity. */
+function buildDepartmentDivisionActivityRows(people = [], departmentCatalog = [], { includeEmpty = true } = {}) {
+  const deptMap = new Map();
+
+  for (const person of people) {
+    const deptId = person.departmentId || '__unknown__';
+    const divId = person.divisionId || '__unknown__';
+    if (!deptMap.has(deptId)) {
+      deptMap.set(deptId, {
+        departmentId: person.departmentId || null,
+        departmentName: person.departmentName || 'Unknown Department',
+        units: new Map(),
+        people: [],
+      });
+    }
+    const dept = deptMap.get(deptId);
+    dept.people.push(person);
+    if (!dept.units.has(divId)) {
+      dept.units.set(divId, {
+        divisionId: person.divisionId || null,
+        divisionName: person.divisionName || 'Unknown Unit',
+        people: [],
+      });
+    }
+    dept.units.get(divId).people.push(person);
+  }
+
+  if (includeEmpty) {
+    for (const dept of departmentCatalog) {
+      if (!deptMap.has(dept._id)) {
+        deptMap.set(dept._id, {
+          departmentId: dept._id,
+          departmentName: dept.name,
+          units: new Map(),
+          people: [],
+        });
       }
-    };
-    const res = compareSortValues(valueFor(a, sort.key), valueFor(b, sort.key));
-    return sort.dir === 'asc' ? res : -res;
+    }
+  }
+
+  const departments = [...deptMap.values()].map((dept) => {
+    const deptStats = activityGroupStats(dept.people);
+    let units = [...dept.units.values()].map((unit) => ({
+      ...unit,
+      departmentId: dept.departmentId,
+      departmentName: dept.departmentName,
+      ...activityGroupStats(unit.people),
+    }));
+
+    if (units.length === 0) {
+      units = [{
+        departmentId: dept.departmentId,
+        departmentName: dept.departmentName,
+        divisionId: null,
+        divisionName: '—',
+        people: [],
+        ...activityGroupStats([]),
+      }];
+    }
+
+    units.sort(compareHierarchyHighToLow);
+    return { ...dept, units, ...deptStats };
   });
 
-  const filtered = sortPeople(allPeople.filter(matchesFilters));
-  const filteredDivisionOnly = sortPeople(divisionOnlyPeople.filter(matchesFilters));
+  departments.sort(compareHierarchyHighToLow);
 
-  const enteredCount = data?.enteredCount ?? 0;
-  const inCount = data?.inCount ?? 0;
-  const exitCount = data?.exitCount ?? 0;
-  const isDivisionOnlyTab = listTab === 'divisionOnly';
-  const activeRows = isDivisionOnlyTab ? filteredDivisionOnly : filtered;
+  const rows = [];
+  for (const dept of departments) {
+    dept.units.forEach((unit, index) => {
+      rows.push({
+        rowKey: `${dept.departmentId || 'unknown'}::${unit.divisionId || 'none'}`,
+        departmentId: dept.departmentId,
+        departmentName: dept.departmentName,
+        divisionId: unit.divisionId,
+        divisionName: unit.divisionName,
+        people: unit.people,
+        enteredCount: unit.enteredCount,
+        inCount: unit.inCount,
+        exitCount: unit.exitCount,
+        total: unit.total,
+        departmentInCount: dept.inCount,
+        departmentTotal: dept.total,
+        isFirstInDepartment: index === 0,
+        departmentRowSpan: dept.units.length,
+        isClickable: Boolean(unit.divisionId && unit.total > 0),
+      });
+    });
+  }
 
-  const openPerson = (registrationId, personDivisionId) => {
-    const divisionId = personDivisionId
-      || (divisionFilter !== 'all' ? divisionFilter : '');
-    if (effectiveFrom === todayDateStringIst() && effectiveTo === todayDateStringIst()) {
-      onViewPerson(registrationId, divisionId);
-    } else {
-      onViewPerson(registrationId, divisionId, effectiveFrom, effectiveTo);
+  return rows;
+}
+
+/** Group department activity rows by department, including catalog departments with zero activity. */
+function groupDepartmentActivity(people = [], departmentCatalog = [], { includeEmpty = true } = {}) {
+  const map = new Map();
+  for (const person of people) {
+    const id = person.departmentId || '__unknown__';
+    if (!map.has(id)) {
+      map.set(id, {
+        departmentId: person.departmentId || null,
+        departmentName: person.departmentName || 'Unknown Department',
+        people: [],
+      });
     }
-  };
+    map.get(id).people.push(person);
+  }
+  if (includeEmpty) {
+    for (const dept of departmentCatalog) {
+      const id = dept._id;
+      if (!map.has(id)) {
+        map.set(id, {
+          departmentId: id,
+          departmentName: dept.name,
+          people: [],
+        });
+      }
+    }
+  }
+  return [...map.values()]
+    .map((group) => ({ ...group, ...activityGroupStats(group.people) }))
+    .sort(compareHierarchyHighToLow);
+}
 
-  const renderPersonRow = (person, { showDivision = false, showDepartment = false } = {}) => (
-    <tr
-      key={person.rowKey || `${person.registrationId}-${person.departmentId || 'div'}`}
-      className="rc-table__row"
-      onClick={() => openPerson(person.registrationId, person.divisionId)}
+/** Group rows by division (organizational unit) within a department. */
+function groupUnitActivity(people = []) {
+  const map = new Map();
+  for (const person of people) {
+    const id = person.divisionId || '__unknown__';
+    if (!map.has(id)) {
+      map.set(id, {
+        divisionId: person.divisionId || null,
+        divisionName: person.divisionName || 'Unknown Unit',
+        people: [],
+      });
+    }
+    map.get(id).people.push(person);
+  }
+  return [...map.values()]
+    .map((group) => ({ ...group, ...activityGroupStats(group.people) }))
+    .sort(compareHierarchyHighToLow);
+}
+
+function DepartmentHierarchyStatCard({ label, value, sub, color = 'primary', loading }) {
+  return (
+    <div className={`rc-dept-hierarchy-card rc-dept-hierarchy-card--${color}`}>
+      <div className="rc-dept-hierarchy-card__value">
+        {loading ? <span className="rc-skeleton rc-skeleton--sm" /> : fmt(value)}
+      </div>
+      <div className="rc-dept-hierarchy-card__label">{label}</div>
+      {sub ? <div className="rc-dept-hierarchy-card__sub">{sub}</div> : null}
+    </div>
+  );
+}
+
+function DepartmentActivityHierarchyCards({ stats, loading, scopeLabel }) {
+  return (
+    <section className="rc-dept-hierarchy" aria-label="Department activity summary">
+      {scopeLabel ? <p className="rc-dept-hierarchy__scope">{scopeLabel}</p> : null}
+      <div className="rc-dept-hierarchy__grid">
+        <DepartmentHierarchyStatCard
+          label="Departments"
+          value={stats.departmentCount}
+          sub={stats.departmentSub}
+          color="primary"
+          loading={loading}
+        />
+        <DepartmentHierarchyStatCard
+          label="Units"
+          value={stats.unitCount}
+          sub={stats.unitSub}
+          color="info"
+          loading={loading}
+        />
+        <DepartmentHierarchyStatCard
+          label="Employees"
+          value={stats.total}
+          sub={stats.employeeSub}
+          color="warning"
+          loading={loading}
+        />
+        <DepartmentHierarchyStatCard
+          label="Entered"
+          value={stats.enteredCount}
+          color="primary"
+          loading={loading}
+        />
+        <DepartmentHierarchyStatCard
+          label="Currently In"
+          value={stats.inCount}
+          color="success"
+          loading={loading}
+        />
+        <DepartmentHierarchyStatCard
+          label="Exited"
+          value={stats.exitCount}
+          color="danger"
+          loading={loading}
+        />
+      </div>
+    </section>
+  );
+}
+
+function DepartmentActivityPersonStatus({ person }) {
+  if (person.currentlyIn) {
+    return <span className="badge badge-success rc-status-badge">In</span>;
+  }
+  if (person.hadExit) {
+    return <span className="badge badge-info rc-status-badge">Exited</span>;
+  }
+  return <span className="badge badge-info rc-status-badge">Entered</span>;
+}
+
+function DepartmentActivityPersonExit({ person, activityDate, isToday }) {
+  if (person.exitAt) {
+    return (
+      <span className="rc-table__time-stack">
+        <span>{formatTime(person.exitAt)}</span>
+        {istDateOf(person.exitAt) !== activityDate && (
+          <span className="rc-table__time-date" title="Exited on a different day">
+            {formatShortDate(person.exitAt)}
+          </span>
+        )}
+      </span>
+    );
+  }
+  if (person.currentlyIn) {
+    return <span className="rc-badge-live">In</span>;
+  }
+  return '—';
+}
+
+function DepartmentActivityPersonMobileCard({
+  person,
+  activityDate,
+  isToday,
+  onView,
+  showDivision = false,
+  showDepartment = false,
+}) {
+  const handleActivate = () => onView(person.registrationId, person.divisionId);
+
+  return (
+    <article
+      className="rc-dept-person-card"
+      onClick={handleActivate}
       tabIndex={0}
       role="button"
       aria-label={`View report for ${person.displayName || 'Unnamed'}`}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          openPerson(person.registrationId, person.divisionId);
+          handleActivate();
+        }
+      }}
+    >
+      <div className="rc-dept-person-card__header">
+        <div className="rc-dept-person-card__identity">
+          <div className="rc-table__status-dot-wrap">
+            <span className={`rc-table__status-dot ${person.currentlyIn ? 'rc-table__status-dot--inside' : ''}`} />
+          </div>
+          <Avatar url={person.photoUrl} name={person.displayName} size={40} />
+          <div className="rc-dept-person-card__name-wrap">
+            <span className="rc-dept-person-card__name">{person.displayName || 'Unnamed'}</span>
+            <span className="rc-dept-person-card__meta">
+              {person.roleName || '—'}
+              {' · '}
+              <code className="rc-table__code">{person.registrationCode}</code>
+            </span>
+            {(showDivision || showDepartment) && (
+              <span className="rc-dept-person-card__location">
+                {showDepartment && person.departmentName ? person.departmentName : null}
+                {showDepartment && showDivision && person.departmentName && person.divisionName ? ' · ' : null}
+                {showDivision && person.divisionName ? person.divisionName : null}
+              </span>
+            )}
+          </div>
+        </div>
+        <DepartmentActivityPersonStatus person={person} />
+      </div>
+
+      <div className="rc-dept-person-card__metrics">
+        <div className="rc-dept-person-card__metric">
+          <span className="rc-dept-person-card__metric-label">Entry</span>
+          <span className="rc-dept-person-card__metric-value">{person.entryAt ? formatTime(person.entryAt) : '—'}</span>
+        </div>
+        <div className="rc-dept-person-card__metric">
+          <span className="rc-dept-person-card__metric-label">Exit</span>
+          <span className="rc-dept-person-card__metric-value rc-dept-person-card__metric-value--exit">
+            <DepartmentActivityPersonExit person={person} activityDate={activityDate} isToday={isToday} />
+          </span>
+        </div>
+        <div className="rc-dept-person-card__metric">
+          <span className="rc-dept-person-card__metric-label">Duration</span>
+          <span className="rc-dept-person-card__metric-value">
+            {calcDuration(
+              person.entryAt,
+              person.exitAt || (person.currentlyIn && isToday ? new Date() : null)
+            )}
+          </span>
+        </div>
+      </div>
+
+      {person.remark ? (
+        <p className="rc-dept-person-card__remark">{person.remark}</p>
+      ) : null}
+
+      <button
+        type="button"
+        className="rc-dept-person-card__view-btn"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleActivate();
+        }}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+        View report
+      </button>
+    </article>
+  );
+}
+
+function DepartmentActivityPeopleList({
+  rows,
+  sort,
+  onSort,
+  activityDate,
+  isToday,
+  onViewPerson,
+  showDivision = false,
+  showDepartment = false,
+}) {
+  const renderPersonRow = (person) => (
+    <tr
+      key={person.rowKey || `${person.registrationId}-${person.departmentId || 'div'}`}
+      className="rc-table__row"
+      onClick={() => onViewPerson(person.registrationId, person.divisionId)}
+      tabIndex={0}
+      role="button"
+      aria-label={`View report for ${person.displayName || 'Unnamed'}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onViewPerson(person.registrationId, person.divisionId);
         }
       }}
     >
@@ -2548,18 +2834,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
       )}
       <td className="rc-table__time">{person.entryAt ? formatTime(person.entryAt) : '—'}</td>
       <td className="rc-table__time">
-        {person.exitAt ? (
-          <span className="rc-table__time-stack">
-            <span>{formatTime(person.exitAt)}</span>
-            {istDateOf(person.exitAt) !== activityDate && (
-              <span className="rc-table__time-date" title="Exited on a different day">
-                {formatShortDate(person.exitAt)}
-              </span>
-            )}
-          </span>
-        ) : person.currentlyIn ? (
-          <span className="rc-badge-live">In</span>
-        ) : '—'}
+        <DepartmentActivityPersonExit person={person} activityDate={activityDate} isToday={isToday} />
       </td>
       <td className="rc-table__time">
         {calcDuration(
@@ -2568,19 +2843,13 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
         )}
       </td>
       <td>
-        {person.currentlyIn ? (
-          <span className="badge badge-success rc-status-badge">In</span>
-        ) : person.hadExit ? (
-          <span className="badge badge-info rc-status-badge">Exited</span>
-        ) : (
-          <span className="badge badge-info rc-status-badge">Entered</span>
-        )}
+        <DepartmentActivityPersonStatus person={person} />
       </td>
       <td className="rc-table__muted">{person.remark || '—'}</td>
       <td>
         <button
           className="rc-table__view-btn"
-          onClick={(e) => { e.stopPropagation(); openPerson(person.registrationId, person.divisionId); }}
+          onClick={(e) => { e.stopPropagation(); onViewPerson(person.registrationId, person.divisionId); }}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
           View
@@ -2589,34 +2858,840 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
     </tr>
   );
 
-  const renderTable = (rows, { showDivision = false, showDepartment = false } = {}) => (
-    <div className="rc-table-wrap">
-      <table className="rc-table">
+  return (
+    <>
+      <div className="rc-dept-person-cards hide-on-desktop">
+        {rows.map((person) => (
+          <DepartmentActivityPersonMobileCard
+            key={person.rowKey || `${person.registrationId}-${person.departmentId || 'div'}`}
+            person={person}
+            activityDate={activityDate}
+            isToday={isToday}
+            onView={onViewPerson}
+            showDivision={showDivision}
+            showDepartment={showDepartment}
+          />
+        ))}
+      </div>
+      <div className="rc-table-wrap rc-dept-person-table-wrap hide-on-mobile">
+        <table className="rc-table">
+          <thead>
+            <tr>
+              <SortHeader label="Person" columnKey="name" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
+              <SortHeader label="Role" columnKey="role" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
+              <SortHeader label="Code" columnKey="code" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
+              {showDivision && (
+                <SortHeader label="Division" columnKey="division" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
+              )}
+              {showDepartment && (
+                <SortHeader label="Department" columnKey="department" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
+              )}
+              <SortHeader label="Entry Time" columnKey="entry" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
+              <SortHeader label="Exit Time" columnKey="exit" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
+              <th>Duration</th>
+              <SortHeader label="Status" columnKey="status" activeKey={sort.key} dir={sort.dir} onSort={onSort} />
+              <th>Remark</th>
+              <th aria-label="Actions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((person) => renderPersonRow(person))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function DepartmentActivityStatsMetrics({ row }) {
+  return (
+    <div className="rc-dept-stats-card__metrics">
+      <div className="rc-dept-stats-card__metric">
+        <span className="rc-dept-stats-card__metric-label">Entered</span>
+        <span className="rc-dept-stats-card__metric-value">{row.enteredCount}</span>
+      </div>
+      <div className="rc-dept-stats-card__metric">
+        <span className="rc-dept-stats-card__metric-label">In</span>
+        <span className="rc-dept-stats-card__metric-value rc-dept-stats-card__metric-value--in">{row.inCount}</span>
+      </div>
+      <div className="rc-dept-stats-card__metric">
+        <span className="rc-dept-stats-card__metric-label">Exited</span>
+        <span className="rc-dept-stats-card__metric-value">{row.exitCount}</span>
+      </div>
+      <div className="rc-dept-stats-card__metric">
+        <span className="rc-dept-stats-card__metric-label">Total</span>
+        <span className="rc-dept-stats-card__metric-value">{row.total}</span>
+      </div>
+    </div>
+  );
+}
+
+function groupDepartmentDivisionRowsForMobile(rows = []) {
+  const groups = [];
+  for (const row of rows) {
+    if (row.isFirstInDepartment || groups.length === 0) {
+      groups.push({
+        departmentId: row.departmentId,
+        departmentName: row.departmentName,
+        departmentInCount: row.departmentInCount,
+        departmentTotal: row.departmentTotal,
+        units: [row],
+      });
+    } else {
+      groups[groups.length - 1].units.push(row);
+    }
+  }
+  return groups;
+}
+
+function DepartmentActivityStatsMobileCard({
+  row,
+  onSelect,
+  showDepartment = true,
+  compact = false,
+  ariaLabel,
+}) {
+  const handleActivate = () => {
+    if (row.isClickable) onSelect(row);
+  };
+
+  return (
+    <article
+      className={`rc-dept-stats-card ${compact ? 'rc-dept-stats-card--nested' : ''} ${row.isClickable ? 'rc-dept-stats-card--clickable' : ''}`.trim()}
+      onClick={handleActivate}
+      tabIndex={row.isClickable ? 0 : -1}
+      role={row.isClickable ? 'button' : undefined}
+      aria-label={row.isClickable ? ariaLabel : undefined}
+      onKeyDown={(e) => {
+        if (!row.isClickable) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleActivate();
+        }
+      }}
+    >
+      <div className="rc-dept-stats-card__header">
+        <div className="rc-dept-stats-card__titles">
+          {compact ? (
+            <div className="rc-dept-stats-card__title-row">
+              <span className="rc-dept-stats-card__unit-title">{row.divisionName}</span>
+              {row.inCount > 0 && (
+                <span className="rc-dept-stats-card__live-pill">
+                  <span className="rc-table__status-dot rc-table__status-dot--inside" />
+                  {row.inCount} in
+                </span>
+              )}
+            </div>
+          ) : showDepartment ? (
+            <>
+              <span className="rc-dept-stats-card__dept">{row.departmentName}</span>
+              <span className="rc-dept-stats-card__unit">{row.divisionName}</span>
+            </>
+          ) : (
+            <span className="rc-dept-stats-card__dept">{row.divisionName}</span>
+          )}
+          {!compact && row.inCount > 0 && (
+            <span className="rc-dept-stats-table__live">
+              <span className="rc-table__status-dot rc-table__status-dot--inside" />
+              {row.inCount} live
+            </span>
+          )}
+        </div>
+        {row.isClickable ? (
+          <span className="rc-dept-stats-table__chevron" aria-hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          </span>
+        ) : null}
+      </div>
+      <DepartmentActivityStatsMetrics row={row} />
+    </article>
+  );
+}
+
+function DepartmentDivisionActivityMobileList({ rows, onSelectRow }) {
+  const groups = useMemo(() => groupDepartmentDivisionRowsForMobile(rows), [rows]);
+
+  return (
+    <div className="rc-dept-stats-cards hide-on-desktop">
+      {groups.map((group) => (
+        <section
+          key={group.departmentId || group.departmentName}
+          className="rc-dept-stats-group"
+          aria-label={`${group.departmentName} activity`}
+        >
+          <div className="rc-dept-stats-group__panel">
+            <header className="rc-dept-stats-group__header">
+              <h3 className="rc-dept-stats-group__title">{group.departmentName}</h3>
+              <div className="rc-dept-stats-group__meta">
+                {group.departmentInCount > 0 && (
+                  <span className="rc-dept-stats-group__pill rc-dept-stats-group__pill--live">
+                    <span className="rc-table__status-dot rc-table__status-dot--inside" />
+                    {group.departmentInCount} in
+                  </span>
+                )}
+                {group.departmentTotal > 0 && (
+                  <span className="rc-dept-stats-group__pill">{group.departmentTotal} total</span>
+                )}
+              </div>
+            </header>
+            <div className="rc-dept-stats-group__units">
+              {group.units.map((row) => (
+                <DepartmentActivityStatsMobileCard
+                  key={row.rowKey}
+                  row={row}
+                  onSelect={onSelectRow}
+                  showDepartment={false}
+                  compact
+                  ariaLabel={`View employees in ${group.departmentName} · ${row.divisionName}`}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function DivisionOnlyActivityTable({ rows, onSelectRow, emptyTitle, emptyDesc }) {
+  if (!rows.length) {
+    return (
+      <EmptyState
+        icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
+        title={emptyTitle}
+        desc={emptyDesc}
+      />
+    );
+  }
+
+  return (
+    <>
+      <div className="rc-dept-stats-cards hide-on-desktop">
+        {rows.map((row) => (
+          <DepartmentActivityStatsMobileCard
+            key={row.rowKey}
+            row={row}
+            onSelect={onSelectRow}
+            showDepartment={false}
+            ariaLabel={`View employees in ${row.divisionName}`}
+          />
+        ))}
+      </div>
+      <div className="rc-table-wrap rc-dept-stats-table-wrap hide-on-mobile">
+      <table className="rc-table rc-dept-stats-table">
         <thead>
           <tr>
-            <SortHeader label="Person" columnKey="name" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-            <SortHeader label="Role" columnKey="role" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-            <SortHeader label="Code" columnKey="code" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-            {showDivision && (
-              <SortHeader label="Division" columnKey="division" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-            )}
-            {showDepartment && (
-              <SortHeader label="Department" columnKey="department" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-            )}
-            <SortHeader label="Entry Time" columnKey="entry" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-            <SortHeader label="Exit Time" columnKey="exit" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-            <th>Duration</th>
-            <SortHeader label="Status" columnKey="status" activeKey={sort.key} dir={sort.dir} onSort={handleSort} />
-            <th>Remark</th>
-            <th aria-label="Actions"></th>
+            <th>Division / Unit</th>
+            <th>Entered</th>
+            <th>Currently In</th>
+            <th>Exited</th>
+            <th>Total</th>
+            <th aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
-          {rows.map((person) => renderPersonRow(person, { showDivision, showDepartment }))}
+          {rows.map((row) => {
+            const handleActivate = () => {
+              if (row.isClickable) onSelectRow(row);
+            };
+            return (
+              <tr
+                key={row.rowKey}
+                className={`rc-table__row rc-dept-stats-table__row ${row.isClickable ? 'rc-dept-stats-table__row--clickable' : 'rc-dept-stats-table__row--static'}`.trim()}
+                onClick={handleActivate}
+                tabIndex={row.isClickable ? 0 : -1}
+                role={row.isClickable ? 'button' : undefined}
+                aria-label={row.isClickable ? `View employees in ${row.divisionName}` : undefined}
+                onKeyDown={(e) => {
+                  if (!row.isClickable) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleActivate();
+                  }
+                }}
+              >
+                <td>
+                  <div className="rc-dept-stats-table__name">
+                    <span className="rc-dept-stats-table__title">{row.divisionName}</span>
+                    {row.inCount > 0 && (
+                      <span className="rc-dept-stats-table__live">
+                        <span className="rc-table__status-dot rc-table__status-dot--inside" />
+                        {row.inCount} live
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="rc-dept-stats-table__num">{row.enteredCount}</td>
+                <td className="rc-dept-stats-table__num rc-dept-stats-table__num--in">{row.inCount}</td>
+                <td className="rc-dept-stats-table__num">{row.exitCount}</td>
+                <td className="rc-dept-stats-table__num">{row.total}</td>
+                <td>
+                  {row.isClickable ? (
+                    <span className="rc-dept-stats-table__chevron" aria-hidden>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                    </span>
+                  ) : null}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+      </div>
+    </>
+  );
+}
+
+function DepartmentActivityNavBar({ breadcrumbItems, onBack, backLabel = 'Back to stats' }) {
+  if (!onBack && !breadcrumbItems?.length) return null;
+  return (
+    <div className="rc-dept-nav">
+      {onBack ? (
+        <button type="button" className="btn-secondary btn-sm rc-dept-nav__back" onClick={onBack}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="15 18 9 12 15 6" /></svg>
+          {backLabel}
+        </button>
+      ) : null}
+      {breadcrumbItems?.length ? <DepartmentActivityBreadcrumb items={breadcrumbItems} /> : null}
     </div>
   );
+}
+
+function DepartmentDivisionActivityTable({ rows, onSelectRow, emptyTitle, emptyDesc }) {
+  if (!rows.length) {
+    return (
+      <EmptyState
+        icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
+        title={emptyTitle}
+        desc={emptyDesc}
+      />
+    );
+  }
+
+  return (
+    <>
+      <DepartmentDivisionActivityMobileList rows={rows} onSelectRow={onSelectRow} />
+      <div className="rc-table-wrap rc-dept-stats-table-wrap hide-on-mobile">
+      <table className="rc-table rc-dept-stats-table">
+        <thead>
+          <tr>
+            <th>Department</th>
+            <th>Division / Unit</th>
+            <th>Entered</th>
+            <th>Currently In</th>
+            <th>Exited</th>
+            <th>Total</th>
+            <th aria-label="Actions" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const handleActivate = () => {
+              if (row.isClickable) onSelectRow(row);
+            };
+            return (
+              <tr
+                key={row.rowKey}
+                className={`rc-table__row rc-dept-stats-table__row ${row.isFirstInDepartment ? 'rc-dept-stats-table__row--dept-start' : ''} ${row.isClickable ? 'rc-dept-stats-table__row--clickable' : 'rc-dept-stats-table__row--static'}`.trim()}
+                onClick={handleActivate}
+                tabIndex={row.isClickable ? 0 : -1}
+                role={row.isClickable ? 'button' : undefined}
+                aria-label={row.isClickable ? `View employees in ${row.departmentName} · ${row.divisionName}` : undefined}
+                onKeyDown={(e) => {
+                  if (!row.isClickable) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleActivate();
+                  }
+                }}
+              >
+                {row.isFirstInDepartment && (
+                  <td rowSpan={row.departmentRowSpan} className="rc-dept-stats-table__dept-cell">
+                    <div className="rc-dept-stats-table__name">
+                      <span className="rc-dept-stats-table__title">{row.departmentName}</span>
+                      {row.departmentTotal > 0 && (
+                        <span className="rc-dept-stats-table__dept-total">{row.departmentTotal} total</span>
+                      )}
+                      {row.departmentInCount > 0 && (
+                        <span className="rc-dept-stats-table__live">
+                          <span className="rc-table__status-dot rc-table__status-dot--inside" />
+                          {row.departmentInCount} live
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                )}
+                <td>
+                  <div className="rc-dept-stats-table__name">
+                    <span className="rc-dept-stats-table__unit">{row.divisionName}</span>
+                    {row.inCount > 0 && (
+                      <span className="rc-dept-stats-table__live">
+                        <span className="rc-table__status-dot rc-table__status-dot--inside" />
+                        {row.inCount} live
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="rc-dept-stats-table__num">{row.enteredCount}</td>
+                <td className="rc-dept-stats-table__num rc-dept-stats-table__num--in">{row.inCount}</td>
+                <td className="rc-dept-stats-table__num">{row.exitCount}</td>
+                <td className="rc-dept-stats-table__num">{row.total}</td>
+                <td>
+                  {row.isClickable ? (
+                    <span className="rc-dept-stats-table__chevron" aria-hidden>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                    </span>
+                  ) : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      </div>
+    </>
+  );
+}
+
+function DepartmentActivityBreadcrumb({ items }) {
+  if (!items.length) return null;
+  return (
+    <nav className="rc-dept-breadcrumb" aria-label="Department activity navigation">
+      {items.map((item, index) => (
+        <Fragment key={item.key}>
+          {index > 0 && <span className="rc-dept-breadcrumb__sep" aria-hidden>/</span>}
+          {item.onClick ? (
+            <button type="button" className="rc-dept-breadcrumb__link" onClick={item.onClick}>
+              {item.label}
+            </button>
+          ) : (
+            <span className="rc-dept-breadcrumb__current">{item.label}</span>
+          )}
+        </Fragment>
+      ))}
+    </nav>
+  );
+}
+
+/**
+ * Department Activity — loads all department check-ins by default (All Status),
+ * with optional division/department filters. Drill down: departments → units → employees.
+ */
+function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
+  const [data, setData] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [peopleLoading, setPeopleLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [divisionFilter, setDivisionFilter] = useState('all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [divisions, setDivisions] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
+  const [sort, setSort] = useState({ key: 'entry', dir: 'desc' });
+  const [listTab, setListTab] = useState('department'); // 'department' | 'divisionOnly'
+  const [drillDepartmentId, setDrillDepartmentId] = useState(null);
+  const [drillDivisionId, setDrillDivisionId] = useState(null);
+  const [divisionOnlyDrillId, setDivisionOnlyDrillId] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
+  const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
+  const intervalRef = useRef(null);
+  const loadSeqRef = useRef(0);
+
+  const activityDate = selectedDate || todayDateStringIst();
+  const isToday = activityDate === todayDateStringIst();
+  const dayLabel = isToday ? 'Today' : formatDate(activityDate);
+  const effectiveFrom = rangeFrom || activityDate;
+  const effectiveTo = rangeTo || activityDate;
+  const periodLabel = `${formatDate(effectiveFrom)} — ${formatDate(effectiveTo)}`;
+  const peopleReady = Boolean(data && !data._statsOnly && !peopleLoading);
+
+  const handleSort = useCallback((key) => {
+    setSort((prev) => (
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' }
+    ));
+  }, []);
+
+  useEffect(() => {
+    api.reports.divisions()
+      .then((res) => setDivisions(Array.isArray(res?.divisions) ? res.divisions : []))
+      .catch(() => setDivisions([]));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingDepartments(true);
+    const params = { isActive: 'true' };
+    if (divisionFilter && divisionFilter !== 'all') params.divisionId = divisionFilter;
+    api.departments.list(params)
+      .then((list) => {
+        if (!cancelled) setDepartments(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!cancelled) setDepartments([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDepartments(false);
+      });
+    return () => { cancelled = true; };
+  }, [divisionFilter]);
+
+  useEffect(() => {
+    setDrillDepartmentId(null);
+    setDrillDivisionId(null);
+    setDivisionOnlyDrillId(null);
+  }, [listTab]);
+
+  const clearDepartmentDrill = useCallback(() => {
+    setDrillDepartmentId(null);
+    setDrillDivisionId(null);
+  }, []);
+
+  const clearDivisionOnlyDrill = useCallback(() => {
+    setDivisionOnlyDrillId(null);
+  }, []);
+
+  const load = useCallback(async (silent = false) => {
+    const seq = ++loadSeqRef.current;
+    if (!silent) {
+      setStatsLoading(true);
+      setPeopleLoading(true);
+    }
+    setError('');
+    try {
+      if (effectiveFrom > effectiveTo) {
+        if (seq !== loadSeqRef.current) return;
+        setError('From date cannot be after To date.');
+        setData(null);
+        setStatsLoading(false);
+        setPeopleLoading(false);
+        return;
+      }
+      const params = {
+        dateFrom: effectiveFrom,
+        dateTo: effectiveTo,
+      };
+
+      if (silent) {
+        const peopleResult = await api.reports.departmentActivity(params);
+        if (seq !== loadSeqRef.current) return;
+        setData(peopleResult);
+        setPeopleLoading(false);
+        setStatsLoading(false);
+        return;
+      }
+
+      api.reports.departmentActivity({ ...params, statsOnly: 'true' })
+        .then((statsResult) => {
+          if (seq !== loadSeqRef.current) return;
+          setData({ ...statsResult, _statsOnly: true });
+          setStatsLoading(false);
+        })
+        .catch((e) => {
+          if (seq !== loadSeqRef.current) return;
+          setError(e.message);
+          setStatsLoading(false);
+        });
+
+      const peopleResult = await api.reports.departmentActivity(params);
+      if (seq !== loadSeqRef.current) return;
+      setData(peopleResult);
+      setPeopleLoading(false);
+      setStatsLoading(false);
+    } catch (e) {
+      if (seq !== loadSeqRef.current) return;
+      setError(e.message);
+      setPeopleLoading(false);
+      setStatsLoading(false);
+    }
+  }, [effectiveFrom, effectiveTo]);
+
+  useEffect(() => {
+    load();
+    if (effectiveFrom === todayDateStringIst() && effectiveTo === todayDateStringIst()) {
+      intervalRef.current = setInterval(() => load(true), 30000);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [load, effectiveFrom, effectiveTo]);
+
+  const allPeople = data?.people || [];
+  const divisionOnlyPeople = data?.divisionOnlyPeople || [];
+  const selectedDivision = divisions.find((d) => d._id === divisionFilter);
+  const selectedDivisionName = selectedDivision?.name || '';
+  const selectedDepartment = departments.find((d) => d._id === departmentFilter)
+    || (departmentFilter !== 'all' && data?.departmentName ? { name: data.departmentName } : null);
+  const selectedDepartmentName = selectedDepartment?.name || '';
+
+  const matchesFilters = (p) => {
+    const q = search.toLowerCase();
+    const matchSearch = !q
+      || (p.displayName || '').toLowerCase().includes(q)
+      || (p.registrationCode || '').toLowerCase().includes(q)
+      || (p.roleName || '').toLowerCase().includes(q)
+      || (p.departmentName || '').toLowerCase().includes(q)
+      || (p.divisionName || '').toLowerCase().includes(q);
+    const matchStatus =
+      filterStatus === 'all'
+      || (filterStatus === 'inside' && p.currentlyIn)
+      || (filterStatus === 'exited' && p.hadExit && !p.currentlyIn)
+      || (filterStatus === 'entered' && p.hadEntry);
+    return matchSearch && matchStatus;
+  };
+
+  const sortPeople = useCallback((list) => [...list].sort((a, b) => {
+    const valueFor = (person, key) => {
+      switch (key) {
+        case 'name': return person.displayName || '';
+        case 'role': return person.roleName || '';
+        case 'code': return person.registrationCode || '';
+        case 'division': return person.divisionName || '';
+        case 'department': return person.departmentName || '';
+        case 'entry': return person.entryAt ? new Date(person.entryAt).getTime() : 0;
+        case 'exit': return person.exitAt ? new Date(person.exitAt).getTime() : 0;
+        case 'status': return person.currentlyIn ? 2 : person.hadExit ? 1 : 0;
+        default: return '';
+      }
+    };
+    const res = compareSortValues(valueFor(a, sort.key), valueFor(b, sort.key));
+    return sort.dir === 'asc' ? res : -res;
+  }), [sort]);
+
+  const filtered = sortPeople(allPeople.filter(matchesFilters));
+  const filteredDivisionOnly = sortPeople(divisionOnlyPeople.filter(matchesFilters));
+
+  const tableIncludeEmpty = !search && filterStatus === 'all'
+    && departmentFilter === 'all' && divisionFilter === 'all';
+
+  const tablePeople = useMemo(() => {
+    let people = filtered;
+    if (departmentFilter !== 'all') {
+      people = people.filter((p) => p.departmentId === departmentFilter);
+    }
+    if (divisionFilter !== 'all') {
+      people = people.filter((p) => p.divisionId === divisionFilter);
+    }
+    return people;
+  }, [filtered, departmentFilter, divisionFilter]);
+
+  const divisionOnlyTablePeople = useMemo(() => {
+    if (divisionFilter === 'all') return filteredDivisionOnly;
+    return filteredDivisionOnly.filter((p) => p.divisionId === divisionFilter);
+  }, [filteredDivisionOnly, divisionFilter]);
+
+  const departmentSummaries = useMemo(
+    () => groupDepartmentActivity(tablePeople, departments, {
+      includeEmpty: tableIncludeEmpty,
+    }),
+    [tablePeople, departments, tableIncludeEmpty]
+  );
+
+  const departmentDivisionRows = useMemo(
+    () => buildDepartmentDivisionActivityRows(tablePeople, departments, {
+      includeEmpty: tableIncludeEmpty,
+    }).map((row) => ({
+      ...row,
+      isClickable: Boolean(row.isClickable && peopleReady),
+    })),
+    [tablePeople, departments, tableIncludeEmpty, peopleReady]
+  );
+
+  const divisionOnlyTableRows = useMemo(
+    () => groupUnitActivity(divisionOnlyTablePeople).map((unit) => ({
+      rowKey: unit.divisionId || `unit-${unit.divisionName}`,
+      divisionId: unit.divisionId,
+      divisionName: unit.divisionName,
+      enteredCount: unit.enteredCount,
+      inCount: unit.inCount,
+      exitCount: unit.exitCount,
+      total: unit.total,
+      isClickable: Boolean(unit.divisionId && unit.total > 0 && peopleReady),
+    })),
+    [divisionOnlyTablePeople, peopleReady]
+  );
+
+  const drilledDepartment = useMemo(() => {
+    if (!drillDepartmentId) return null;
+    const people = filtered.filter((p) => p.departmentId === drillDepartmentId);
+    return departmentSummaries.find((row) => row.departmentId === drillDepartmentId)
+      || {
+        departmentId: drillDepartmentId,
+        departmentName: people[0]?.departmentName || selectedDepartmentName || 'Department',
+        people,
+        ...activityGroupStats(people),
+      };
+  }, [drillDepartmentId, departmentSummaries, filtered, selectedDepartmentName]);
+
+  const drilledUnit = useMemo(() => {
+    if (!drillDivisionId) return null;
+    const people = filtered.filter(
+      (p) => p.departmentId === drillDepartmentId && p.divisionId === drillDivisionId
+    );
+    return {
+      divisionId: drillDivisionId,
+      divisionName: people[0]?.divisionName || selectedDivisionName || 'Unit',
+      people,
+      ...activityGroupStats(people),
+    };
+  }, [drillDivisionId, drillDepartmentId, filtered, selectedDivisionName]);
+
+  const drilledDivisionOnly = useMemo(() => {
+    if (!divisionOnlyDrillId) return null;
+    const people = filteredDivisionOnly.filter((p) => p.divisionId === divisionOnlyDrillId);
+    return {
+      divisionId: divisionOnlyDrillId,
+      divisionName: people[0]?.divisionName || selectedDivisionName || 'Division',
+      people,
+      ...activityGroupStats(people),
+    };
+  }, [divisionOnlyDrillId, filteredDivisionOnly, selectedDivisionName]);
+
+  const employeeRows = useMemo(() => {
+    if (!drillDepartmentId || !drillDivisionId) return [];
+    return sortPeople(filtered.filter(
+      (p) => p.departmentId === drillDepartmentId && p.divisionId === drillDivisionId
+    ));
+  }, [drillDepartmentId, drillDivisionId, filtered, sortPeople]);
+
+  const divisionOnlyEmployeeRows = useMemo(() => {
+    if (!divisionOnlyDrillId) return [];
+    return sortPeople(filteredDivisionOnly.filter((p) => p.divisionId === divisionOnlyDrillId));
+  }, [divisionOnlyDrillId, filteredDivisionOnly, sortPeople]);
+
+  const isEmployeeDrill = Boolean(drillDepartmentId && drillDivisionId);
+  const isDivisionOnlyEmployeeDrill = Boolean(divisionOnlyDrillId);
+
+  const breadcrumbItems = useMemo(() => {
+    const items = [{
+      key: 'departments',
+      label: 'All Departments',
+      onClick: isEmployeeDrill ? clearDepartmentDrill : null,
+    }];
+    if (drilledDepartment) {
+      items.push({
+        key: `dept-${drilledDepartment.departmentId}`,
+        label: drilledDepartment.departmentName,
+      });
+    }
+    if (drilledUnit) {
+      items.push({
+        key: `unit-${drilledUnit.divisionId}`,
+        label: drilledUnit.divisionName,
+      });
+    }
+    return items;
+  }, [isEmployeeDrill, drilledDepartment, drilledUnit, clearDepartmentDrill]);
+
+  const divisionOnlyBreadcrumbItems = useMemo(() => {
+    if (!isDivisionOnlyEmployeeDrill || !drilledDivisionOnly) return [];
+    return [{
+      key: 'divisions',
+      label: 'All Divisions',
+      onClick: clearDivisionOnlyDrill,
+    }, {
+      key: `div-${drilledDivisionOnly.divisionId}`,
+      label: drilledDivisionOnly.divisionName,
+    }];
+  }, [isDivisionOnlyEmployeeDrill, drilledDivisionOnly, clearDivisionOnlyDrill]);
+
+  const globalUnitSummaries = useMemo(
+    () => groupUnitActivity(tablePeople),
+    [tablePeople]
+  );
+
+  const hierarchyStats = useMemo(() => {
+    if (isEmployeeDrill && drilledUnit) {
+      return {
+        scopeLabel: `${drilledDepartment?.departmentName || 'Department'} · ${drilledUnit.divisionName}`,
+        departmentCount: 1,
+        departmentSub: drilledDepartment?.departmentName,
+        unitCount: 1,
+        unitSub: drilledUnit.divisionName,
+        employeeSub: 'In this unit',
+        ...activityGroupStats(drilledUnit.people),
+      };
+    }
+    const activeDepartments = departmentSummaries.filter((row) => row.total > 0).length;
+    const activeUnits = globalUnitSummaries.filter((row) => row.total > 0).length;
+    return {
+      scopeLabel: departmentFilter !== 'all'
+        ? (selectedDepartmentName || 'Filtered department')
+        : 'All Departments',
+      departmentCount: activeDepartments,
+      departmentSub: `${departmentSummaries.length} total`,
+      unitCount: activeUnits,
+      unitSub: `${globalUnitSummaries.length} total`,
+      employeeSub: 'All check-ins',
+      ...activityGroupStats(tablePeople),
+    };
+  }, [
+    isEmployeeDrill,
+    drilledDepartment,
+    drilledUnit,
+    departmentFilter,
+    selectedDepartmentName,
+    departmentSummaries,
+    globalUnitSummaries,
+    tablePeople,
+  ]);
+
+  const divisionOnlyStats = useMemo(() => {
+    if (isDivisionOnlyEmployeeDrill && drilledDivisionOnly) {
+      return {
+        scopeLabel: drilledDivisionOnly.divisionName,
+        departmentCount: 0,
+        departmentSub: 'No department check-in',
+        unitCount: 1,
+        unitSub: drilledDivisionOnly.divisionName,
+        employeeSub: 'In this division',
+        ...activityGroupStats(drilledDivisionOnly.people),
+      };
+    }
+    const activeUnits = divisionOnlyTableRows.filter((row) => row.total > 0).length;
+    return {
+      scopeLabel: 'Division only (no department check-in)',
+      departmentCount: 0,
+      departmentSub: 'No department',
+      unitCount: activeUnits,
+      unitSub: `${divisionOnlyTableRows.length} total`,
+      employeeSub: 'Gate entry only',
+      ...activityGroupStats(divisionOnlyTablePeople),
+    };
+  }, [
+    isDivisionOnlyEmployeeDrill,
+    drilledDivisionOnly,
+    divisionOnlyTableRows,
+    divisionOnlyTablePeople,
+  ]);
+
+  const enteredCount = hierarchyStats.enteredCount;
+  const inCount = hierarchyStats.inCount;
+  const exitCount = hierarchyStats.exitCount;
+  const isDivisionOnlyTab = listTab === 'divisionOnly';
+
+  const handleSelectDepartmentDivision = useCallback((row) => {
+    if (!row.departmentId || !row.divisionId) return;
+    setDrillDepartmentId(row.departmentId);
+    setDrillDivisionId(row.divisionId);
+  }, []);
+
+  const handleSelectDivisionOnly = useCallback((row) => {
+    if (!row.divisionId) return;
+    setDivisionOnlyDrillId(row.divisionId);
+  }, []);
+
+  const openPerson = (registrationId, personDivisionId) => {
+    const divisionId = personDivisionId
+      || (divisionFilter !== 'all' ? divisionFilter : '');
+    if (effectiveFrom === todayDateStringIst() && effectiveTo === todayDateStringIst()) {
+      onViewPerson(registrationId, divisionId);
+    } else {
+      onViewPerson(registrationId, divisionId, effectiveFrom, effectiveTo);
+    }
+  };
 
   return (
     <div>
@@ -2633,7 +3708,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
             placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            disabled={loading}
+            disabled={statsLoading && !data}
           />
         </div>
         <button
@@ -2650,11 +3725,11 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
           type="button"
           className="btn-secondary btn-sm"
           onClick={() => load()}
-          disabled={loading}
+          disabled={statsLoading && !data}
           style={{ padding: '0 8px', flexShrink: 0 }}
           aria-label="Refresh"
         >
-          {loading ? <Spinner size={14} /> : (
+          {statsLoading && !data ? <Spinner size={14} /> : (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
           )}
         </button>
@@ -2756,9 +3831,9 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
           <button
             className="btn-secondary btn-sm hide-on-mobile"
             onClick={() => load()}
-            disabled={loading}
+            disabled={statsLoading && !data}
           >
-            {loading ? <Spinner size={14} /> : (
+            {statsLoading && !data ? <Spinner size={14} /> : (
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -2798,35 +3873,158 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
         </button>
       </div>
 
-      {loading && !data ? (
+      <DepartmentActivityHierarchyCards
+        stats={isDivisionOnlyTab ? divisionOnlyStats : hierarchyStats}
+        loading={statsLoading && !data}
+        scopeLabel={isDivisionOnlyTab ? divisionOnlyStats.scopeLabel : hierarchyStats.scopeLabel}
+      />
+
+      {peopleLoading && data?._statsOnly && (
+        <p className="rc-table-meta rc-dept-people-loading">
+          Stats loaded — loading employee details…
+        </p>
+      )}
+
+      {statsLoading && !data ? (
         <div className="rc-table-loading">
           {[...Array(5)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
         </div>
-      ) : activeRows.length === 0 ? (
-        <EmptyState
-          icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-          title={
+      ) : isDivisionOnlyTab ? (
+        isDivisionOnlyEmployeeDrill ? (
+          peopleLoading ? (
+            <>
+              <DepartmentActivityNavBar
+                breadcrumbItems={divisionOnlyBreadcrumbItems}
+                onBack={clearDivisionOnlyDrill}
+                backLabel="Back to divisions"
+              />
+              <div className="rc-table-loading">
+                {[...Array(4)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
+              </div>
+            </>
+          ) : divisionOnlyEmployeeRows.length === 0 ? (
+            <>
+              <DepartmentActivityNavBar
+                breadcrumbItems={divisionOnlyBreadcrumbItems}
+                onBack={clearDivisionOnlyDrill}
+                backLabel="Back to divisions"
+              />
+              <EmptyState
+                icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>}
+                title="No matching employees"
+                desc="Try adjusting your search or filters."
+              />
+            </>
+          ) : (
+            <>
+              <DepartmentActivityNavBar
+                breadcrumbItems={divisionOnlyBreadcrumbItems}
+                onBack={clearDivisionOnlyDrill}
+                backLabel="Back to divisions"
+              />
+              <div className="rc-table-meta">
+                {drilledDivisionOnly?.divisionName || 'Division'}
+                {' · '}
+                {divisionOnlyEmployeeRows.length} employee{divisionOnlyEmployeeRows.length === 1 ? '' : 's'}
+                {' · '}
+                Gate entry only (no department check-in)
+              </div>
+              <DepartmentActivityPeopleList
+                rows={divisionOnlyEmployeeRows}
+                sort={sort}
+                onSort={handleSort}
+                activityDate={activityDate}
+                isToday={isToday}
+                onViewPerson={openPerson}
+              />
+            </>
+          )
+        ) : divisionOnlyTableRows.length === 0 ? (
+          <EmptyState
+            icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
+            title={
+              search || filterStatus !== 'all'
+                ? 'No matching divisions'
+                : `No division-only activity ${isToday ? 'today' : `on ${dayLabel}`}`
+            }
+            desc={
+              search || filterStatus !== 'all'
+                ? 'Try adjusting your search or filters.'
+                : `Everyone with division entry also checked into a department ${isToday ? 'today' : 'on this date'}.`
+            }
+          />
+        ) : (
+          <DivisionOnlyActivityTable
+            rows={divisionOnlyTableRows}
+            onSelectRow={handleSelectDivisionOnly}
+            emptyTitle={`No division-only activity ${isToday ? 'today' : `on ${dayLabel}`}`}
+            emptyDesc={`Everyone with division entry also checked into a department ${isToday ? 'today' : 'on this date'}.`}
+          />
+        )
+      ) : isEmployeeDrill ? (
+        peopleLoading ? (
+          <>
+            <DepartmentActivityNavBar
+              breadcrumbItems={breadcrumbItems}
+              onBack={clearDepartmentDrill}
+              backLabel="Back to department stats"
+            />
+            <div className="rc-table-loading">
+              {[...Array(4)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
+            </div>
+          </>
+        ) : employeeRows.length === 0 ? (
+          <>
+            <DepartmentActivityNavBar
+              breadcrumbItems={breadcrumbItems}
+              onBack={clearDepartmentDrill}
+              backLabel="Back to department stats"
+            />
+            <EmptyState
+              icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
+              title="No matching employees"
+              desc="Try adjusting your search or filters."
+            />
+          </>
+        ) : (
+          <>
+            <DepartmentActivityNavBar
+              breadcrumbItems={breadcrumbItems}
+              onBack={clearDepartmentDrill}
+              backLabel="Back to department stats"
+            />
+            <div className="rc-table-meta">
+              {drilledDepartment?.departmentName || 'Department'}
+              {' · '}
+              {drilledUnit?.divisionName || 'Unit'}
+              {' · '}
+              {employeeRows.length} employee{employeeRows.length === 1 ? '' : 's'}
+            </div>
+            <DepartmentActivityPeopleList
+              rows={employeeRows}
+              sort={sort}
+              onSort={handleSort}
+              activityDate={activityDate}
+              isToday={isToday}
+              onViewPerson={openPerson}
+            />
+          </>
+        )
+      ) : (
+        <DepartmentDivisionActivityTable
+          rows={departmentDivisionRows}
+          onSelectRow={handleSelectDepartmentDivision}
+          emptyTitle={
             search || filterStatus !== 'all'
-              ? 'No matching people'
-              : isDivisionOnlyTab
-                ? `No division-only activity ${isToday ? 'today' : `on ${dayLabel}`}`
-                : `No department activity ${isToday ? 'today' : `on ${dayLabel}`}`
+              ? 'No matching departments'
+              : `No department activity ${isToday ? 'today' : `on ${dayLabel}`}`
           }
-          desc={
+          emptyDesc={
             search || filterStatus !== 'all'
               ? 'Try adjusting your search or filters.'
-              : isDivisionOnlyTab
-                ? `Everyone with division entry also checked into a department ${isToday ? 'today' : 'on this date'}.`
-                : `No department check-ins recorded ${isToday ? 'today' : 'on this date'} yet.`
+              : `No department check-ins recorded ${isToday ? 'today' : 'on this date'} yet.`
           }
         />
-      ) : (
-        renderTable(activeRows, {
-          showDivision: isDivisionOnlyTab
-            ? (showDivisionCol || Boolean(selectedDivisionName))
-            : showDivisionCol,
-          showDepartment: !isDivisionOnlyTab && showDepartmentCol,
-        })
       )}
     </div>
   );

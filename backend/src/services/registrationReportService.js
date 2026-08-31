@@ -880,6 +880,15 @@ function shiftFromSession(session, shiftMap) {
 }
 
 function formatLogEntry(log) {
+  const scannedByName =
+    (typeof log.scannedByName === 'string' && log.scannedByName.trim()) ||
+    log.scannedBy?.displayName ||
+    '';
+  const scannedByUsername =
+    (typeof log.scannedByUsername === 'string' && log.scannedByUsername.trim()) ||
+    log.scannedBy?.username ||
+    '';
+
   return {
     id: log._id.toString(),
     scanType: log.scanType,
@@ -893,6 +902,8 @@ function formatLogEntry(log) {
     matchScore: log.matchScore,
     photoUrl: photoUrlFromPath(log.photoPath),
     remark: typeof log.remark === 'string' && log.remark.trim() ? log.remark.trim() : '',
+    scannedByName: scannedByName || null,
+    scannedByUsername: scannedByUsername || null,
   };
 }
 
@@ -934,6 +945,8 @@ function formatActivitySightingEntry(sighting) {
     remark: '',
     inActivity: Boolean(sighting.inActivity),
     label: null,
+    scannedByName: 'Activity Monitor',
+    scannedByUsername: null,
   };
 }
 
@@ -1121,6 +1134,7 @@ export async function getRegistrationReport(
     .populate('divisionId', 'name slug')
     .populate('departmentId', 'name slug')
     .populate('gateRefId', 'name gateType slug')
+    .populate('scannedBy', 'displayName username')
     .sort({ createdAt: -1 })
     .limit(hasDateRange ? 5000 : 1000);
 
@@ -2267,6 +2281,7 @@ export async function getDepartmentActivity({
   date = null,
   dateFrom = null,
   dateTo = null,
+  statsOnly = false,
 } = {}) {
   const today = todayDateString();
   const validDate =
@@ -2402,21 +2417,50 @@ export async function getDepartmentActivity({
     };
   }
 
-  const registrations = await Registration.find({
-    _id: { $in: allRegIds.map((id) => new mongoose.Types.ObjectId(id)) },
-    status: REGISTRATION_STATUS.VERIFIED,
-  })
-    .select('-faceEmbedding')
-    .populate('roleId', 'name slug')
-    .populate('formId', 'fields')
-    .lean();
+  const registrations = statsOnly
+    ? await Registration.find({
+      _id: { $in: allRegIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      status: REGISTRATION_STATUS.VERIFIED,
+    })
+      .select('_id registrationCode')
+      .lean()
+    : await Registration.find({
+      _id: { $in: allRegIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      status: REGISTRATION_STATUS.VERIFIED,
+    })
+      .select('-faceEmbedding')
+      .populate('roleId', 'name slug')
+      .populate('formId', 'fields')
+      .lean();
 
-  const regMap = new Map(registrations.map((r) => [r._id.toString(), r]));
+  const regMap = statsOnly
+    ? new Map(
+      registrations.map((r) => [
+        r._id.toString(),
+        {
+          registrationCode: r.registrationCode,
+          formData: {},
+          formId: { fields: [] },
+          roleId: null,
+          photoPath: '',
+        },
+      ])
+    )
+    : new Map(registrations.map((r) => [r._id.toString(), r]));
   const groupByDepartment = !hasDepartmentFilter;
   const people = buildActivityPeopleFromLogs(deptLogs, regMap, { groupByDepartment });
   const divisionOnlyPeople = buildActivityPeopleFromLogs(divisionOnlyLogs, regMap, {
     groupByDepartment: false,
   });
+
+  if (statsOnly) {
+    for (const person of [...people, ...divisionOnlyPeople]) {
+      person.displayName = person.displayName || person.registrationCode || '—';
+      person.photoUrl = null;
+      person.roleName = null;
+      person.selections = [];
+    }
+  }
 
   return {
     date: validDate,
@@ -2431,5 +2475,6 @@ export async function getDepartmentActivity({
     divisionOnlyCount: divisionOnlyPeople.length,
     people,
     divisionOnlyPeople,
+    statsOnly: Boolean(statsOnly),
   };
 }

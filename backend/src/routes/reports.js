@@ -82,6 +82,7 @@ router.get(
       date: req.query.date || null,
       dateFrom: req.query.dateFrom || null,
       dateTo: req.query.dateTo || null,
+      statsOnly: req.query.statsOnly === 'true' || req.query.statsOnly === '1',
     });
     res.json(data);
   })

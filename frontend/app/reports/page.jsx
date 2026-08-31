@@ -2926,10 +2926,29 @@ function DepartmentActivityStatsMetrics({ row }) {
   );
 }
 
+function groupDepartmentDivisionRowsForMobile(rows = []) {
+  const groups = [];
+  for (const row of rows) {
+    if (row.isFirstInDepartment || groups.length === 0) {
+      groups.push({
+        departmentId: row.departmentId,
+        departmentName: row.departmentName,
+        departmentInCount: row.departmentInCount,
+        departmentTotal: row.departmentTotal,
+        units: [row],
+      });
+    } else {
+      groups[groups.length - 1].units.push(row);
+    }
+  }
+  return groups;
+}
+
 function DepartmentActivityStatsMobileCard({
   row,
   onSelect,
   showDepartment = true,
+  compact = false,
   ariaLabel,
 }) {
   const handleActivate = () => {
@@ -2938,7 +2957,7 @@ function DepartmentActivityStatsMobileCard({
 
   return (
     <article
-      className={`rc-dept-stats-card ${row.isClickable ? 'rc-dept-stats-card--clickable' : ''}`.trim()}
+      className={`rc-dept-stats-card ${compact ? 'rc-dept-stats-card--nested' : ''} ${row.isClickable ? 'rc-dept-stats-card--clickable' : ''}`.trim()}
       onClick={handleActivate}
       tabIndex={row.isClickable ? 0 : -1}
       role={row.isClickable ? 'button' : undefined}
@@ -2953,7 +2972,17 @@ function DepartmentActivityStatsMobileCard({
     >
       <div className="rc-dept-stats-card__header">
         <div className="rc-dept-stats-card__titles">
-          {showDepartment ? (
+          {compact ? (
+            <div className="rc-dept-stats-card__title-row">
+              <span className="rc-dept-stats-card__unit-title">{row.divisionName}</span>
+              {row.inCount > 0 && (
+                <span className="rc-dept-stats-card__live-pill">
+                  <span className="rc-table__status-dot rc-table__status-dot--inside" />
+                  {row.inCount} in
+                </span>
+              )}
+            </div>
+          ) : showDepartment ? (
             <>
               <span className="rc-dept-stats-card__dept">{row.departmentName}</span>
               <span className="rc-dept-stats-card__unit">{row.divisionName}</span>
@@ -2961,7 +2990,7 @@ function DepartmentActivityStatsMobileCard({
           ) : (
             <span className="rc-dept-stats-card__dept">{row.divisionName}</span>
           )}
-          {row.inCount > 0 && (
+          {!compact && row.inCount > 0 && (
             <span className="rc-dept-stats-table__live">
               <span className="rc-table__status-dot rc-table__status-dot--inside" />
               {row.inCount} live
@@ -2976,6 +3005,51 @@ function DepartmentActivityStatsMobileCard({
       </div>
       <DepartmentActivityStatsMetrics row={row} />
     </article>
+  );
+}
+
+function DepartmentDivisionActivityMobileList({ rows, onSelectRow }) {
+  const groups = useMemo(() => groupDepartmentDivisionRowsForMobile(rows), [rows]);
+
+  return (
+    <div className="rc-dept-stats-cards hide-on-desktop">
+      {groups.map((group) => (
+        <section
+          key={group.departmentId || group.departmentName}
+          className="rc-dept-stats-group"
+          aria-label={`${group.departmentName} activity`}
+        >
+          <div className="rc-dept-stats-group__panel">
+            <header className="rc-dept-stats-group__header">
+              <h3 className="rc-dept-stats-group__title">{group.departmentName}</h3>
+              <div className="rc-dept-stats-group__meta">
+                {group.departmentInCount > 0 && (
+                  <span className="rc-dept-stats-group__pill rc-dept-stats-group__pill--live">
+                    <span className="rc-table__status-dot rc-table__status-dot--inside" />
+                    {group.departmentInCount} in
+                  </span>
+                )}
+                {group.departmentTotal > 0 && (
+                  <span className="rc-dept-stats-group__pill">{group.departmentTotal} total</span>
+                )}
+              </div>
+            </header>
+            <div className="rc-dept-stats-group__units">
+              {group.units.map((row) => (
+                <DepartmentActivityStatsMobileCard
+                  key={row.rowKey}
+                  row={row}
+                  onSelect={onSelectRow}
+                  showDepartment={false}
+                  compact
+                  ariaLabel={`View employees in ${group.departmentName} · ${row.divisionName}`}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
 
@@ -3096,17 +3170,7 @@ function DepartmentDivisionActivityTable({ rows, onSelectRow, emptyTitle, emptyD
 
   return (
     <>
-      <div className="rc-dept-stats-cards hide-on-desktop">
-        {rows.map((row) => (
-          <DepartmentActivityStatsMobileCard
-            key={row.rowKey}
-            row={row}
-            onSelect={onSelectRow}
-            showDepartment
-            ariaLabel={`View employees in ${row.departmentName} · ${row.divisionName}`}
-          />
-        ))}
-      </div>
+      <DepartmentDivisionActivityMobileList rows={rows} onSelectRow={onSelectRow} />
       <div className="rc-table-wrap rc-dept-stats-table-wrap hide-on-mobile">
       <table className="rc-table rc-dept-stats-table">
         <thead>

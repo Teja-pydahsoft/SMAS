@@ -1,9 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import { usePathname } from 'next/navigation';
 import AppLayoutShell from '@/components/AppLayoutShell';
 import AuthGuard from '@/components/AuthGuard';
 import PushSubscriptionManager from '@/components/PushSubscriptionManager';
+import NavigationProgressBar from '@/components/NavigationProgressBar';
 
 export default function LayoutShell({ children }) {
   const pathname = usePathname();
@@ -11,27 +13,26 @@ export default function LayoutShell({ children }) {
   const isGateLanding = pathname === '/access-scope';
   const isPassVerify = pathname.startsWith('/pass/verify');
 
-  if (isLogin) {
-    return <>{children}</>;
-  }
-
-  if (isPassVerify) {
-    return <div className="pass-verify-shell">{children}</div>;
-  }
-
-  if (isGateLanding) {
-    return (
-      <AuthGuard>
-        <PushSubscriptionManager />
-        <div className="gate-landing-shell">{children}</div>
-      </AuthGuard>
-    );
-  }
-
   return (
-    <AuthGuard>
-      <PushSubscriptionManager />
-      <AppLayoutShell>{children}</AppLayoutShell>
-    </AuthGuard>
+    <>
+      <Suspense fallback={null}>
+        <NavigationProgressBar />
+      </Suspense>
+      {isLogin ? (
+        children
+      ) : isPassVerify ? (
+        <div className="pass-verify-shell">{children}</div>
+      ) : isGateLanding ? (
+        <AuthGuard>
+          <PushSubscriptionManager />
+          <div className="gate-landing-shell">{children}</div>
+        </AuthGuard>
+      ) : (
+        <AuthGuard>
+          <PushSubscriptionManager />
+          <AppLayoutShell>{children}</AppLayoutShell>
+        </AuthGuard>
+      )}
+    </>
   );
 }

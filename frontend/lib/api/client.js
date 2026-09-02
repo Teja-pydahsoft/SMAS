@@ -162,32 +162,84 @@ export async function ensureBackendReady(options = {}) {
   return backendReady;
 }
 
+const referenceCache = new Map();
+const pendingRequests = new Map();
+const CACHE_TTL_MS = 45_000;
+
+const CACHEABLE_PREFIXES = [
+  '/reports/divisions',
+  '/departments',
+  '/shifts',
+  '/roles',
+  '/divisions',
+];
+
+function isCacheable(path, options) {
+  const method = (options?.method || 'GET').toUpperCase();
+  if (method !== 'GET') return false;
+  return CACHEABLE_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}?`));
+}
+
+export function clearApiCache() {
+  referenceCache.clear();
+}
+
 async function request(path, options = {}, { timeoutMs = null } = {}) {
-  const isAuthPath = path.startsWith('/auth/') || path === '/health' || path === '/ping';
-  if (!isAuthPath) {
-    return requestOnce(path, options, { timeoutMs });
+  const method = (options?.method || 'GET').toUpperCase();
+  const cacheKey = `${method}:${path}`;
+
+  if (method !== 'GET') {
+    referenceCache.clear();
   }
 
-  let lastErr;
-  for (let attempt = 0; attempt < AUTH_MAX_RETRIES; attempt += 1) {
-    try {
-      const data = await requestOnce(path, options, { timeoutMs: timeoutMs || AUTH_TIMEOUT_MS });
-      backendReady = true;
-      return data;
-    } catch (err) {
-      lastErr = err;
-      const canRetry = attempt < AUTH_MAX_RETRIES - 1 && isTransientFailure(err);
-      if (!canRetry) break;
-      await sleep(AUTH_RETRY_BASE_MS * (attempt + 1));
+  if (method === 'GET' && isCacheable(path, options)) {
+    const cached = referenceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      return cached.data;
     }
   }
 
-  if (isTransientFailure(lastErr)) {
-    const warmupErr = new Error('Server is waking up. Please wait a moment and try again.');
-    warmupErr.status = lastErr.status || 503;
-    throw warmupErr;
+  if (method === 'GET' && pendingRequests.has(cacheKey)) {
+    return pendingRequests.get(cacheKey);
   }
-  throw lastErr;
+
+  const execute = async () => {
+    const isAuthPath = path.startsWith('/auth/') || path === '/health' || path === '/ping';
+    let data;
+    if (!isAuthPath) {
+      data = await requestOnce(path, options, { timeoutMs });
+    } else {
+      let lastErr;
+      for (let attempt = 0; attempt < AUTH_MAX_RETRIES; attempt += 1) {
+        try {
+          data = await requestOnce(path, options, { timeoutMs: timeoutMs || AUTH_TIMEOUT_MS });
+          backendReady = true;
+          break;
+        } catch (err) {
+          lastErr = err;
+          const canRetry = attempt < AUTH_MAX_RETRIES - 1 && isTransientFailure(err);
+          if (!canRetry) break;
+          await sleep(AUTH_RETRY_BASE_MS * (attempt + 1));
+        }
+      }
+      if (!data && lastErr) throw lastErr;
+    }
+
+    if (method === 'GET' && isCacheable(path, options)) {
+      referenceCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    return data;
+  };
+
+  if (method === 'GET') {
+    const promise = execute().finally(() => {
+      pendingRequests.delete(cacheKey);
+    });
+    pendingRequests.set(cacheKey, promise);
+    return promise;
+  }
+
+  return execute();
 }
 
 /** Start waking a sleeping hosted backend as soon as the login page loads. */

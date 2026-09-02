@@ -11,24 +11,7 @@ import { buildEntryExitUrl } from '@/lib/entryExit';
 
 const STORAGE_COLLAPSED = 'sams-admin-sidebar-collapsed';
 
-function isPathActive(pathname, searchParams, path) {
-  const [basePath, query] = path.split('?');
-  if (basePath === '/') return pathname === '/';
-  if (basePath.startsWith('/system')) return pathname === basePath || pathname.startsWith('/system/');
-  const baseMatch = pathname === basePath || pathname.startsWith(`${basePath}/`);
-  if (!baseMatch) return false;
-  if (query && searchParams) {
-    const [key, val] = query.split('=');
-    return searchParams.get(key) === val;
-  }
-  return true;
-}
-
-function isGroupActive(pathname, searchParams, item) {
-  const [basePath] = item.path.split('?');
-  if (pathname === basePath || pathname.startsWith(`${basePath}/`)) return true;
-  return (item.children || []).some((child) => isPathActive(pathname, searchParams, child.path));
-}
+import { isPathActive, isGroupActive } from '@/lib/pathMatcher';
 
 function ChevronIcon({ open }) {
   return (

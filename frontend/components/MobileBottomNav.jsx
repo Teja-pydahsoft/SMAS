@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import AdminIcon from '@/components/admin/AdminIcons';
 
 export default function MobileBottomNav({ onOpenDrawer, onOpenVehicles, onOpenEntryExit }) {
   const pathname = usePathname();
+  const router = useRouter();
 
   const isActive = (path) => pathname === path || pathname.startsWith(`${path}/`);
 
@@ -14,6 +15,9 @@ export default function MobileBottomNav({ onOpenDrawer, onOpenVehicles, onOpenEn
       <div className="mobile-bottom-nav__inner">
         <Link 
           href="/" 
+          prefetch={true}
+          onMouseEnter={() => router?.prefetch?.('/')}
+          onTouchStart={() => router?.prefetch?.('/')}
           className={`mobile-bottom-nav__item ${pathname === '/' ? 'active' : ''}`}
         >
           <AdminIcon name="dashboard" className="mobile-bottom-nav__icon" />
@@ -38,6 +42,9 @@ export default function MobileBottomNav({ onOpenDrawer, onOpenVehicles, onOpenEn
         
         <Link 
           href="/registrations" 
+          prefetch={true}
+          onMouseEnter={() => router?.prefetch?.('/registrations')}
+          onTouchStart={() => router?.prefetch?.('/registrations')}
           className={`mobile-bottom-nav__item ${isActive('/registrations') ? 'active' : ''}`}
         >
           <AdminIcon name="registrations" className="mobile-bottom-nav__icon" />
@@ -59,3 +66,4 @@ export default function MobileBottomNav({ onOpenDrawer, onOpenVehicles, onOpenEn
     </nav>
   );
 }
+

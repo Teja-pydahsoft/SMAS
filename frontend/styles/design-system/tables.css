@@ -4,7 +4,9 @@
 
 /* ── Table scroll wrapper ── */
 .table-scroll {
+  width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-sm);
@@ -14,8 +16,56 @@
 .reg-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 700px;
+  min-width: 680px;
   background: var(--surface-base);
+}
+
+@media (min-width: 1025px) {
+  .table-scroll {
+    overflow-x: hidden;
+  }
+  .reg-table {
+    min-width: 100%;
+  }
+}
+
+/* ── System Users Table (su-table) ── */
+.su-table-scroll {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.su-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  table-layout: fixed !important;
+}
+
+.su-table th,
+.su-table td {
+  padding: 8px 6px !important;
+  font-size: 0.76rem !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.su-table td.actions-cell {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+  text-align: right !important;
+}
+
+.su-table td.actions-cell button {
+  padding: 3px 7px !important;
+  font-size: 0.72rem !important;
+  margin-left: 3px !important;
+  display: inline-flex !important;
+  align-items: center !important;
 }
 
 .reg-table th {

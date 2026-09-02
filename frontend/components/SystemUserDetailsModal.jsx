@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '@/lib/api/client';
 import { PERMISSION_MODULES, emptyPermissions, applyWriteImpliesRead } from '@/lib/auth/permissions';
 import { formatDate, formatDateTime } from '@/lib/formatDate';
@@ -260,7 +261,9 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
   const roleName = user.isSuperAdmin ? 'Unrestricted' : user.systemRoleId?.name || '—';
   const hasScope = Boolean(user.divisionIds?.length || user.gateIds?.length || user.departmentIds?.length);
 
-  return (
+  if (typeof window === 'undefined') return null;
+
+  return createPortal(
     <div className="pass-modal-overlay reg-details-overlay" onClick={onClose}>
       <div
         className={`reg-details-modal su-modal${editing ? ' su-modal--edit' : ''}`}
@@ -483,6 +486,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

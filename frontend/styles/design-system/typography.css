@@ -20,16 +20,19 @@ body {
   text-size-adjust: 100%;
 }
 
+@media (min-width: 1025px) {
+  html {
+    font-size: 88.5%;
+  }
+}
+
 body {
   font-family: var(--font-family);
-  font-size: var(--text-14);
+  font-size: var(--text-13);
   color: var(--text-primary);
-  line-height: 1.6;
-  background: var(--surface-bg);
-  background-image:
-    radial-gradient(ellipse at 10% 5%, rgba(26, 86, 255, 0.04) 0%, transparent 40%),
-    radial-gradient(ellipse at 90% 0%, rgba(77, 143, 255, 0.03) 0%, transparent 35%),
-    linear-gradient(180deg, #F5F8FF 0%, #EFF4FF 100%);
+  line-height: 1.5;
+  background: var(--surface-bg, #f8fafc);
+  letter-spacing: -0.01em;
   overflow: hidden;
 }
 
@@ -38,14 +41,14 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-family);
   color: var(--text-primary);
   line-height: 1.25;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.022em;
   font-weight: 700;
 }
 
-h1 { font-size: var(--text-36); font-weight: 800; }
-h2 { font-size: var(--text-30); font-weight: 700; }
-h3 { font-size: var(--text-24); font-weight: 700; }
-h4 { font-size: var(--text-20); font-weight: 600; }
+h1 { font-size: var(--text-36); font-weight: 700; letter-spacing: -0.03em; }
+h2 { font-size: var(--text-30); font-weight: 700; letter-spacing: -0.025em; }
+h3 { font-size: var(--text-24); font-weight: 600; letter-spacing: -0.02em; }
+h4 { font-size: var(--text-20); font-weight: 600; letter-spacing: -0.015em; }
 h5 { font-size: var(--text-18); font-weight: 600; }
 h6 { font-size: var(--text-16); font-weight: 600; }
 

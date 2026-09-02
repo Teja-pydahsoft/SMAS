@@ -1958,7 +1958,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const [shiftFilter, setShiftFilter] = useState('all');
   const [shiftOptions, setShiftOptions] = useState([]);
   const [dayNightFilter, setDayNightFilter] = useState('all');
-  const [divisionFilter, setDivisionFilter] = useState(divisionRequired ? '' : 'all');
+  const [divisionFilter, setDivisionFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [divisions, setDivisions] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -1967,6 +1967,10 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [printing, setPrinting] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [listTab, setListTab] = useState('department'); // 'department' | 'divisionOnly' | 'allPeople'
+  const [drillDepartmentId, setDrillDepartmentId] = useState(null);
+  const [drillDivisionId, setDrillDivisionId] = useState(null);
+  const [divisionOnlyDrillId, setDivisionOnlyDrillId] = useState(null);
   const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
   const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
   const intervalRef = useRef(null);
@@ -1984,6 +1988,21 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
         ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
         : { key, dir: 'asc' }
     ));
+  }, []);
+
+  useEffect(() => {
+    setDrillDepartmentId(null);
+    setDrillDivisionId(null);
+    setDivisionOnlyDrillId(null);
+  }, [listTab]);
+
+  const clearDepartmentDrill = useCallback(() => {
+    setDrillDepartmentId(null);
+    setDrillDivisionId(null);
+  }, []);
+
+  const clearDivisionOnlyDrill = useCallback(() => {
+    setDivisionOnlyDrillId(null);
   }, []);
 
   useEffect(() => {
@@ -2061,52 +2080,233 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
     return () => clearInterval(intervalRef.current);
   }, [load, divisionFilter, divisionRequired, isToday]);
 
-  // Flatten all people from all roles
-  const allPeople = (data?.roles || []).flatMap(r =>
-    r.people.map(p => ({ ...p, roleId: r.roleId, roleName: r.roleName, isShiftBased: r.isShiftBased }))
+  // Flatten all people from all roles (memoized)
+  const allPeople = useMemo(
+    () => (data?.roles || []).flatMap(r =>
+      r.people.map(p => ({ ...p, roleId: r.roleId, roleName: r.roleName, isShiftBased: r.isShiftBased }))
+    ),
+    [data]
   );
 
-  const selectionColumns = collectSelectionColumns(allPeople);
-  const roleOptions = (data?.roles || []).map(r => ({ id: r.roleId, name: r.roleName }));
-  const selectedDivision = divisions.find(d => d._id === divisionFilter);
+  const selectionColumns = useMemo(() => collectSelectionColumns(allPeople), [allPeople]);
+  const roleOptions = useMemo(() => (data?.roles || []).map(r => ({ id: r.roleId, name: r.roleName })), [data]);
+  const selectedDivision = useMemo(() => divisions.find(d => d._id === divisionFilter), [divisions, divisionFilter]);
   const selectedDivisionName = selectedDivision?.name || '';
-  const selectedDepartment = departments.find(d => d._id === departmentFilter);
+  const selectedDepartment = useMemo(() => departments.find(d => d._id === departmentFilter), [departments, departmentFilter]);
   const selectedDepartmentName = selectedDepartment?.name || '';
-  // Union of configured shifts and shift names present in today's rows (covers deleted shifts)
-  const shiftNameOptions = [...new Set([
+
+  // Union of configured shifts and shift names present in today's rows
+  const shiftNameOptions = useMemo(() => [...new Set([
     ...shiftOptions.map(s => s.name),
     ...allPeople.map(p => p.shiftName),
-  ].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b)), [shiftOptions, allPeople]);
 
-  const filtered = allPeople.filter(p => {
-    const q = search.toLowerCase();
-    const matchSearch = !q ||
-      (p.displayName || '').toLowerCase().includes(q) ||
-      (p.registrationCode || '').toLowerCase().includes(q) ||
-      (p.roleName || '').toLowerCase().includes(q);
-    const matchStatus =
-      filterStatus === 'all' ||
-      (filterStatus === 'inside' && p.divisionInside) ||
-      (filterStatus === 'outside' && !p.divisionInside && p.hadActivityToday) ||
-      (filterStatus === 'inactive' && !p.divisionInside && !p.hadActivityToday);
-    const matchPayFreq = payFreqFilter === 'all' || p.payFrequency === payFreqFilter;
-    const matchRole = roleFilter === 'all' || p.roleId === roleFilter;
-    const matchShift =
-      shiftFilter === 'all' ||
-      (shiftFilter === 'none' ? !p.shiftName : p.shiftName === shiftFilter);
-    const matchDayNight = matchesDayNightPeriod(p.gateEntryAt, dayNightFilter);
-    const matchDepartment =
-      departmentFilter === 'all' ||
-      (p.currentDepartmentName || '') === selectedDepartmentName;
-    const matchSelections = selectionColumns.every(label => {
-      const wanted = selectionFilters[label];
-      return selectionFilterMatches(selectionValueFor(p, label), wanted);
+  const filtered = useMemo(() => {
+    return allPeople.filter(p => {
+      const q = search.toLowerCase();
+      const matchSearch = !q ||
+        (p.displayName || '').toLowerCase().includes(q) ||
+        (p.registrationCode || '').toLowerCase().includes(q) ||
+        (p.roleName || '').toLowerCase().includes(q);
+      const matchStatus =
+        filterStatus === 'all' ||
+        (filterStatus === 'inside' && p.divisionInside) ||
+        (filterStatus === 'outside' && !p.divisionInside && p.hadActivityToday) ||
+        (filterStatus === 'inactive' && !p.divisionInside && !p.hadActivityToday);
+      const matchPayFreq = payFreqFilter === 'all' || p.payFrequency === payFreqFilter;
+      const matchRole = roleFilter === 'all' || p.roleId === roleFilter;
+      const matchShift =
+        shiftFilter === 'all' ||
+        (shiftFilter === 'none' ? !p.shiftName : p.shiftName === shiftFilter);
+      const matchDayNight = matchesDayNightPeriod(p.gateEntryAt, dayNightFilter);
+      const matchDepartment =
+        departmentFilter === 'all' ||
+        (p.currentDepartmentName || '') === selectedDepartmentName;
+      const matchSelections = selectionColumns.every(label => {
+        const wanted = selectionFilters[label];
+        return selectionFilterMatches(selectionValueFor(p, label), wanted);
+      });
+      return matchSearch && matchStatus && matchPayFreq && matchRole && matchShift && matchDayNight && matchDepartment && matchSelections;
+    }).sort((a, b) => {
+      const res = compareSortValues(dailySortValue(a, sort.key), dailySortValue(b, sort.key));
+      return sort.dir === 'asc' ? res : -res;
     });
-    return matchSearch && matchStatus && matchPayFreq && matchRole && matchShift && matchDayNight && matchDepartment && matchSelections;
-  }).sort((a, b) => {
-    const res = compareSortValues(dailySortValue(a, sort.key), dailySortValue(b, sort.key));
-    return sort.dir === 'asc' ? res : -res;
-  });
+  }, [allPeople, search, filterStatus, payFreqFilter, roleFilter, shiftFilter, dayNightFilter, departmentFilter, selectedDepartmentName, selectionColumns, selectionFilters, sort]);
+
+  const departmentSummaries = useMemo(
+    () => groupDepartmentActivity(filtered, departments, { includeEmpty: !search && filterStatus === 'all' }),
+    [filtered, departments, search, filterStatus]
+  );
+
+  const departmentDivisionRows = useMemo(
+    () => buildDepartmentDivisionActivityRows(filtered, departments, { includeEmpty: !search && filterStatus === 'all' }),
+    [filtered, departments, search, filterStatus]
+  );
+
+  const globalUnitSummaries = useMemo(
+    () => groupUnitActivity(filtered),
+    [filtered]
+  );
+
+  const divisionOnlyTableRows = useMemo(
+    () => globalUnitSummaries.map((unit) => ({
+      rowKey: unit.divisionId || `unit-${unit.divisionName}`,
+      divisionId: unit.divisionId,
+      divisionName: unit.divisionName,
+      enteredCount: unit.enteredCount,
+      inCount: unit.inCount,
+      exitCount: unit.exitCount,
+      total: unit.total,
+      isClickable: Boolean(unit.total > 0),
+    })),
+    [globalUnitSummaries]
+  );
+
+  const handleSelectDepartmentDivision = useCallback((row) => {
+    if (!row.departmentId || !row.divisionId) return;
+    setDrillDepartmentId(row.departmentId);
+    setDrillDivisionId(row.divisionId);
+  }, []);
+
+  const handleSelectDivisionOnly = useCallback((row) => {
+    if (!row.divisionId) return;
+    setDivisionOnlyDrillId(row.divisionId);
+  }, []);
+
+  const drilledDepartment = useMemo(() => {
+    if (!drillDepartmentId) return null;
+    const people = filtered.filter((p) => (p.departmentId === drillDepartmentId || p.departmentName === drillDepartmentId || p.currentDepartmentName === drillDepartmentId));
+    return departmentSummaries.find((row) => row.departmentId === drillDepartmentId)
+      || {
+        departmentId: drillDepartmentId,
+        departmentName: people[0]?.departmentName || people[0]?.currentDepartmentName || selectedDepartmentName || 'Department',
+        people,
+        ...activityGroupStats(people),
+      };
+  }, [drillDepartmentId, departmentSummaries, filtered, selectedDepartmentName]);
+
+  const drilledUnit = useMemo(() => {
+    if (!drillDivisionId) return null;
+    const people = filtered.filter(
+      (p) => (p.departmentId === drillDepartmentId || p.departmentName === drillDepartmentId || p.currentDepartmentName === drillDepartmentId) && (p.divisionId === drillDivisionId || p.divisionName === drillDivisionId)
+    );
+    return {
+      divisionId: drillDivisionId,
+      divisionName: people[0]?.divisionName || selectedDivisionName || 'Unit',
+      people,
+      ...activityGroupStats(people),
+    };
+  }, [drillDivisionId, drillDepartmentId, filtered, selectedDivisionName]);
+
+  const drilledDivisionOnly = useMemo(() => {
+    if (!divisionOnlyDrillId) return null;
+    const people = filtered.filter((p) => p.divisionId === divisionOnlyDrillId || p.divisionName === divisionOnlyDrillId);
+    return {
+      divisionId: divisionOnlyDrillId,
+      divisionName: people[0]?.divisionName || selectedDivisionName || 'Division',
+      people,
+      ...activityGroupStats(people),
+    };
+  }, [divisionOnlyDrillId, filtered, selectedDivisionName]);
+
+  const employeeRows = useMemo(() => {
+    if (!drillDepartmentId || !drillDivisionId) return [];
+    return filtered.filter(
+      (p) => (p.departmentId === drillDepartmentId || p.departmentName === drillDepartmentId || p.currentDepartmentName === drillDepartmentId) && (p.divisionId === drillDivisionId || p.divisionName === drillDivisionId)
+    );
+  }, [drillDepartmentId, drillDivisionId, filtered]);
+
+  const divisionOnlyEmployeeRows = useMemo(() => {
+    if (!divisionOnlyDrillId) return [];
+    return filtered.filter((p) => p.divisionId === divisionOnlyDrillId || p.divisionName === divisionOnlyDrillId);
+  }, [divisionOnlyDrillId, filtered]);
+
+  const isEmployeeDrill = Boolean(drillDepartmentId && drillDivisionId);
+  const isDivisionOnlyEmployeeDrill = Boolean(divisionOnlyDrillId);
+
+  const breadcrumbItems = useMemo(() => {
+    const items = [{
+      key: 'departments',
+      label: 'All Departments',
+      onClick: isEmployeeDrill ? clearDepartmentDrill : null,
+    }];
+    if (drilledDepartment) {
+      items.push({
+        key: `dept-${drilledDepartment.departmentId}`,
+        label: drilledDepartment.departmentName,
+      });
+    }
+    if (drilledUnit) {
+      items.push({
+        key: `unit-${drilledUnit.divisionId}`,
+        label: drilledUnit.divisionName,
+      });
+    }
+    return items;
+  }, [isEmployeeDrill, drilledDepartment, drilledUnit, clearDepartmentDrill]);
+
+  const divisionOnlyBreadcrumbItems = useMemo(() => {
+    if (!isDivisionOnlyEmployeeDrill || !drilledDivisionOnly) return [];
+    return [{
+      key: 'divisions',
+      label: 'All Divisions',
+      onClick: clearDivisionOnlyDrill,
+    }, {
+      key: `div-${drilledDivisionOnly.divisionId}`,
+      label: drilledDivisionOnly.divisionName,
+    }];
+  }, [isDivisionOnlyEmployeeDrill, drilledDivisionOnly, clearDivisionOnlyDrill]);
+
+  const hierarchyStats = useMemo(() => {
+    if (isEmployeeDrill && drilledUnit) {
+      return {
+        scopeLabel: `${drilledDepartment?.departmentName || 'Department'} · ${drilledUnit.divisionName}`,
+        departmentCount: 1,
+        departmentSub: drilledDepartment?.departmentName,
+        unitCount: 1,
+        unitSub: drilledUnit.divisionName,
+        employeeSub: 'In this unit',
+        ...activityGroupStats(drilledUnit.people),
+      };
+    }
+    const activeDepartments = departmentSummaries.filter((row) => row.total > 0).length;
+    const activeUnits = globalUnitSummaries.filter((row) => row.total > 0).length;
+    return {
+      scopeLabel: departmentFilter !== 'all'
+        ? (selectedDepartmentName || 'Filtered department')
+        : 'All Departments',
+      departmentCount: activeDepartments,
+      departmentSub: `${departmentSummaries.length} total`,
+      unitCount: activeUnits,
+      unitSub: `${globalUnitSummaries.length} total`,
+      employeeSub: 'Today check-ins',
+      ...activityGroupStats(filtered),
+    };
+  }, [isEmployeeDrill, drilledDepartment, drilledUnit, departmentFilter, selectedDepartmentName, departmentSummaries, globalUnitSummaries, filtered]);
+
+  const divisionOnlyStats = useMemo(() => {
+    if (isDivisionOnlyEmployeeDrill && drilledDivisionOnly) {
+      return {
+        scopeLabel: drilledDivisionOnly.divisionName,
+        departmentCount: 0,
+        departmentSub: 'Division view',
+        unitCount: 1,
+        unitSub: drilledDivisionOnly.divisionName,
+        employeeSub: 'In this division',
+        ...activityGroupStats(drilledDivisionOnly.people),
+      };
+    }
+    const activeUnits = divisionOnlyTableRows.filter((row) => row.total > 0).length;
+    return {
+      scopeLabel: 'Division only summary',
+      departmentCount: 0,
+      departmentSub: 'Division view',
+      unitCount: activeUnits,
+      unitSub: `${divisionOnlyTableRows.length} total`,
+      employeeSub: 'Division check-ins',
+      ...activityGroupStats(filtered),
+    };
+  }, [isDivisionOnlyEmployeeDrill, drilledDivisionOnly, divisionOnlyTableRows, filtered]);
 
   const handlePrintPdf = useCallback(async () => {
     if (divisionRequired && !selectedDivision) {
@@ -2211,26 +2411,26 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               value={search} onChange={e => setSearch(e.target.value)} aria-label="Search" />
           </div>
           {(divisionRequired || divisions.length > 0) && (
-            <div style={{ display: 'inline-flex', minWidth: 160 }}>
+            <div className="rc-filter-wrap">
               <SearchableSelect
                 options={divisions.map(d => d.name)}
                 value={selectedDivisionName}
                 onChange={(name) => {
                   if (!name) {
-                    setDivisionFilter(divisionRequired ? '' : 'all');
+                    setDivisionFilter('all');
                     return;
                   }
                   const selected = divisions.find(d => d.name === name);
-                  setDivisionFilter(selected?._id || (divisionRequired ? '' : 'all'));
+                  setDivisionFilter(selected?._id || 'all');
                 }}
-                placeholder={divisionRequired ? 'Select Division' : 'All Divisions'}
+                placeholder="All Divisions"
                 emptyValue=""
                 className="rc-select"
               />
             </div>
           )}
           {(divisionRequired || divisions.length > 0) && (
-            <div style={{ display: 'inline-flex', minWidth: 160 }}>
+            <div className="rc-filter-wrap">
               <SearchableSelect
                 options={departments.map(d => d.name)}
                 value={selectedDepartmentName}
@@ -2242,16 +2442,10 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
                   const selected = departments.find(d => d.name === name);
                   setDepartmentFilter(selected?._id || 'all');
                 }}
-                placeholder={
-                  divisionRequired && !divisionFilter
-                    ? 'Select division first'
-                    : loadingDepartments
-                      ? 'Loading…'
-                      : 'All Departments'
-                }
+                placeholder={loadingDepartments ? 'Loading…' : 'All Departments'}
                 emptyValue=""
                 className="rc-select"
-                disabled={(divisionRequired && !divisionFilter) || loadingDepartments}
+                disabled={loadingDepartments}
               />
             </div>
           )}
@@ -2313,33 +2507,61 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
             );
           })}
         </div>
-        <div className="rc-filters-bar__right">
-          <span className="rc-filter-pill">
-            <span className="daily-pass-dot daily-pass-dot--inside" />{insideCount} Inside
-          </span>
-          <span className="rc-filter-pill rc-filter-pill--muted">{activeCount} Active {isToday ? 'Today' : 'This Day'}</span>
-          {dayNightFilter === 'day' && (
-            <span className="rc-filter-pill rc-filter-pill--muted">Day · before 6 PM</span>
-          )}
-          {dayNightFilter === 'night' && (
-            <span className="rc-filter-pill rc-filter-pill--muted">Night · 6 PM onwards</span>
-          )}
-          {divisionRequired && (
-            <span className="rc-filter-pill rc-filter-pill--muted">{periodLabel}</span>
-          )}
-          <button className="btn-secondary btn-sm" onClick={() => load()} disabled={loading || printing}>
-            {loading ? <Spinner size={14} /> : (
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-              </svg>
+        {dayNightFilter !== 'all' && (
+          <div className="rc-filters-bar__right">
+            {dayNightFilter === 'day' && (
+              <span className="rc-filter-pill rc-filter-pill--muted">Day · before 6 PM</span>
             )}
-            Refresh
-          </button>
-        </div>
+            {dayNightFilter === 'night' && (
+              <span className="rc-filter-pill rc-filter-pill--muted">Night · 6 PM onwards</span>
+            )}
+          </div>
+        )}
       </div>
 
       {error && <p className="error-msg" style={{ marginBottom: '1rem' }}>{error}</p>}
+
+      {/* View sub-tab mode switcher */}
+      <div className="rc-tab-nav" style={{ marginBottom: '1rem' }} role="tablist" aria-label="Today activity views">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={listTab === 'department'}
+          className={`rc-tab-btn ${listTab === 'department' ? 'rc-tab-btn--active' : ''}`}
+          onClick={() => { setListTab('department'); setDrillDepartmentId(null); setDrillDivisionId(null); }}
+        >
+          Department &amp; Division Stats
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={listTab === 'divisionOnly'}
+          className={`rc-tab-btn ${listTab === 'divisionOnly' ? 'rc-tab-btn--active' : ''}`}
+          onClick={() => { setListTab('divisionOnly'); setDivisionOnlyDrillId(null); }}
+        >
+          Division Only Stats
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={listTab === 'allPeople'}
+          className={`rc-tab-btn ${listTab === 'allPeople' ? 'rc-tab-btn--active' : ''}`}
+          onClick={() => setListTab('allPeople')}
+        >
+          All People List
+          <span className="rc-filter-pill" style={{ margin: 0, padding: '0 8px', fontSize: '0.75rem' }}>
+            {filtered.length}
+          </span>
+        </button>
+      </div>
+
+      {listTab !== 'allPeople' && (
+        <DepartmentActivityHierarchyCards
+          stats={listTab === 'divisionOnly' ? divisionOnlyStats : hierarchyStats}
+          loading={loading}
+          scopeLabel={listTab === 'divisionOnly' ? divisionOnlyStats.scopeLabel : hierarchyStats.scopeLabel}
+        />
+      )}
 
       {divisionRequired && !divisionFilter ? (
         <EmptyState
@@ -2351,6 +2573,77 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
         <div className="rc-table-loading">
           {[...Array(5)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
         </div>
+      ) : listTab === 'department' ? (
+        isEmployeeDrill ? (
+          <>
+            <DepartmentActivityNavBar
+              breadcrumbItems={breadcrumbItems}
+              onBack={clearDepartmentDrill}
+              backLabel="Back to department stats"
+            />
+            <div className="rc-table-meta" style={{ marginBottom: '0.75rem' }}>
+              {drilledDepartment?.departmentName} · {drilledUnit?.divisionName} · {employeeRows.length} employee{employeeRows.length === 1 ? '' : 's'}
+            </div>
+            <DepartmentActivityPeopleList
+              rows={employeeRows.map(p => ({
+                ...p,
+                rowKey: p.registrationId,
+                currentlyIn: p.divisionInside,
+                entryAt: p.gateEntryAt,
+                exitAt: p.gateExitAt,
+              }))}
+              sort={sort}
+              onSort={handleSort}
+              activityDate={activityDate}
+              isToday={isToday}
+              onViewPerson={openPerson}
+              showDivision
+              showDepartment
+            />
+          </>
+        ) : (
+          <DepartmentDivisionActivityTable
+            rows={departmentDivisionRows}
+            onSelectRow={handleSelectDepartmentDivision}
+            emptyTitle={search || filterStatus !== 'all' ? 'No matching departments/divisions' : `No activity recorded ${isToday ? 'today' : `on ${dayLabel}`}`}
+            emptyDesc={search ? 'Try adjusting your search or filters.' : 'No gate activity recorded yet.'}
+          />
+        )
+      ) : listTab === 'divisionOnly' ? (
+        isDivisionOnlyEmployeeDrill ? (
+          <>
+            <DepartmentActivityNavBar
+              breadcrumbItems={divisionOnlyBreadcrumbItems}
+              onBack={clearDivisionOnlyDrill}
+              backLabel="Back to division stats"
+            />
+            <div className="rc-table-meta" style={{ marginBottom: '0.75rem' }}>
+              {drilledDivisionOnly?.divisionName} · {divisionOnlyEmployeeRows.length} employee{divisionOnlyEmployeeRows.length === 1 ? '' : 's'}
+            </div>
+            <DepartmentActivityPeopleList
+              rows={divisionOnlyEmployeeRows.map(p => ({
+                ...p,
+                rowKey: p.registrationId,
+                currentlyIn: p.divisionInside,
+                entryAt: p.gateEntryAt,
+                exitAt: p.gateExitAt,
+              }))}
+              sort={sort}
+              onSort={handleSort}
+              activityDate={activityDate}
+              isToday={isToday}
+              onViewPerson={openPerson}
+              showDivision
+            />
+          </>
+        ) : (
+          <DivisionOnlyActivityTable
+            rows={divisionOnlyTableRows}
+            onSelectRow={handleSelectDivisionOnly}
+            emptyTitle={search || filterStatus !== 'all' ? 'No matching divisions' : `No division activity recorded ${isToday ? 'today' : `on ${dayLabel}`}`}
+            emptyDesc={search ? 'Try adjusting your search or filters.' : 'No gate activity recorded yet.'}
+          />
+        )
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
@@ -2448,9 +2741,9 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
 function activityGroupStats(people = []) {
   return {
     total: people.length,
-    enteredCount: people.filter((p) => p.hadEntry).length,
-    inCount: people.filter((p) => p.currentlyIn).length,
-    exitCount: people.filter((p) => p.hadExit).length,
+    enteredCount: people.filter((p) => p.hadEntry || p.gateEntryAt || p.hadGateActivity).length,
+    inCount: people.filter((p) => p.currentlyIn || p.divisionInside).length,
+    exitCount: people.filter((p) => p.hadExit || p.gateExitAt).length,
   };
 }
 
@@ -2473,12 +2766,14 @@ function buildDepartmentDivisionActivityRows(people = [], departmentCatalog = []
   const deptMap = new Map();
 
   for (const person of people) {
-    const deptId = person.departmentId || '__unknown__';
-    const divId = person.divisionId || '__unknown__';
+    const deptId = person.departmentId || person.departmentName || person.currentDepartmentName || '__unknown__';
+    const deptName = person.departmentName || person.currentDepartmentName || 'General / Unassigned';
+    const divId = person.divisionId || person.divisionName || '__unknown__';
+    const divName = person.divisionName || 'Main Division';
     if (!deptMap.has(deptId)) {
       deptMap.set(deptId, {
-        departmentId: person.departmentId || null,
-        departmentName: person.departmentName || 'Unknown Department',
+        departmentId: person.departmentId || deptId,
+        departmentName: deptName,
         units: new Map(),
         people: [],
       });
@@ -2487,8 +2782,8 @@ function buildDepartmentDivisionActivityRows(people = [], departmentCatalog = []
     dept.people.push(person);
     if (!dept.units.has(divId)) {
       dept.units.set(divId, {
-        divisionId: person.divisionId || null,
-        divisionName: person.divisionName || 'Unknown Unit',
+        divisionId: person.divisionId || divId,
+        divisionName: divName,
         people: [],
       });
     }
@@ -2552,7 +2847,7 @@ function buildDepartmentDivisionActivityRows(people = [], departmentCatalog = []
         departmentTotal: dept.total,
         isFirstInDepartment: index === 0,
         departmentRowSpan: dept.units.length,
-        isClickable: Boolean(unit.divisionId && unit.total > 0),
+        isClickable: Boolean(unit.total > 0),
       });
     });
   }
@@ -2564,11 +2859,12 @@ function buildDepartmentDivisionActivityRows(people = [], departmentCatalog = []
 function groupDepartmentActivity(people = [], departmentCatalog = [], { includeEmpty = true } = {}) {
   const map = new Map();
   for (const person of people) {
-    const id = person.departmentId || '__unknown__';
+    const id = person.departmentId || person.departmentName || person.currentDepartmentName || '__unknown__';
+    const name = person.departmentName || person.currentDepartmentName || 'General / Unassigned';
     if (!map.has(id)) {
       map.set(id, {
-        departmentId: person.departmentId || null,
-        departmentName: person.departmentName || 'Unknown Department',
+        departmentId: person.departmentId || id,
+        departmentName: name,
         people: [],
       });
     }
@@ -2595,11 +2891,12 @@ function groupDepartmentActivity(people = [], departmentCatalog = [], { includeE
 function groupUnitActivity(people = []) {
   const map = new Map();
   for (const person of people) {
-    const id = person.divisionId || '__unknown__';
+    const id = person.divisionId || person.divisionName || '__unknown__';
+    const name = person.divisionName || 'Main Division';
     if (!map.has(id)) {
       map.set(id, {
-        divisionId: person.divisionId || null,
-        divisionName: person.divisionName || 'Unknown Unit',
+        divisionId: person.divisionId || id,
+        divisionName: name,
         people: [],
       });
     }
@@ -3003,7 +3300,23 @@ function DepartmentActivityStatsMobileCard({
           </span>
         ) : null}
       </div>
-      <DepartmentActivityStatsMetrics row={row} />
+      <div className="rc-dept-stats-card__inline-stats">
+        <span className="rc-dept-stats-card__stat-item">
+          Entered <strong className="rc-dept-stats-card__stat-val">{row.enteredCount}</strong>
+        </span>
+        <span className="rc-dept-stats-card__stat-sep">•</span>
+        <span className="rc-dept-stats-card__stat-item">
+          In <strong className="rc-dept-stats-card__stat-val rc-dept-stats-card__stat-val--in">{row.inCount}</strong>
+        </span>
+        <span className="rc-dept-stats-card__stat-sep">•</span>
+        <span className="rc-dept-stats-card__stat-item">
+          Exited <strong className="rc-dept-stats-card__stat-val">{row.exitCount}</strong>
+        </span>
+        <span className="rc-dept-stats-card__stat-sep">•</span>
+        <span className="rc-dept-stats-card__stat-item">
+          Total <strong className="rc-dept-stats-card__stat-val">{row.total}</strong>
+        </span>
+      </div>
     </article>
   );
 }
@@ -5457,6 +5770,69 @@ function AnalyticsTab({ gateLogs = [], registrations = [] }) {
   const todayEntry = todayLogs.filter(l => l.eventType === 'entry' && l.matched).length;
   const todayExit = todayLogs.filter(l => l.eventType === 'exit' && l.matched).length;
 
+  const [divisionsData, setDivisionsData] = useState([]);
+  const [departmentsData, setDepartmentsData] = useState([]);
+  const [vehicleData, setVehicleData] = useState([]);
+  const [loadingExtra, setLoadingExtra] = useState(true);
+
+  const [showAllDivisions, setShowAllDivisions] = useState(false);
+  const [showAllDepartments, setShowAllDepartments] = useState(false);
+  const [showAllVehicles, setShowAllVehicles] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      api.reports.dailyPasses({ date: todayDateStringIst() }).catch(() => null),
+      api.reports.departmentActivity({ statsOnly: 'true', date: todayDateStringIst() }).catch(() => null),
+      api.vehicles.movements({ limit: 50 }).catch(() => null),
+    ]).then(([dailyRes, deptRes, vehicleRes]) => {
+      if (cancelled) return;
+
+      // Division Activity Summary
+      if (dailyRes?.roles) {
+        const divMap = new Map();
+        for (const r of dailyRes.roles) {
+          for (const p of r.people || []) {
+            const divName = p.divisionName || p.divisionInside || 'General Division';
+            if (!divMap.has(divName)) {
+              divMap.set(divName, { divisionName: divName, enteredCount: 0, inCount: 0, exitCount: 0, total: 0 });
+            }
+            const item = divMap.get(divName);
+            item.total++;
+            if (p.hadGateActivity || p.gateEntryAt) item.enteredCount++;
+            if (p.divisionInside) item.inCount++;
+            if (p.gateExitAt) item.exitCount++;
+          }
+        }
+        setDivisionsData(Array.from(divMap.values()).sort((a, b) => b.total - a.total));
+      }
+
+      // Department Activity Summary
+      if (deptRes?.departments) {
+        const list = deptRes.departments.map(d => ({
+          departmentName: d.departmentName || d.name,
+          divisionName: d.divisionName || '',
+          enteredCount: d.enteredCount || 0,
+          inCount: d.currentlyIn || d.inCount || 0,
+          exitCount: d.exitedCount || d.exitCount || 0,
+          total: d.totalEmployees || d.total || 0,
+        })).sort((a, b) => b.total - a.total);
+        setDepartmentsData(list);
+      }
+
+      // Vehicle Activity
+      if (Array.isArray(vehicleRes)) {
+        setVehicleData(vehicleRes);
+      } else if (Array.isArray(vehicleRes?.movements)) {
+        setVehicleData(vehicleRes.movements);
+      }
+    }).finally(() => {
+      if (!cancelled) setLoadingExtra(false);
+    });
+
+    return () => { cancelled = true; };
+  }, []);
+
   // Hourly distribution
   const entryByHour = Array(24).fill(0);
   const exitByHour = Array(24).fill(0);
@@ -5498,6 +5874,11 @@ function AnalyticsTab({ gateLogs = [], registrations = [] }) {
     const d = new Date(); d.setDate(d.getDate() - (6 - i));
     return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
   });
+
+  const PREVIEW_LIMIT = 5;
+  const visibleDivisions = showAllDivisions ? divisionsData : divisionsData.slice(0, PREVIEW_LIMIT);
+  const visibleDepartments = showAllDepartments ? departmentsData : departmentsData.slice(0, PREVIEW_LIMIT);
+  const visibleVehicles = showAllVehicles ? vehicleData : vehicleData.slice(0, PREVIEW_LIMIT);
 
   const StatCard = ({ label, value, sub, color = '#2563EB' }) => (
     <div className="rc-analytics-stat">
@@ -5593,184 +5974,92 @@ function AnalyticsTab({ gateLogs = [], registrations = [] }) {
           </div>
         </div>
 
-        {/* Gate Activity */}
+        {/* Division Activity Summary */}
         <div className="rc-analytics-panel rc-analytics-panel--wide">
           <div className="rc-analytics-panel__header">
-            <h3>Recent Gate Activity</h3>
-            <span className="rc-analytics-panel__meta">Last 20 scans</span>
+            <h3>Division Activity Summary</h3>
+            <span className="rc-analytics-panel__meta">{divisionsData.length} divisions</span>
           </div>
-          <div className="rc-activity-feed">
-            {gateLogs.slice(0, 20).map((log, i) => (
-              <div key={log._id || i} className="rc-activity-feed__item">
-                <div className={`rc-activity-feed__dot ${log.eventType === 'entry' ? 'rc-activity-feed__dot--entry' : 'rc-activity-feed__dot--exit'}`} />
-                <div className="rc-activity-feed__content">
-                  <span className="rc-activity-feed__label">
-                    {log.matched ? (log.matchedName || 'Matched') : 'Not Matched'}
-                  </span>
-                  <span className="rc-activity-feed__meta">
-                    {log.eventType} · {log.gateId?.name || 'Gate'} · {formatDateTime(log.createdAt)}
-                  </span>
+          <div className="rc-analytics-list">
+            {visibleDivisions.map((div) => (
+              <div key={div.divisionName} className="rc-analytics-row">
+                <span className="rc-analytics-row__name">{div.divisionName}</span>
+                <div className="rc-analytics-row__pills">
+                  {div.inCount > 0 && <span className="rc-filter-pill"><span className="rc-table__status-dot rc-table__status-dot--inside" />{div.inCount} in</span>}
+                  <span className="rc-filter-pill rc-filter-pill--muted">Entered: {div.enteredCount}</span>
+                  <span className="rc-filter-pill rc-filter-pill--muted">Exited: {div.exitCount}</span>
+                  <span className="rc-filter-pill rc-filter-pill--muted">Total: {div.total}</span>
                 </div>
-                <span className={`badge ${log.matched ? 'badge-success' : 'badge-danger'} badge-sm`}>
-                  {log.matched ? 'Match' : 'Miss'}
-                </span>
               </div>
             ))}
-            {gateLogs.length === 0 && <p className="rc-analytics__empty">No gate logs found.</p>}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   TAB 4 — EXPORT CENTER
-════════════════════════════════════════════════════════════════ */
-const EXPORT_TYPES = [
-  { id: 'attendance', label: 'Attendance Report', icon: '📅' },
-  { id: 'gate-activity', label: 'Gate Activity Report', icon: '🚪' },
-  { id: 'daily', label: 'Daily Report', icon: '📆' },
-  { id: 'department', label: 'Department Report', icon: '🏢' },
-  { id: 'role', label: 'Role Report', icon: '👥' },
-  { id: 'custom', label: 'Custom Report', icon: '⚙️' },
-];
-
-const EXPORT_FORMATS = ['PDF', 'Excel', 'CSV', 'Print'];
-
-function ExportCenterTab() {
-  const [selectedType, setSelectedType] = useState('attendance');
-  const [selectedFormat, setSelectedFormat] = useState('PDF');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [generating, setGenerating] = useState(false);
-  const [generatedReports, setGeneratedReports] = useState([]);
-
-  const handleGenerate = async () => {
-    setGenerating(true);
-    // Simulate generation (no backend export endpoint — keep existing APIs intact)
-    await new Promise(r => setTimeout(r, 1200));
-    const type = EXPORT_TYPES.find(t => t.id === selectedType);
-    const report = {
-      id: Date.now(),
-      name: `${type?.label || 'Report'} · ${formatDate(dateFrom || new Date())} ${dateTo ? '→ ' + formatDate(dateTo) : ''}`.trim(),
-      format: selectedFormat,
-      generatedAt: new Date().toISOString(),
-      status: 'Ready',
-      size: `${Math.floor(Math.random() * 900 + 100)}KB`,
-    };
-    setGeneratedReports(prev => [report, ...prev]);
-    setGenerating(false);
-  };
-
-  return (
-    <div className="rc-export">
-      <div className="rc-export__builder">
-        {/* Report type */}
-        <div className="rc-export__section">
-          <h3 className="rc-export__section-title">Report Type</h3>
-          <div className="rc-export__type-grid">
-            {EXPORT_TYPES.map(t => (
-              <button key={t.id} type="button"
-                className={`rc-export__type-card ${selectedType === t.id ? 'rc-export__type-card--active' : ''}`}
-                onClick={() => setSelectedType(t.id)}>
-                <span className="rc-export__type-icon">{t.icon}</span>
-                <span className="rc-export__type-label">{t.label}</span>
+            {divisionsData.length === 0 && !loadingExtra && <p className="rc-analytics__empty">No division activity data available.</p>}
+            {divisionsData.length > PREVIEW_LIMIT && (
+              <button type="button" className="btn-secondary btn-sm rc-analytics__view-more" onClick={() => setShowAllDivisions(!showAllDivisions)}>
+                {showAllDivisions ? 'Show Less' : `View More (${divisionsData.length - PREVIEW_LIMIT} more)`}
               </button>
+            )}
+          </div>
+        </div>
+
+        {/* Department Activity Summary */}
+        <div className="rc-analytics-panel rc-analytics-panel--wide">
+          <div className="rc-analytics-panel__header">
+            <h3>Department Activity Summary</h3>
+            <span className="rc-analytics-panel__meta">{departmentsData.length} departments</span>
+          </div>
+          <div className="rc-analytics-list">
+            {visibleDepartments.map((dept) => (
+              <div key={dept.departmentName} className="rc-analytics-row">
+                <div>
+                  <strong className="rc-analytics-row__name">{dept.departmentName}</strong>
+                  {dept.divisionName && <span className="rc-analytics-row__sub"> · {dept.divisionName}</span>}
+                </div>
+                <div className="rc-analytics-row__pills">
+                  {dept.inCount > 0 && <span className="rc-filter-pill"><span className="rc-table__status-dot rc-table__status-dot--inside" />{dept.inCount} in</span>}
+                  <span className="rc-filter-pill rc-filter-pill--muted">Entered: {dept.enteredCount}</span>
+                  <span className="rc-filter-pill rc-filter-pill--muted">Exited: {dept.exitCount}</span>
+                  <span className="rc-filter-pill rc-filter-pill--muted">Total: {dept.total}</span>
+                </div>
+              </div>
             ))}
-          </div>
-        </div>
-
-        {/* Date range + format */}
-        <div className="rc-export__section">
-          <h3 className="rc-export__section-title">Parameters</h3>
-          <div className="rc-export__params-grid">
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>From Date</label>
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>To Date</label>
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
-            </div>
-          </div>
-        </div>
-
-        {/* Format */}
-        <div className="rc-export__section">
-          <h3 className="rc-export__section-title">Export Format</h3>
-          <div className="rc-export__format-row">
-            {EXPORT_FORMATS.map(f => (
-              <button key={f} type="button"
-                className={`rc-export__format-btn ${selectedFormat === f ? 'rc-export__format-btn--active' : ''}`}
-                onClick={() => setSelectedFormat(f)}>
-                {f}
+            {departmentsData.length === 0 && !loadingExtra && <p className="rc-analytics__empty">No department activity data available.</p>}
+            {departmentsData.length > PREVIEW_LIMIT && (
+              <button type="button" className="btn-secondary btn-sm rc-analytics__view-more" onClick={() => setShowAllDepartments(!showAllDepartments)}>
+                {showAllDepartments ? 'Show Less' : `View More (${departmentsData.length - PREVIEW_LIMIT} more)`}
               </button>
-            ))}
+            )}
           </div>
         </div>
 
-        <button className="btn-primary rc-export__generate-btn" onClick={handleGenerate} disabled={generating}>
-          {generating ? (
-            <><Spinner size={15} /> Generating…</>
-          ) : (
-            <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg> Generate Report</>
-          )}
-        </button>
-      </div>
-
-      {/* Generated history */}
-      <div className="rc-export__history">
-        <h3 className="rc-export__section-title">Generated Reports</h3>
-        {generatedReports.length === 0 ? (
-          <EmptyState
-            icon={<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>}
-            title="No reports generated" desc="Configure your report above and click Generate." />
-        ) : (
-          <div className="rc-table-wrap">
-            <table className="rc-table">
-              <thead>
-                <tr>
-                  <th>Report Name</th>
-                  <th>Format</th>
-                  <th>Generated</th>
-                  <th>Size</th>
-                  <th>Status</th>
-                  <th aria-label="Actions"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {generatedReports.map(r => (
-                  <tr key={r.id} className="rc-table__row">
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary)', flexShrink: 0 }}>
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
-                        </svg>
-                        <span className="rc-table__name" style={{ fontWeight: 500 }}>{r.name}</span>
-                      </div>
-                    </td>
-                    <td><span className="badge badge-info">{r.format}</span></td>
-                    <td className="rc-table__time">{formatDateTime(r.generatedAt)}</td>
-                    <td className="rc-table__muted">{r.size}</td>
-                    <td><span className="badge badge-success">{r.status}</span></td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="rc-table__view-btn" onClick={() => printReportCenterFallback()}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                          Download
-                        </button>
-                        <button className="icon-btn btn-sm" onClick={() => setGeneratedReports(p => p.filter(x => x.id !== r.id))} aria-label="Delete report">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* Vehicle Activity Summary */}
+        <div className="rc-analytics-panel rc-analytics-panel--wide">
+          <div className="rc-analytics-panel__header">
+            <h3>Vehicle Activity Summary</h3>
+            <span className="rc-analytics-panel__meta">{vehicleData.length} recent movements</span>
           </div>
-        )}
+          <div className="rc-analytics-list">
+            {visibleVehicles.map((move, i) => (
+              <div key={move._id || i} className="rc-analytics-row">
+                <div>
+                  <strong className="rc-analytics-row__name">{move.vehicleNumber || move.registrationNo || move.registrationId?.vehicleNumber || 'Vehicle'}</strong>
+                  <span className="rc-analytics-row__sub"> · {move.vehicleType || move.type || 'Standard'}</span>
+                </div>
+                <div className="rc-analytics-row__pills">
+                  <span className={`badge ${move.direction === 'IN' || move.movementType === 'ENTRY' ? 'badge-success' : 'badge-info'}`}>
+                    {move.direction || move.movementType || 'ENTRY'}
+                  </span>
+                  <span className="rc-analytics-row__sub">{formatDateTime(move.createdAt || move.timestamp)}</span>
+                </div>
+              </div>
+            ))}
+            {vehicleData.length === 0 && !loadingExtra && <p className="rc-analytics__empty">No vehicle movement data available.</p>}
+            {vehicleData.length > PREVIEW_LIMIT && (
+              <button type="button" className="btn-secondary btn-sm rc-analytics__view-more" onClick={() => setShowAllVehicles(!showAllVehicles)}>
+                {showAllVehicles ? 'Show Less' : `View More (${vehicleData.length - PREVIEW_LIMIT} more)`}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -5785,7 +6074,6 @@ const REPORT_TABS = [
   { id: 'department', label: 'Department Activity' },
   { id: 'history', label: 'Attendance History' },
   { id: 'analytics', label: 'Analytics' },
-  { id: 'export', label: 'Export Center' },
 ];
 
 function ReportsContent() {

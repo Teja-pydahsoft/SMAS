@@ -61,7 +61,6 @@ export const APP_NAV_ITEMS = [
       { path: '/reports?tab=department', label: 'Department Activity', module: 'reports' },
       { path: '/reports?tab=history', label: 'Attendance History', module: 'reports' },
       { path: '/reports?tab=analytics', label: 'Analytics', module: 'reports' },
-      { path: '/reports?tab=export', label: 'Export Center', module: 'reports' },
     ],
   },
   {

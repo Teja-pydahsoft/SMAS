@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { api } from '@/lib/api/client';
 import { formatDate } from '@/lib/formatDate';
@@ -121,7 +122,9 @@ function NewUserModal({ onClose, onComplete }) {
     }
   }
 
-  return (
+  if (typeof window === 'undefined') return null;
+
+  return createPortal(
     <div
       className="pass-modal-overlay reg-details-overlay"
       onClick={onClose}
@@ -261,7 +264,8 @@ function NewUserModal({ onClose, onComplete }) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -413,99 +417,92 @@ export default function ManageSystemUsersPage() {
 
   return (
     <div>
-      <div className="reports-section-header" style={{ marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h3 className="section-title">
-            System Users ({hasActiveFilters ? `${filteredUsers.length} of ${users.length}` : users.length})
-          </h3>
-          <p className="section-desc">Users with assigned roles and optional division, gate, and department access scope.</p>
+      <div className="rc-filters-bar" style={{ marginBottom: '1rem' }}>
+        <div className="rc-filters-bar__left">
+          <div className="rc-search-wrap">
+            <svg className="rc-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              id="user-search"
+              type="search"
+              className="rc-search-input"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search name, username, email…"
+              autoComplete="off"
+              aria-label="Search users"
+            />
+          </div>
+          <select
+            id="user-filter-role"
+            className="rc-select"
+            value={filterRoleId}
+            onChange={(e) => setFilterRoleId(e.target.value)}
+            aria-label="Filter by Role"
+          >
+            <option value="">All roles</option>
+            <option value="__super__">Super Admin</option>
+            {roles.map((role) => (
+              <option key={role._id} value={role._id}>{role.name}</option>
+            ))}
+          </select>
+          <select
+            id="user-filter-division"
+            className="rc-select"
+            value={filterDivisionId}
+            onChange={(e) => {
+              setFilterDivisionId(e.target.value);
+              setFilterDepartmentId('');
+            }}
+            aria-label="Filter by Division"
+          >
+            <option value="">All divisions</option>
+            <option value="__none__">Unassigned</option>
+            {divisions.map((division) => (
+              <option key={division._id} value={division._id}>{division.name}</option>
+            ))}
+          </select>
+          <select
+            id="user-filter-department"
+            className="rc-select"
+            value={filterDepartmentId}
+            onChange={(e) => setFilterDepartmentId(e.target.value)}
+            aria-label="Filter by Department"
+          >
+            <option value="">All departments</option>
+            <option value="__none__">Unassigned</option>
+            {departmentFilterOptions.map((department) => (
+              <option key={department._id} value={department._id}>{department.name}</option>
+            ))}
+          </select>
+          <select
+            id="user-filter-status"
+            className="rc-select"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            aria-label="Filter by Status"
+          >
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
         </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 220 }}>
-            <label htmlFor="user-search">Search</label>
-            <div className="reg-search-wrap">
-              <svg className="reg-search-wrap__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                id="user-search"
-                type="search"
-                className="reg-search-input"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name, username, or email…"
-                autoComplete="off"
-              />
-            </div>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
-            <label htmlFor="user-filter-role">Filter by Role</label>
-            <select
-              id="user-filter-role"
-              value={filterRoleId}
-              onChange={(e) => setFilterRoleId(e.target.value)}
-            >
-              <option value="">All roles</option>
-              <option value="__super__">Super Admin</option>
-              {roles.map((role) => (
-                <option key={role._id} value={role._id}>{role.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
-            <label htmlFor="user-filter-division">Filter by Division</label>
-            <select
-              id="user-filter-division"
-              value={filterDivisionId}
-              onChange={(e) => {
-                setFilterDivisionId(e.target.value);
-                setFilterDepartmentId('');
-              }}
-            >
-              <option value="">All divisions</option>
-              <option value="__none__">Unassigned</option>
-              {divisions.map((division) => (
-                <option key={division._id} value={division._id}>{division.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 190 }}>
-            <label htmlFor="user-filter-department">Filter by Department</label>
-            <select
-              id="user-filter-department"
-              value={filterDepartmentId}
-              onChange={(e) => setFilterDepartmentId(e.target.value)}
-            >
-              <option value="">All departments</option>
-              <option value="__none__">Unassigned</option>
-              {departmentFilterOptions.map((department) => (
-                <option key={department._id} value={department._id}>{department.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 140 }}>
-            <label htmlFor="user-filter-status">Status</label>
-            <select
-              id="user-filter-status"
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-            >
-              <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
+        <div className="rc-filters-bar__right">
+          <span className="rc-filter-pill rc-filter-pill--muted">
+            {hasActiveFilters ? `${filteredUsers.length} of ${users.length} users` : `${users.length} users`}
+          </span>
           {canWrite && (
             <button
               type="button"
-              className="btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              className="btn-primary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
               onClick={() => setShowNewUserModal(true)}
               aria-label="New User"
             >
               <PlusIcon />
-              New
+              New User
             </button>
           )}
         </div>
@@ -532,31 +529,33 @@ export default function ManageSystemUsersPage() {
         </div>
       ) : (
         <div className="card">
-          <div className="table-scroll">
-            <table className="reg-table">
+          <div className="table-scroll su-table-scroll">
+            <table className="reg-table su-table">
               <thead>
                 <tr>
-                  <th>User</th>
-                  <th>Username</th>
-                  <th>Role</th>
-                  <th>Divisions</th>
-                  <th>Gates</th>
-                  <th>Departments</th>
-                  <th>Status</th>
-                  <th>Last Login</th>
-                  <th>Actions</th>
+                  <th style={{ width: '16%' }}>User</th>
+                  <th style={{ width: '9%' }}>Username</th>
+                  <th style={{ width: '9%' }}>Role</th>
+                  <th style={{ width: '10%' }}>Divisions</th>
+                  <th style={{ width: '10%' }}>Gates</th>
+                  <th style={{ width: '10%' }}>Departments</th>
+                  <th style={{ width: '8%' }}>Status</th>
+                  <th style={{ width: '10%' }}>Last Login</th>
+                  <th style={{ width: '18%', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredUsers.map((user) => (
                   <tr key={user._id} className={!user.isActive ? 'row-inactive' : undefined}>
                     <td className="name-cell">
-                      {user.displayName}
-                      {user.isSuperAdmin && (
-                        <span className="badge badge-info" style={{ marginLeft: '0.5rem' }}>Super Admin</span>
-                      )}
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <span>{user.displayName}</span>
+                        {user.isSuperAdmin && (
+                          <span className="badge badge-info">Super Admin</span>
+                        )}
+                      </div>
                     </td>
-                    <td>{user.username}</td>
+                    <td><code style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{user.username}</code></td>
                     <td>{user.isSuperAdmin ? 'Unrestricted' : user.systemRoleId?.name || '—'}</td>
 
                     {/* Divisions */}
@@ -606,8 +605,10 @@ export default function ManageSystemUsersPage() {
                         {user.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td>{user.lastLoginAt ? formatDate(user.lastLoginAt) : '—'}</td>
-                    <td className="actions-cell">
+                    <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {user.lastLoginAt ? formatDate(user.lastLoginAt) : '—'}
+                    </td>
+                    <td className="actions-cell" style={{ textAlign: 'right' }}>
                       {!user.isSuperAdmin && (
                         <button
                           type="button"

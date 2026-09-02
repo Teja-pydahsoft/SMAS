@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import AdminIcon from '@/components/admin/AdminIcons';
 
 export default function MobileVehicleNav({ onClose }) {
   const pathname = usePathname();
+  const router = useRouter();
 
   const vehicleLinks = [
     { path: '/vehicles/dashboard', label: 'Vehicle Dashboard', icon: 'dashboard', description: 'Overview of vehicle metrics' },
@@ -34,6 +35,9 @@ export default function MobileVehicleNav({ onClose }) {
             <Link 
               key={link.label} 
               href={link.path} 
+              prefetch={true}
+              onMouseEnter={() => router?.prefetch?.(link.path)}
+              onTouchStart={() => router?.prefetch?.(link.path)}
               onClick={onClose}
               className={`mobile-action-sheet__item ${pathname === link.path ? 'active' : ''}`}
             >

@@ -1468,20 +1468,21 @@ export async function getDailyPassByRole({ divisionIds = null, date = null, date
     return { date: validDate, dateFrom: rangeFrom, dateTo: rangeTo, roles: [] };
   }
 
-  // 2. Day passes for the selected date (one per registration+division), scoped when applicable
+  // 2. Day passes and activity-monitor sightings fetched in parallel
   const passQuery = { passType: PASS_TYPES.DAY_PASS, validDate: { $gte: rangeFrom, $lte: rangeTo } };
   if (divisionScoped) passQuery.divisionId = { $in: divisionObjIds };
-  const todayPasses = await Pass.find(passQuery).lean();
 
-  // 2b. Activity-monitor sightings for the selected range (matched people only)
-  const daySightings = await ActivitySighting.find({
-    sightingDate: { $gte: rangeFrom, $lte: rangeTo },
-    matched: true,
-    registrationId: { $ne: null },
-  })
-    .select('registrationId createdAt inActivity matchScore photoPath')
-    .sort({ createdAt: -1 })
-    .lean();
+  const [todayPasses, daySightings] = await Promise.all([
+    Pass.find(passQuery).lean(),
+    ActivitySighting.find({
+      sightingDate: { $gte: rangeFrom, $lte: rangeTo },
+      matched: true,
+      registrationId: { $ne: null },
+    })
+      .select('registrationId createdAt inActivity matchScore photoPath')
+      .sort({ createdAt: -1 })
+      .lean(),
+  ]);
 
   const sightingsByReg = new Map();
   for (const sighting of daySightings) {
@@ -1550,8 +1551,11 @@ export async function getDailyPassByRole({ divisionIds = null, date = null, date
         const divisionInside = Boolean(session?.divisionInside);
         const gateEntryAt = session?.gateEntryAt || null;
         const gateExitAt = session?.gateExitAt || null;
-        const divisionName = activePass?.qrPayload?.divisionName || null;
+        const divisionId = activePass?.divisionId?._id?.toString() || activePass?.divisionId?.toString() || activePass?.qrPayload?.divisionId || null;
+        const divisionName = activePass?.qrPayload?.divisionName || activePass?.divisionId?.name || null;
         const shiftName = activePass?.qrPayload?.shiftName || null;
+        const departmentId = session?.currentDepartmentId || null;
+        const departmentName = session?.currentDepartmentName || null;
         const currentDepartmentName = session?.currentDepartmentName || null;
         const hadGateActivity = passes.length > 0;
         const activitySeenToday = sightings.length > 0;
@@ -1571,7 +1575,10 @@ export async function getDailyPassByRole({ divisionIds = null, date = null, date
           activitySeenCount,
           lastActivitySeenAt,
           divisionInside,
+          divisionId,
           divisionName,
+          departmentId,
+          departmentName,
           gateEntryAt,
           gateExitAt,
           currentDepartmentName,

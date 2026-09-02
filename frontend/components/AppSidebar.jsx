@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import AdminIcon from '@/components/admin/AdminIcons';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
@@ -12,23 +12,7 @@ import { getNavItemsForUser, getUserRoleLabel } from '@/lib/app/navItems';
 
 const STORAGE_COLLAPSED = 'sams-app-sidebar-collapsed';
 
-function isPathActive(pathname, searchParams, path) {
-  const [basePath, query] = path.split('?');
-  if (basePath === '/') return pathname === '/';
-  const baseMatch = pathname === basePath || pathname.startsWith(`${basePath}/`);
-  if (!baseMatch) return false;
-  if (query && searchParams) {
-    const [key, val] = query.split('=');
-    return searchParams.get(key) === val;
-  }
-  return true;
-}
-
-function isGroupActive(pathname, searchParams, item) {
-  const [basePath] = item.path.split('?');
-  if (pathname === basePath || pathname.startsWith(`${basePath}/`)) return true;
-  return (item.children || []).some((child) => isPathActive(pathname, searchParams, child.path));
-}
+import { isPathActive, isGroupActive } from '@/lib/pathMatcher';
 
 function ChevronIcon({ open }) {
   return (
@@ -40,7 +24,7 @@ function ChevronIcon({ open }) {
   );
 }
 
-function NavGroup({ item, collapsed, pathname, searchParams }) {
+function NavGroup({ item, collapsed, pathname, searchParams, router }) {
   const active = isGroupActive(pathname, searchParams, item);
   const [open, setOpen] = useState(active);
 
@@ -92,6 +76,9 @@ function NavGroup({ item, collapsed, pathname, searchParams }) {
             <Link
               key={`${child.path}-${child.label}`}
               href={child.path}
+              prefetch={true}
+              onMouseEnter={() => router?.prefetch?.(child.path)}
+              onTouchStart={() => router?.prefetch?.(child.path)}
               className={`admin-sidebar__sub-link ${childActive ? 'admin-sidebar__sub-link--active' : ''}`}
             >
               {child.icon && (
@@ -111,6 +98,7 @@ function NavGroup({ item, collapsed, pathname, searchParams }) {
 function AppSidebarInner({ user, can, logout, gateSessionUrl }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
@@ -147,6 +135,26 @@ function AppSidebarInner({ user, can, logout, gateSessionUrl }) {
     () => getNavItemsForUser(user, can, gateSessionUrl),
     [can, gateSessionUrl, user]
   );
+
+  // Idle background prefetch all visible routes to make navigation instant
+  useEffect(() => {
+    if (typeof window === 'undefined' || !router?.prefetch) return;
+    const t = setTimeout(() => {
+      visibleNavItems.forEach((item) => {
+        if (item.path && item.path !== '#') {
+          try { router.prefetch(item.path); } catch {}
+        }
+        if (item.children) {
+          item.children.forEach((c) => {
+            if (c.path && c.path !== '#') {
+              try { router.prefetch(c.path); } catch {}
+            }
+          });
+        }
+      });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [visibleNavItems, router]);
 
   const roleLabel = getUserRoleLabel(user);
 
@@ -213,6 +221,7 @@ function AppSidebarInner({ user, can, logout, gateSessionUrl }) {
                       collapsed={collapsed}
                       pathname={pathname}
                       searchParams={searchParams}
+                      router={router}
                     />
                   </div>
                 );
@@ -227,6 +236,9 @@ function AppSidebarInner({ user, can, logout, gateSessionUrl }) {
                   )}
                   <Link
                     href={href}
+                    prefetch={true}
+                    onMouseEnter={() => router?.prefetch?.(href)}
+                    onTouchStart={() => router?.prefetch?.(href)}
                     className={`admin-sidebar__link ${active ? 'admin-sidebar__link--active' : ''}`}
                     title={collapsed ? item.label : undefined}
                   >

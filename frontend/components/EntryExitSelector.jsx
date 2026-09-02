@@ -130,9 +130,6 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
 
   return (
     <div className="card entry-exit-selector">
-      <h3 className="section-title">Select access point</h3>
-      <p className="section-desc">Choose division, gate or department, and action — scanning starts once all fields are set.</p>
-
       <div className="entry-exit-selector__type">
         <span className="entry-exit-selector__type-label">Scan type</span>
         <div className="sub-nav entry-exit-selector__tabs">
@@ -150,7 +147,7 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
         </div>
       </div>
 
-      <div className="gate-select-grid">
+      <div className="gate-select-grid gate-select-grid--3col">
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label htmlFor="entry-exit-division">Division</label>
           <select
@@ -217,7 +214,7 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
           <select
             id="entry-exit-event"
             value={draft.eventType}
-            disabled={disabled || !draft.divisionId || (draft.scanType === 'gate' && !draft.gateId)}
+            disabled={disabled || !draft.divisionId || (draft.scanType === 'gate' ? !draft.gateId : !draft.departmentId)}
             onChange={(e) => updateDraft({ eventType: e.target.value })}
           >
             {eventOptions.map((eventType) => (
@@ -226,15 +223,16 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
               </option>
             ))}
           </select>
-          {isAutoGateEvent(draft.eventType) && (
-            <p className="entry-exit-selector__auto-hint field-hint" style={{ marginTop: '0.35rem' }}>
-              {draft.scanType === 'department'
-                ? 'Check-in or check-out is chosen automatically from each person\'s department status. You can also pick Check-in or Check-out manually.'
-                : 'Entry or exit is chosen automatically from each person\'s current division status. You can also pick Entry or Exit manually.'}
-            </p>
-          )}
         </div>
       </div>
+
+      {isAutoGateEvent(draft.eventType) && (
+        <p className="entry-exit-selector__auto-hint field-hint">
+          {draft.scanType === 'department'
+            ? 'Check-in or check-out is chosen automatically from each person\'s department status.'
+            : 'Entry or exit is chosen automatically from each person\'s current division status.'}
+        </p>
+      )}
 
       {divisionOptions.length === 0 && (
         <p className="field-hint">No {draft.scanType === 'gate' ? 'gates' : 'departments'} configured yet.</p>

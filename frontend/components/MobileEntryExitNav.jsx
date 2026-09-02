@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import AdminIcon from '@/components/admin/AdminIcons';
 
 export default function MobileEntryExitNav({ onClose }) {
   const pathname = usePathname();
+  const router = useRouter();
 
   const links = [
     { path: '/entry-exit', label: 'Person Entry & Exit', icon: 'entryExit', description: 'Log personnel movements' },
@@ -31,6 +32,9 @@ export default function MobileEntryExitNav({ onClose }) {
             <Link 
               key={link.label} 
               href={link.path} 
+              prefetch={true}
+              onMouseEnter={() => router?.prefetch?.(link.path)}
+              onTouchStart={() => router?.prefetch?.(link.path)}
               onClick={onClose}
               className={`mobile-action-sheet__item ${pathname === link.path ? 'active' : ''}`}
             >

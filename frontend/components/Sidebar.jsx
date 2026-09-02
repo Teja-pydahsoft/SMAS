@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { getGateSession } from '@/lib/gateSession';
 import { buildEntryExitUrl } from '@/lib/entryExit';
 import { hasAssignedEntryExitScope } from '@/lib/auth/routing';
+import { isPathActive } from '@/lib/pathMatcher';
 
 const STORAGE_WIDTH = 'smas-sidebar-width';
 const STORAGE_COLLAPSED = 'smas-sidebar-collapsed';
@@ -167,13 +168,9 @@ function clampWidth(value) {
   return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, value));
 }
 
-function applySidebarWidth(width, collapsed) {
-  const applied = collapsed ? COLLAPSED_WIDTH : width;
-  document.documentElement.style.setProperty('--sidebar-width', `${applied}px`);
-}
-
 export default function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, can, logout } = useAuth();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [collapsed, setCollapsed] = useState(false);
@@ -249,8 +246,7 @@ export default function Sidebar() {
   }, [isResizing, stopResize]);
 
   function isActive(path) {
-    if (path === '/') return pathname === '/';
-    return pathname === path || pathname.startsWith(`${path}/`);
+    return isPathActive(pathname, searchParams, path);
   }
 
   const visibleNavItems = useMemo(() => {

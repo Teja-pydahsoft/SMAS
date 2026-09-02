@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 /**
  * Reusable tab navigation component for page-level sub-navigation.
@@ -11,6 +11,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 export default function PageTabs({ tabs = [] }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const isTabActive = (tabPath) => {
     const [basePath, query] = tabPath.split('?');
@@ -29,11 +30,6 @@ export default function PageTabs({ tabs = [] }) {
 
     // If the tab has no query params, but the current URL does, it might still be active
     // EXCEPT if another tab specifically matches those query params.
-    // For simplicity, if the tab has no query params and the base path matches, we consider it active
-    // if no other tab with a more specific query match is active.
-    
-    // We'll do a strict check: if the tab has NO query, but current URL HAS query,
-    // we only match if no other tab exactly matches the current query.
     const currentQueryString = searchParams.toString();
     if (currentQueryString) {
       const moreSpecificMatchExists = tabs.some(t => {
@@ -62,6 +58,9 @@ export default function PageTabs({ tabs = [] }) {
             <Link
               key={tab.path + tab.label}
               href={tab.path}
+              prefetch={true}
+              onMouseEnter={() => router?.prefetch?.(tab.path)}
+              onTouchStart={() => router?.prefetch?.(tab.path)}
               style={{
                 padding: '12px 0',
                 borderBottom: active ? '2px solid var(--primary-color)' : '2px solid transparent',
@@ -81,3 +80,4 @@ export default function PageTabs({ tabs = [] }) {
     </div>
   );
 }
+

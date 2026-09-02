@@ -980,7 +980,32 @@
   margin-bottom: 8px;
 }
 
-.entry-exit-selector__tabs { width: 100%; max-width: 320px; }
+.entry-exit-selector__tabs {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.entry-exit-selector__tabs .sub-nav-item {
+  flex: 1 1 50% !important;
+  width: 50% !important;
+  max-width: 50% !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+.entry-exit-selector__auto-hint {
+  width: 100% !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  display: block !important;
+  font-size: var(--text-11, 0.72rem) !important;
+  margin-top: 6px !important;
+  margin-bottom: 0 !important;
+}
 
 .entry-exit-selector__ready {
   margin-top: 12px;
@@ -1088,14 +1113,78 @@
 }
 
 /* ── Gate select ── */
-.gate-select-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+.gate-select-grid,
+.gate-select-grid--3col {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
   gap: 10px var(--space-4);
   margin-bottom: var(--space-4);
   overflow: visible;
   position: relative;
   z-index: 20;
+}
+
+@media (max-width: 768px) {
+  .gate-select-grid,
+  .gate-select-grid--3col {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 5px !important;
+  }
+  .gate-select-grid > div,
+  .gate-select-grid--3col > div {
+    grid-column: auto !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  .gate-select-grid label,
+  .gate-select-grid--3col label {
+    font-size: 0.7rem !important;
+    margin-bottom: 2px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .gate-select-grid select,
+  .gate-select-grid input,
+  .gate-select-grid button,
+  .gate-select-grid--3col select,
+  .gate-select-grid--3col input,
+  .gate-select-grid--3col button {
+    padding: 4px 4px !important;
+    font-size: 0.72rem !important;
+    height: 34px !important;
+    min-width: 0 !important;
+  }
+}
+
+.gate-select-grid--4col {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 1024px) {
+  .gate-select-grid--4col {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .gate-select-grid--4col {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+  .gate-select-grid--4col > div:nth-child(1) {
+    grid-column: span 2 !important;
+  }
+  .gate-select-grid--4col > div:nth-child(2) {
+    grid-column: 1 !important;
+  }
+  .gate-select-grid--4col > div:nth-child(3) {
+    grid-column: 2 !important;
+  }
+  .gate-select-grid--4col > div:nth-child(4) {
+    grid-column: span 2 !important;
+  }
 }
 
 .gate-select-grid .rc-searchable-select-wrap {

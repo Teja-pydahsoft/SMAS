@@ -4,16 +4,17 @@
 
 /* ── Base card ── */
 .card {
-  background: var(--surface-base);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-xl);
-  padding: var(--space-6);
-  box-shadow: var(--shadow-card);
-  transition: box-shadow var(--transition-medium), transform var(--transition-medium);
+  background: var(--surface-base, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-xl, 14px);
+  padding: var(--space-5, 1.25rem);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(15, 23, 42, 0.05));
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
 }
 
 .card:hover {
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(15, 23, 42, 0.06));
+  border-color: var(--border-strong, #cbd5e1);
 }
 
 .card h3 {
@@ -114,19 +115,18 @@
 }
 
 /* ── Modal overlay & modal base ── */
-.pass-modal-overlay {
+.pass-modal-overlay,
+.reg-details-overlay {
   position: fixed;
   inset: 0;
-  /* Solid dim only — backdrop-filter + live <video> causes full-viewport
-     horizontal banding / tearing in Chromium-based browsers. */
-  background: rgba(17, 24, 39, 0.58);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: var(--z-modal);
-  padding: var(--space-4);
+  z-index: 99999;
+  padding: 1.5rem;
   animation: overlay-in 0.15s ease;
 }
 

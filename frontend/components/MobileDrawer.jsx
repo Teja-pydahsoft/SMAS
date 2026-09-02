@@ -2,12 +2,13 @@
 
 import { useMemo, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import AdminIcon from '@/components/admin/AdminIcons';
 import { getNavItemsForUser, getUserRoleLabel } from '@/lib/app/navItems';
 import { getGateSession } from '@/lib/gateSession';
 import { buildEntryExitUrl } from '@/lib/entryExit';
+import { isPathActive, isGroupActive } from '@/lib/pathMatcher';
 
 // Exclude primary items that are on the bottom nav
 const EXCLUDED_PATHS = ['/', '/entry-exit', '/equipment/dashboard', '/registrations'];
@@ -15,6 +16,7 @@ const EXCLUDED_PATHS = ['/', '/entry-exit', '/equipment/dashboard', '/registrati
 export default function MobileDrawer({ onClose }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { user, can, logout } = useAuth();
   const [isClosing, setIsClosing] = useState(false);
   
@@ -60,25 +62,28 @@ export default function MobileDrawer({ onClose }) {
               );
               if (!visibleChildren.length) return null;
               
-              const isGroupActive = pathname === item.path || pathname.startsWith(`${item.path.split('?')[0]}/`) || visibleChildren.some(c => pathname === c.path.split('?')[0]);
-              
               return (
                 <MobileNavGroup 
                   key={item.path} 
                   item={item} 
                   visibleChildren={visibleChildren} 
                   pathname={pathname} 
+                  searchParams={searchParams}
+                  router={router}
                   onClose={onClose} 
                 />
               );
             }
 
             const href = item.path === '/entry-exit' && gateSessionUrl ? gateSessionUrl : item.path;
-            const active = pathname === item.path.split('?')[0];
+            const active = isPathActive(pathname, searchParams, item.path);
             return (
               <Link
                 key={item.path}
                 href={href}
+                prefetch={true}
+                onMouseEnter={() => router?.prefetch?.(href)}
+                onTouchStart={() => router?.prefetch?.(href)}
                 onClick={onClose}
                 className={`mobile-drawer__link mobile-drawer__link--top ${active ? 'active' : ''}`}
               >
@@ -119,15 +124,15 @@ export default function MobileDrawer({ onClose }) {
   );
 }
 
-function MobileNavGroup({ item, visibleChildren, pathname, onClose }) {
-  const isGroupActive = pathname === item.path || pathname.startsWith(`${item.path.split('?')[0]}/`) || visibleChildren.some(c => pathname === c.path.split('?')[0]);
-  const [open, setOpen] = useState(isGroupActive);
+function MobileNavGroup({ item, visibleChildren, pathname, searchParams, router, onClose }) {
+  const groupActive = isGroupActive(pathname, searchParams, item);
+  const [open, setOpen] = useState(groupActive);
 
   return (
     <div className="mobile-drawer__group">
       <button 
         type="button"
-        className={`mobile-drawer__group-label ${open ? 'mobile-drawer__group-label--open' : ''}`}
+        className={`mobile-drawer__group-label ${open ? 'mobile-drawer__group-label--open' : ''} ${groupActive ? 'mobile-drawer__group-label--active' : ''}`}
         onClick={() => setOpen(!open)}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -142,16 +147,23 @@ function MobileNavGroup({ item, visibleChildren, pathname, onClose }) {
       </button>
       {open && (
         <div className="mobile-drawer__sub-nav">
-          {visibleChildren.map((child) => (
-            <Link
-              key={child.path}
-              href={child.path}
-              onClick={onClose}
-              className={`mobile-drawer__link ${pathname === child.path.split('?')[0] ? 'active' : ''}`}
-            >
-              {child.label}
-            </Link>
-          ))}
+          {visibleChildren.map((child) => {
+            if (child.isSeparator || child.isSection) return null;
+            const childActive = isPathActive(pathname, searchParams, child.path);
+            return (
+              <Link
+                key={child.path}
+                href={child.path}
+                prefetch={true}
+                onMouseEnter={() => router?.prefetch?.(child.path)}
+                onTouchStart={() => router?.prefetch?.(child.path)}
+                onClick={onClose}
+                className={`mobile-drawer__link ${childActive ? 'active' : ''}`}
+              >
+                {child.label}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

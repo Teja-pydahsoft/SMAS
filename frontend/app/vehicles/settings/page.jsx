@@ -87,8 +87,6 @@ export default function VehicleSettingsPage() {
       description="Configure machine vision AI and QR enrollment behaviors."
       toolbar={toolbar}
     >
-      <PageTabs tabs={tabs} />
-      
       <div className="admin-page-content" style={{ marginTop: '1.5rem', maxWidth: '800px' }}>
         {error && (
           <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>

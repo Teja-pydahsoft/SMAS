@@ -636,6 +636,7 @@ export const api = {
     movements: (params = {}) => request(`/vehicles/movements${toQuery(params)}`),
     list: () => request('/vehicles'),
     delete: (id) => request(`/vehicles/${id}`, { method: 'DELETE' }),
+    qr: (id) => request(`/vehicles/${id}/qr`),
     settings: () => request('/vehicles/settings'),
     updateSettings: (data) => request('/vehicles/settings', { method: 'PUT', body: JSON.stringify(data) }),
     types: {

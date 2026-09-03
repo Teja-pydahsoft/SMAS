@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
+import QRCode from 'qrcode';
 import Vehicle from '../models/Vehicle.js';
 import EquipmentMovement from '../models/EquipmentMovement.js';
 import VehicleRegistration from '../models/VehicleRegistration.js';
@@ -43,13 +45,21 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
 }));
 
 router.get('/movements', asyncHandler(async (req, res) => {
-  const { plateNumber, direction, departmentId, status, from, to, limit = 50, page = 1 } = req.query;
+  const { vehicleId, plateNumber, direction, departmentId, status, from, to, limit = 500, page = 1 } = req.query;
   const filter = {};
 
-  if (plateNumber) {
-    const vehicle = await Vehicle.findOne({ normalizedPlateNumber: plateNumber.toLowerCase().replace(/\s+/g, '') });
+  if (vehicleId) {
+    filter.vehicleId = vehicleId;
+  } else if (plateNumber) {
+    const cleanPlate = plateNumber.toLowerCase().replace(/\s+/g, '');
+    const vehicle = await Vehicle.findOne({ 
+      $or: [
+        { normalizedPlateNumber: cleanPlate },
+        { plateNumber: new RegExp('^' + plateNumber + '$', 'i') }
+      ]
+    });
     if (vehicle) filter.vehicleId = vehicle._id;
-    else filter.vehicleId = null; // force empty result
+    else filter.vehicleId = null;
   }
   if (departmentId) filter.departmentId = departmentId;
   if (status) filter.status = status;
@@ -89,7 +99,6 @@ router.get('/movements', asyncHandler(async (req, res) => {
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    // Basic filtering and population
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
     
@@ -100,18 +109,34 @@ router.get(
       .sort({ createdAt: -1 })
       .lean();
       
+    if (!vehicles.length) {
+      return res.json([]);
+    }
+
     const vehicleIds = vehicles.map(v => v._id);
-    const allMovements = await EquipmentMovement.find({ vehicleId: { $in: vehicleIds } })
-      .sort({ inTime: -1 })
-      .populate('departmentId', 'name')
-      .populate('divisionId', 'name')
-      .populate('enteredBy', 'name')
-      .populate('exitedBy', 'name')
-      .lean();
+    
+    // Aggregation: fetch only the most recent movement per vehicle
+    const latestMovements = await EquipmentMovement.aggregate([
+      { $match: { vehicleId: { $in: vehicleIds } } },
+      { $sort: { inTime: -1 } },
+      {
+        $group: {
+          _id: '$vehicleId',
+          doc: { $first: '$$ROOT' }
+        }
+      }
+    ]);
+      
+    const populatedMovements = await EquipmentMovement.populate(latestMovements.map(m => m.doc), [
+      { path: 'departmentId', select: 'name' },
+      { path: 'divisionId', select: 'name' },
+      { path: 'enteredBy', select: 'name' },
+      { path: 'exitedBy', select: 'name' }
+    ]);
       
     const movementMap = {};
-    for (const m of allMovements) {
-      if (!movementMap[m.vehicleId.toString()]) {
+    for (const m of populatedMovements) {
+      if (m && m.vehicleId) {
         movementMap[m.vehicleId.toString()] = m;
       }
     }
@@ -221,6 +246,37 @@ router.delete(
     }
 
     res.json({ message: 'Vehicle deleted successfully' });
+  })
+);
+
+router.get(
+  '/:id/qr',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    let plateNumber = null;
+    
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      const vehicle = await Vehicle.findById(id);
+      if (vehicle) plateNumber = vehicle.plateNumber;
+    }
+    
+    if (!plateNumber) {
+      const registration = await VehicleRegistration.findById(id);
+      if (registration) plateNumber = registration.plateNumber;
+    }
+    
+    if (!plateNumber) {
+      return res.status(404).json({ error: 'Vehicle or Registration not found' });
+    }
+    
+    const qrDataUrl = await QRCode.toDataURL(plateNumber, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 600,
+      color: { dark: '#000000', light: '#ffffff' }
+    });
+    
+    res.json({ qrDataUrl, plateNumber });
   })
 );
 

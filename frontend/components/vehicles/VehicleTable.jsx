@@ -1,10 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
 import VehicleStatusBadge from './VehicleStatusBadge';
 import Link from 'next/link';
 import AdminIcon from '@/components/admin/AdminIcons';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
+import VehicleQrModal from './VehicleQrModal';
 
-export default function VehicleTable({ vehicles, onViewClick, onDeleteClick }) {
+export default function VehicleTable({ vehicles, onViewClick, onDeleteClick, onQrClick }) {
+  const [internalQrVehicle, setInternalQrVehicle] = useState(null);
+
+  const handleOpenQr = (v) => {
+    if (onQrClick) {
+      onQrClick(v);
+    } else {
+      setInternalQrVehicle(v);
+    }
+  };
+
   if (!vehicles || vehicles.length === 0) {
     return (
       <div className="empty-state" style={{ margin: '2rem' }}>
@@ -24,83 +35,110 @@ export default function VehicleTable({ vehicles, onViewClick, onDeleteClick }) {
   }
 
   return (
-    <div className="admin-table-container" style={{ overflowX: 'hidden' }}>
+    <div className="admin-table-container" style={{ overflowX: 'auto' }}>
       <style dangerouslySetInnerHTML={{__html: `
         .vehicle-mobile-layout { display: none; }
         .vehicle-desktop-layout { display: block; }
         
         @media (max-width: 768px) {
           .vehicle-desktop-layout { display: none !important; }
-          .vehicle-mobile-layout { display: flex !important; flex-direction: column !important; width: 100%; overflow-x: hidden; }
-          .vehicle-mobile-row { display: flex !important; flex-direction: row !important; align-items: center !important; padding: 0.5rem 0.25rem !important; border-bottom: 1px solid var(--border-color) !important; width: 100% !important; box-sizing: border-box !important; gap: 6px; }
-          .vehicle-mobile-header { display: flex !important; flex-direction: row !important; padding: 0.5rem 0.25rem !important; border-bottom: 1px solid var(--border-color) !important; color: var(--text-secondary) !important; font-weight: 700 !important; width: 100% !important; font-size: 9px !important; text-transform: uppercase; box-sizing: border-box !important; gap: 6px; }
+          .vehicle-mobile-layout { 
+            display: grid !important; 
+            grid-template-columns: 1fr !important; 
+            gap: 0.65rem !important; 
+            padding: 0.65rem !important; 
+            width: 100% !important; 
+            box-sizing: border-box !important; 
+          }
           
-          .v-col-1 { display: block !important; width: 40px !important; flex-shrink: 0 !important; text-align: center; }
-          .v-col-2 { display: block !important; width: 75px !important; flex-shrink: 0 !important; font-size: 10px !important; word-break: break-all !important; line-height: 1.2; }
-          .v-col-3 { display: block !important; width: 50px !important; flex-shrink: 0 !important; font-size: 10px !important; word-break: break-word !important; line-height: 1.2; }
-          .v-col-4 { display: flex !important; flex: 1 !important; min-width: 0 !important; font-size: 10px !important; flex-direction: column; gap: 2px; overflow: hidden; line-height: 1.2; }
-          
-          .vehicle-mobile-img { width: 40px !important; height: 40px !important; border-radius: 6px; overflow: hidden; background: var(--surface-inset); display: flex; align-items: center; justify-content: center; }
+          .vehicle-card-sm {
+            background: var(--surface-base);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+            transition: transform 0.15s ease;
+          }
+          .vehicle-card-sm:active {
+            transform: scale(0.99);
+          }
         }
       `}} />
+
+      {/* Internal QR Modal if triggered locally */}
+      {internalQrVehicle && (
+        <VehicleQrModal vehicle={internalQrVehicle} onClose={() => setInternalQrVehicle(null)} />
+      )}
       
-      {/* --- DESKTOP LAYOUT --- */}
+      {/* --- DESKTOP TABLE LAYOUT --- */}
       <div className="vehicle-desktop-layout">
-        <table className="admin-table" style={{ tableLayout: 'fixed', width: '100%', whiteSpace: 'normal' }}>
+        <table className="admin-table" style={{ tableLayout: 'fixed', width: '100%', whiteSpace: 'normal', fontSize: '0.95rem' }}>
           <thead>
-            <tr>
-              <th style={{ width: '20%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>VEHICLE NUMBER</th>
-              <th style={{ width: '15%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>TYPE</th>
-              <th style={{ width: '25%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>ACTIVITY</th>
-              <th style={{ width: '10%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>STATUS</th>
-              <th style={{ width: '15%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold' }}>REGISTRATION DATE</th>
-              <th style={{ width: '15%', padding: '0.75rem 1rem', textTransform: 'uppercase', fontSize: '11px', fontWeight: 'bold', textAlign: 'right' }}>ACTIONS</th>
+            <tr style={{ background: 'var(--surface-sunken)' }}>
+              <th style={{ width: '22%', padding: '0.75rem 0.6rem', textTransform: 'uppercase', fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>VEHICLE NUMBER</th>
+              <th style={{ width: '15%', padding: '0.75rem 0.6rem', textTransform: 'uppercase', fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>TYPE</th>
+              <th style={{ width: '24%', padding: '0.75rem 0.6rem', textTransform: 'uppercase', fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>ACTIVITY</th>
+              <th style={{ width: '12%', padding: '0.75rem 0.6rem', textTransform: 'uppercase', fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>STATUS</th>
+              <th style={{ width: '13%', padding: '0.75rem 0.6rem', textTransform: 'uppercase', fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>REG DATE</th>
+              <th style={{ width: '14%', padding: '0.75rem 0.6rem', textTransform: 'uppercase', fontSize: '13px', fontWeight: '700', textAlign: 'right', color: 'var(--text-primary)' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {vehicles.map(v => (
-              <tr key={v._id} className="admin-table-row">
-                <td style={{ fontWeight: 600, fontFamily: 'monospace', padding: '1rem' }}>
+              <tr key={v._id} className="admin-table-row" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                <td style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '1.05rem', padding: '0.75rem 0.6rem', color: 'var(--text-primary)' }}>
                   {v.plateNumber}
                 </td>
-                <td className="text-muted" style={{ padding: '1rem' }}>
+                <td style={{ fontWeight: 600, padding: '0.75rem 0.6rem', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
                   {v.typeId?.name || '-'}
                 </td>
-                <td style={{ padding: '1rem' }}>
+                <td style={{ padding: '0.75rem 0.6rem', fontSize: '0.95rem' }}>
                   {v.activeMovement ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: v.activeMovement.status === 'Inside' ? 'var(--success)' : 'var(--text-secondary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: v.activeMovement.status === 'Inside' ? 'var(--success)' : 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         <span style={{ width: 8, height: 8, flexShrink: 0, borderRadius: '50%', backgroundColor: v.activeMovement.status === 'Inside' ? 'var(--success)' : 'var(--text-muted)' }}></span>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.activeMovement.status === 'Inside' ? 'Inside' : 'Outside'} {v.activeMovement.departmentId?.name}</span>
                       </span>
-                      <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                         Entered by System
                       </span>
                     </div>
                   ) : (
-                    <span className="text-muted">No Activity Found</span>
+                    <span className="text-muted" style={{ fontSize: '0.85rem' }}>No Activity Found</span>
                   )}
                 </td>
-                <td style={{ padding: '1rem' }}>
-                  {v.status || 'Active'}
+                <td style={{ padding: '0.75rem 0.6rem' }}>
+                  <VehicleStatusBadge status={v.status} />
                 </td>
-                <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>
+                <td style={{ padding: '0.75rem 0.6rem', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.9rem' }}>
                   {new Date(v.createdAt).toLocaleDateString()}
                 </td>
-                <td style={{ padding: '1rem', textAlign: 'right' }}>
-                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                <td style={{ padding: '0.75rem 0.6rem', textAlign: 'right' }}>
+                  <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
                     <button 
                       type="button"
-                      className="admin-btn"
-                      style={{ padding: '0.3rem 0.75rem', fontSize: '12px', border: '1px solid var(--border-color)', borderRadius: '20px', background: 'transparent' }}
+                      className="admin-btn admin-btn--ghost"
+                      style={{ padding: '0.25rem 0.55rem', fontSize: '11px', fontWeight: 600, borderRadius: '5px' }}
                       onClick={(e) => { e.stopPropagation(); onViewClick(v); }}
                     >
-                      View Details
+                      View
                     </button>
                     <button 
                       type="button"
-                      className="admin-btn"
-                      style={{ padding: '0.3rem 0.75rem', fontSize: '12px', border: '1px solid var(--border-color)', borderRadius: '20px', background: 'transparent' }}
+                      className="admin-btn admin-btn--secondary"
+                      style={{ padding: '0.25rem 0.55rem', fontSize: '11px', fontWeight: 600, borderRadius: '5px' }}
+                      onClick={(e) => { e.stopPropagation(); handleOpenQr(v); }}
+                      title="Show QR Code"
+                    >
+                      QR
+                    </button>
+                    <button 
+                      type="button"
+                      className="admin-btn admin-btn--danger"
+                      style={{ padding: '0.25rem 0.5rem', fontSize: '11px', fontWeight: 600, borderRadius: '5px' }}
                       onClick={(e) => { e.stopPropagation(); onDeleteClick(v); }}
                     >
                       Delete
@@ -113,50 +151,93 @@ export default function VehicleTable({ vehicles, onViewClick, onDeleteClick }) {
         </table>
       </div>
 
-      {/* --- MOBILE LAYOUT --- */}
+      {/* --- MOBILE RESPONSIVE CARDS --- */}
       <div className="vehicle-mobile-layout">
-        <div className="vehicle-mobile-header">
-          <div className="v-col-1">PHOTO</div>
-          <div className="v-col-2">VEHICLE</div>
-          <div className="v-col-3">TYPE</div>
-          <div className="v-col-4">ACTIVITY</div>
-        </div>
-        
         {vehicles.map(v => (
-          <div key={`mob-${v._id}`} className="vehicle-mobile-row admin-hover-lift" onClick={() => onViewClick(v)}>
-            <div className="v-col-1">
-              <div className="vehicle-mobile-img">
+          <div key={`mob-${v._id}`} className="vehicle-card-sm" onClick={() => onViewClick(v)}>
+            
+            {/* Split Top Section: Left Half Image + Right Side Details (No, Type, Activity, Reg Date) */}
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
+              
+              {/* LEFT HALF: Image Thumbnail */}
+              <div style={{ width: '82px', minHeight: '82px', borderRadius: '8px', overflow: 'hidden', background: 'var(--surface-sunken)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 {v.metadata?.photos?.front ? (
                   <img src={resolvePhotoUrl(v.metadata.photos.front)} alt="Vehicle" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <AdminIcon name="vehicles" style={{ width: '20px', height: '20px', color: 'var(--text-muted)' }} />
+                  <AdminIcon name="vehicles" style={{ width: '32px', height: '32px', color: 'var(--text-muted)' }} />
                 )}
               </div>
-            </div>
-            
-            <div className="v-col-2" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
-              {v.plateNumber}
-            </div>
-            
-            <div className="v-col-3" style={{ color: 'var(--text-muted)' }}>
-              {v.typeId?.name || '-'}
+
+              {/* RIGHT SIDE OF IMAGE: No., Type, Activity, Reg Date */}
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px', justifyContent: 'center' }}>
+                
+                {/* 1. Vehicle No & Status */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {v.plateNumber}
+                  </div>
+                  <VehicleStatusBadge status={v.status} />
+                </div>
+
+                {/* 2. Type */}
+                <div style={{ fontSize: '0.78rem', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }}>Type:</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {v.typeId?.name || 'Unclassified'}
+                  </span>
+                </div>
+
+                {/* 3. Activity */}
+                <div style={{ fontSize: '0.78rem', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }}>Activity:</span>
+                  {v.activeMovement ? (
+                    <span style={{ fontWeight: 600, color: v.activeMovement.status === 'Inside' ? 'var(--success)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {v.activeMovement.status === 'Inside' ? 'Inside' : 'Outside'} {v.activeMovement.departmentId?.name}
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>No Activity</span>
+                  )}
+                </div>
+
+                {/* 4. Reg Date */}
+                <div style={{ fontSize: '0.78rem', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }}>Reg Date:</span>
+                  <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>
+                    {new Date(v.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+
+              </div>
             </div>
 
-            <div className="v-col-4">
-              {v.activeMovement ? (
-                <>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: v.activeMovement.status === 'Inside' ? 'var(--success)' : 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    <span style={{ width: 6, height: 6, flexShrink: 0, borderRadius: '50%', backgroundColor: v.activeMovement.status === 'Inside' ? 'var(--success)' : 'var(--text-muted)' }}></span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.activeMovement.status === 'Inside' ? 'IN:' : 'OUT:'} {v.activeMovement.departmentId?.name?.substring(0,8)}</span>
-                  </span>
-                  <span style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '1px' }}>
-                    {new Date(v.activeMovement.inTime || v.activeMovement.createdAt).toLocaleDateString(undefined, {month: 'numeric', day: 'numeric'})} {new Date(v.activeMovement.inTime || v.activeMovement.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                  </span>
-                </>
-              ) : (
-                <span className="text-muted" style={{ fontSize: '10px' }}>No Activity</span>
-              )}
+            {/* BOTTOM SECTION: Action Buttons full width */}
+            <div style={{ display: 'flex', gap: '0.4rem', width: '100%', paddingTop: '0.45rem', borderTop: '1px solid var(--border-color)' }}>
+              <button 
+                type="button" 
+                className="admin-btn admin-btn--primary"
+                style={{ flex: 1, padding: '0.3rem 0.5rem', fontSize: '11px', fontWeight: 600, borderRadius: '6px', textAlign: 'center', justifyContent: 'center' }}
+                onClick={(e) => { e.stopPropagation(); onViewClick(v); }}
+              >
+                View Details
+              </button>
+              <button 
+                type="button" 
+                className="admin-btn admin-btn--secondary"
+                style={{ flex: 1, padding: '0.3rem 0.5rem', fontSize: '11px', fontWeight: 600, borderRadius: '6px', textAlign: 'center', justifyContent: 'center' }}
+                onClick={(e) => { e.stopPropagation(); handleOpenQr(v); }}
+              >
+                QR Pass
+              </button>
+              <button 
+                type="button" 
+                className="admin-btn admin-btn--danger"
+                style={{ flex: 1, padding: '0.3rem 0.5rem', fontSize: '11px', fontWeight: 600, borderRadius: '6px', textAlign: 'center', justifyContent: 'center' }}
+                onClick={(e) => { e.stopPropagation(); onDeleteClick(v); }}
+              >
+                Delete
+              </button>
             </div>
+
           </div>
         ))}
       </div>

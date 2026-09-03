@@ -30,7 +30,6 @@ export default function VehicleCategoriesPage() {
 
   return (
     <PageShell title="Vehicle Master - Categories" description="Manage vehicle categories" toolbar={toolbar}>
-      <PageTabs tabs={tabs} />
       <div className="p-6">
       
       <div className="bg-white rounded shadow p-4">

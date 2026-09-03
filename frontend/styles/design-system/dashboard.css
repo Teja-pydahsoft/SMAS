@@ -100,10 +100,12 @@
   background: var(--color-primary);
   color: #fff;
   box-shadow: var(--shadow-btn-primary);
+  transition: all 0.2s ease-in-out;
 }
 
 .admin-btn--primary:hover {
   background: var(--color-primary-hover);
+  color: #fef08a;
   box-shadow: var(--shadow-btn-primary-hover);
   transform: translateY(-1px);
 }

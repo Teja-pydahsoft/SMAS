@@ -70,7 +70,6 @@ const deviceSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       match: [/^[0-9a-f]{64}$/, 'Fingerprint must be a 64-character hex string (SHA-256)'],
-      index: true,
     },
 
     /** Current approval status. */

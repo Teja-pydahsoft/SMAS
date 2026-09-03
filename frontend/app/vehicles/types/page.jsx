@@ -96,7 +96,6 @@ export default function VehicleTypesPage() {
         </button>
       }
     >
-      <PageTabs tabs={tabs} />
       {error && (
         <div style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '16px', borderRadius: '4px', marginBottom: '24px' }}>
           {error}

@@ -9,17 +9,9 @@ import VehicleSummaryCard from '@/components/vehicles/VehicleSummaryCard';
 import VehicleFilters from '@/components/vehicles/VehicleFilters';
 import VehicleTable from '@/components/vehicles/VehicleTable';
 import VehicleDrawer from '@/components/vehicles/VehicleDrawer';
-
-import PageTabs from '@/components/PageTabs';
+import VehicleTypesModal from '@/components/vehicles/VehicleTypesModal';
 
 export default function VehiclesPage() {
-  const tabs = [
-    { label: 'Vehicles', path: '/vehicles' },
-    { label: 'Categories', path: '/vehicles/categories' },
-    { label: 'Types', path: '/vehicles/types' },
-    { label: 'Settings', path: '/vehicles/settings' }
-  ];
-
   const [vehicles, setVehicles] = useState([]);
   const [summary, setSummary] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -28,10 +20,13 @@ export default function VehiclesPage() {
   // State for filtering
   const [filter, setFilter] = useState({});
   
-  // State for Drawer
+  // State for Vehicle Details Popup Modal
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [vehicleVisits, setVehicleVisits] = useState([]);
   
+  // State for Types Popup Modal
+  const [showTypesModal, setShowTypesModal] = useState(false);
+
   // Toggle for advanced filters
   const [showFilters, setShowFilters] = useState(false);
 
@@ -65,7 +60,11 @@ export default function VehiclesPage() {
     setSelectedVehicle(vehicle);
     setVehicleVisits([]);
     try {
-      const res = await api.vehicles.movements({ plateNumber: vehicle.plateNumber });
+      const res = await api.vehicles.movements({ 
+        vehicleId: vehicle._id, 
+        plateNumber: vehicle.plateNumber,
+        limit: 500 
+      });
       if (res && Array.isArray(res.data)) {
         setVehicleVisits(res.data);
       }
@@ -93,30 +92,33 @@ export default function VehiclesPage() {
     setVehicleVisits([]);
   };
 
-  // Derived Metrics
-  const activeCount = vehicles.filter(v => v.status === 'Active' || v.status === 'Working').length;
-  const inactiveCount = vehicles.filter(v => v.status === 'Inactive' || v.status === 'Idle').length;
-  
-  // Unique Categories Count
-  const uniqueCategories = new Set(vehicles.map(v => v.categoryId?._id).filter(Boolean)).size;
+  // Optimized single-pass metrics & filtering
+  const { activeCount, inactiveCount, filteredVehicles } = React.useMemo(() => {
+    let active = 0;
+    let inactive = 0;
+    const filtered = [];
+    const q = filter.search?.toLowerCase();
 
-  // Apply filters client-side
-  const filteredVehicles = vehicles.filter(v => {
-    if (filter.search) {
-      const q = filter.search.toLowerCase();
-      if (!v.plateNumber?.toLowerCase().includes(q) && !v.typeId?.name?.toLowerCase().includes(q)) {
-        return false;
+    for (let i = 0; i < vehicles.length; i++) {
+      const v = vehicles[i];
+      if (v.status === 'Active' || v.status === 'Working') active++;
+      if (v.status === 'Inactive' || v.status === 'Idle') inactive++;
+
+      if (q && !v.plateNumber?.toLowerCase().includes(q) && !v.typeId?.name?.toLowerCase().includes(q)) {
+        continue;
       }
+      if (filter.status && filter.status !== '' && v.status !== filter.status) {
+        continue;
+      }
+      if (filter.departmentId) {
+        const vehicleDeptId = v.departmentId?._id || v.departmentId || v.activeMovement?.departmentId?._id || v.activeMovement?.departmentId;
+        if (String(vehicleDeptId || '') !== String(filter.departmentId)) continue;
+      }
+      filtered.push(v);
     }
-    if (filter.status && filter.status !== '') {
-      if (v.status !== filter.status) return false;
-    }
-    if (filter.departmentId) {
-      const vehicleDeptId = v.departmentId?._id || v.departmentId || v.activeMovement?.departmentId?._id || v.activeMovement?.departmentId;
-      if (String(vehicleDeptId || '') !== String(filter.departmentId)) return false;
-    }
-    return true;
-  });
+
+    return { activeCount: active, inactiveCount: inactive, filteredVehicles: filtered };
+  }, [vehicles, filter]);
 
   const toolbar = (
     <>
@@ -129,6 +131,14 @@ export default function VehiclesPage() {
         }
         .vehicle-master-btn {
           height: 36px; padding: 0 16px; font-size: 14px; white-space: nowrap; flex-shrink: 0; display: inline-flex; align-items: center;
+        }
+        .vehicle-master-btn-new-reg {
+          transition: all 0.2s ease-in-out;
+        }
+        .vehicle-master-btn-new-reg:hover {
+          color: #fef08a !important;
+          background: #1d4ed8 !important;
+          box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
         }
         .vehicle-master-btn-icon {
           height: 36px; padding: 0 12px; display: flex; align-items: center; flex-shrink: 0;
@@ -147,10 +157,53 @@ export default function VehiclesPage() {
             height: 32px !important; padding: 0 8px !important;
           }
           .vehicle-master-metrics {
-            display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6px !important; overflow-x: hidden !important; margin-bottom: 0.5rem !important; padding-top: 8px !important;
+            display: grid !important; 
+            grid-template-columns: 1fr 1fr !important; 
+            gap: 0.5rem !important; 
+            overflow-x: hidden !important; 
+            margin-bottom: 0.75rem !important; 
+            padding-top: 2px !important;
           }
-          .vehicle-master-metrics > div {
-            min-width: 0 !important; width: 100% !important;
+          .vehicle-summary-card {
+            padding: 0.45rem 0.65rem !important;
+            border-radius: 10px !important;
+            background: var(--surface-base) !important;
+            border: 1px solid var(--border-color) !important;
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            text-align: left !important;
+            gap: 0.5rem !important;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.03) !important;
+          }
+          .vehicle-summary-card .admin-metric-card__icon {
+            width: 28px !important;
+            height: 28px !important;
+            border-radius: 6px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            flex-shrink: 0 !important;
+          }
+          .vehicle-summary-card .admin-metric-card__icon svg {
+            width: 14px !important;
+            height: 14px !important;
+          }
+          .vehicle-summary-card .admin-metric-card__label {
+            font-size: 10px !important;
+            font-weight: 600 !important;
+            color: var(--text-muted) !important;
+            line-height: 1.1 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+          }
+          .vehicle-summary-card .admin-metric-card__value {
+            font-size: 1.05rem !important;
+            font-weight: 800 !important;
+            color: var(--text-primary) !important;
+            line-height: 1.1 !important;
+            margin-top: 1px !important;
           }
         }
       `}} />
@@ -162,7 +215,18 @@ export default function VehiclesPage() {
           value={filter.search || ''}
           onChange={(e) => setFilter({ ...filter, search: e.target.value })}
         />
-        <Link href="/vehicles/registrations/new" className="admin-btn admin-btn--primary vehicle-master-btn">
+        <button 
+          type="button"
+          onClick={() => setShowTypesModal(true)} 
+          className="admin-btn admin-btn--secondary vehicle-master-btn"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 6h16M4 12h16M4 18h7" />
+          </svg>
+          Types
+        </button>
+        <Link href="/vehicles/registrations/new" className="admin-btn admin-btn--primary vehicle-master-btn vehicle-master-btn-new-reg">
           New Registration
         </Link>
         <button 
@@ -186,7 +250,6 @@ export default function VehiclesPage() {
       description="Manage all registered logistics equipment across the organization."
       toolbar={toolbar}
     >
-      <PageTabs tabs={tabs} />
       <div className="admin-page-content" style={{ paddingTop: 0, marginTop: '0.5rem' }}>
         
         {/* ROW 1: Summary Cards */}
@@ -212,20 +275,18 @@ export default function VehiclesPage() {
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>}
             iconType="success"
           />
-          <div className="hide-on-mobile" style={{ display: 'contents' }}>
-            <VehicleSummaryCard 
-              title="Inactive / Idle" 
-              count={loading ? '-' : inactiveCount} 
-              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>}
-              iconType="warning"
-            />
-            <VehicleSummaryCard 
-              title="Pending Registrations" 
-              count={loading ? '-' : pendingCount} 
-              icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>}
-              iconType="info"
-            />
-          </div>
+          <VehicleSummaryCard 
+            title="Inactive / Idle" 
+            count={loading ? '-' : inactiveCount} 
+            icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>}
+            iconType="warning"
+          />
+          <VehicleSummaryCard 
+            title="Pending Registrations" 
+            count={loading ? '-' : pendingCount} 
+            icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>}
+            iconType="info"
+          />
         </div>
 
         {/* ROW 2: Filters */}
@@ -244,7 +305,7 @@ export default function VehiclesPage() {
 
       </div>
 
-      {/* Side Drawer Overlay */}
+      {/* Vehicle Details Popup Modal */}
       {selectedVehicle && (
         <VehicleDrawer 
           vehicle={selectedVehicle} 
@@ -252,6 +313,16 @@ export default function VehiclesPage() {
           onClose={closeDrawer} 
         />
       )}
+
+      {/* Define Types Popup Modal */}
+      <VehicleTypesModal 
+        isOpen={showTypesModal}
+        onClose={() => {
+          setShowTypesModal(false);
+          fetchData();
+        }}
+        onTypesUpdated={fetchData}
+      />
     </PageShell>
   );
 }

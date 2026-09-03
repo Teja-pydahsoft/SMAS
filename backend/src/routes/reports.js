@@ -83,6 +83,9 @@ router.get(
       dateFrom: req.query.dateFrom || null,
       dateTo: req.query.dateTo || null,
       statsOnly: req.query.statsOnly === 'true' || req.query.statsOnly === '1',
+      page: req.query.page || null,
+      limit: req.query.limit || null,
+      listDivisionId: req.query.listDivisionId || null,
     });
     res.json(data);
   })

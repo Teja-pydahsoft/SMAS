@@ -1947,9 +1947,44 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
 /* ═══════════════════════════════════════════════════════════════
    TAB 1 — TODAY'S ACTIVITY
 ════════════════════════════════════════════════════════════════ */
-function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false, selectedDate, onDateChange }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+
+/** Short-lived in-memory cache so tab remounts / revisits skip a full reload. */
+const REPORT_VIEW_CACHE_TTL_MS = 90_000;
+const reportViewCache = new Map();
+
+function reportCacheGet(key) {
+  if (!key) return null;
+  const hit = reportViewCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > REPORT_VIEW_CACHE_TTL_MS) {
+    reportViewCache.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function reportCacheSet(key, data) {
+  if (!key || data == null) return;
+  reportViewCache.set(key, { data, ts: Date.now() });
+}
+
+function TodayActivityTab({
+  onViewPerson,
+  onPrintReady,
+  divisionRequired = false,
+  selectedDate,
+  onDateChange,
+  isActive = true,
+}) {
+  const activityDate = selectedDate || todayDateStringIst();
+  const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
+  const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
+  const effectiveFrom = divisionRequired ? (rangeFrom || activityDate) : activityDate;
+  const effectiveTo = divisionRequired ? (rangeTo || activityDate) : activityDate;
+  const cacheKey = `daily:${divisionRequired ? 'div' : 'today'}:${effectiveFrom}:${effectiveTo}:all`;
+
+  const [data, setData] = useState(() => reportCacheGet(cacheKey));
+  const [loading, setLoading] = useState(() => !reportCacheGet(cacheKey));
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -1971,13 +2006,13 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const [drillDepartmentId, setDrillDepartmentId] = useState(null);
   const [drillDivisionId, setDrillDivisionId] = useState(null);
   const [divisionOnlyDrillId, setDivisionOnlyDrillId] = useState(null);
-  const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
-  const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
   const intervalRef = useRef(null);
+  const dataRef = useRef(null);
 
-  const activityDate = selectedDate || todayDateStringIst();
-  const effectiveFrom = divisionRequired ? (rangeFrom || activityDate) : activityDate;
-  const effectiveTo = divisionRequired ? (rangeTo || activityDate) : activityDate;
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
   const periodLabel = `${formatDate(effectiveFrom)} — ${formatDate(effectiveTo)}`;
   const isToday = activityDate === todayDateStringIst();
   const dayLabel = isToday ? 'Today' : formatDate(activityDate);
@@ -2040,6 +2075,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const load = useCallback(async (silent = false) => {
     if (divisionRequired && !divisionFilter) {
       setData(null);
+      dataRef.current = null;
       setLoading(false);
       return;
     }
@@ -2049,6 +2085,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
       if (divisionRequired && effectiveFrom > effectiveTo) {
         setError('From date cannot be after To date.');
         setData(null);
+        dataRef.current = null;
         setLoading(false);
         return;
       }
@@ -2057,7 +2094,10 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
         : { date: activityDate };
       if (divisionFilter !== 'all') params.divisionId = divisionFilter;
       const result = await api.reports.dailyPasses(params);
-      setData(result);
+      const scopedKey = `daily:${divisionRequired ? 'div' : 'today'}:${effectiveFrom}:${effectiveTo}:${divisionFilter}`;
+      const tagged = { ...result, __cacheKey: scopedKey };
+      setData(tagged);
+      reportCacheSet(scopedKey, tagged);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -2068,17 +2108,47 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   useEffect(() => {
     if (divisionRequired && !divisionFilter) {
       setData(null);
+      dataRef.current = null;
       setLoading(false);
       return undefined;
     }
-    setData(null);
-    load();
-    // Live refresh only on true "today" single-date dashboard
+    const scopedKey = `daily:${divisionRequired ? 'div' : 'today'}:${effectiveFrom}:${effectiveTo}:${divisionFilter}`;
+    const cached = reportCacheGet(scopedKey);
+    const scopeChanged = dataRef.current
+      && dataRef.current.__cacheKey
+      && dataRef.current.__cacheKey !== scopedKey;
+    if (scopeChanged) {
+      dataRef.current = null;
+    }
+
+    // Hidden keep-alive tabs: keep existing/cached data, do not refetch
+    if (!isActive) {
+      if (!dataRef.current && cached) {
+        const hydrated = { ...cached, __cacheKey: scopedKey };
+        setData(hydrated);
+        dataRef.current = hydrated;
+        setLoading(false);
+      }
+      return undefined;
+    }
+
+    // Already loaded for this exact scope — show instantly on tab switch
+    if (dataRef.current && dataRef.current.__cacheKey === scopedKey) {
+      setLoading(false);
+    } else if (cached) {
+      const hydrated = { ...cached, __cacheKey: scopedKey };
+      setData(hydrated);
+      dataRef.current = hydrated;
+      setLoading(false);
+      load(true);
+    } else {
+      load();
+    }
     if (!divisionRequired && isToday) {
       intervalRef.current = setInterval(() => load(true), 30000);
     }
     return () => clearInterval(intervalRef.current);
-  }, [load, divisionFilter, divisionRequired, isToday]);
+  }, [load, divisionFilter, divisionRequired, isToday, isActive, effectiveFrom, effectiveTo]);
 
   // Flatten all people from all roles (memoized)
   const allPeople = useMemo(
@@ -2112,6 +2182,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
         filterStatus === 'all' ||
         (filterStatus === 'inside' && p.divisionInside) ||
         (filterStatus === 'outside' && !p.divisionInside && p.hadActivityToday) ||
+        (filterStatus === 'entered' && Boolean(p.hadGateActivity || p.gateEntryAt)) ||
         (filterStatus === 'inactive' && !p.divisionInside && !p.hadActivityToday);
       const matchPayFreq = payFreqFilter === 'all' || p.payFrequency === payFreqFilter;
       const matchRole = roleFilter === 'all' || p.roleId === roleFilter;
@@ -2163,20 +2234,23 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   );
 
   const handleSelectDepartmentDivision = useCallback((row) => {
-    if (!row.departmentId || !row.divisionId) return;
-    setDrillDepartmentId(row.departmentId);
-    setDrillDivisionId(row.divisionId);
+    if (!row?.isClickable) return;
+    const departmentId = row.departmentId || ACTIVITY_UNKNOWN_SCOPE;
+    const divisionId = row.divisionId || ACTIVITY_UNKNOWN_SCOPE;
+    setDrillDepartmentId(departmentId);
+    setDrillDivisionId(divisionId);
   }, []);
 
   const handleSelectDivisionOnly = useCallback((row) => {
-    if (!row.divisionId) return;
+    if (!row?.divisionId && !row?.isClickable) return;
+    if (!row?.divisionId) return;
     setDivisionOnlyDrillId(row.divisionId);
   }, []);
 
   const drilledDepartment = useMemo(() => {
     if (!drillDepartmentId) return null;
-    const people = filtered.filter((p) => (p.departmentId === drillDepartmentId || p.departmentName === drillDepartmentId || p.currentDepartmentName === drillDepartmentId));
-    return departmentSummaries.find((row) => row.departmentId === drillDepartmentId)
+    const people = filtered.filter((p) => personMatchesDepartmentScope(p, drillDepartmentId));
+    return departmentSummaries.find((row) => String(row.departmentId) === String(drillDepartmentId))
       || {
         departmentId: drillDepartmentId,
         departmentName: people[0]?.departmentName || people[0]?.currentDepartmentName || selectedDepartmentName || 'Department',
@@ -2188,7 +2262,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const drilledUnit = useMemo(() => {
     if (!drillDivisionId) return null;
     const people = filtered.filter(
-      (p) => (p.departmentId === drillDepartmentId || p.departmentName === drillDepartmentId || p.currentDepartmentName === drillDepartmentId) && (p.divisionId === drillDivisionId || p.divisionName === drillDivisionId)
+      (p) => personMatchesDeptDivisionScope(p, drillDepartmentId, drillDivisionId)
     );
     return {
       divisionId: drillDivisionId,
@@ -2200,7 +2274,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
 
   const drilledDivisionOnly = useMemo(() => {
     if (!divisionOnlyDrillId) return null;
-    const people = filtered.filter((p) => p.divisionId === divisionOnlyDrillId || p.divisionName === divisionOnlyDrillId);
+    const people = filtered.filter((p) => personMatchesDivisionScope(p, divisionOnlyDrillId));
     return {
       divisionId: divisionOnlyDrillId,
       divisionName: people[0]?.divisionName || selectedDivisionName || 'Division',
@@ -2212,14 +2286,51 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   const employeeRows = useMemo(() => {
     if (!drillDepartmentId || !drillDivisionId) return [];
     return filtered.filter(
-      (p) => (p.departmentId === drillDepartmentId || p.departmentName === drillDepartmentId || p.currentDepartmentName === drillDepartmentId) && (p.divisionId === drillDivisionId || p.divisionName === drillDivisionId)
+      (p) => personMatchesDeptDivisionScope(p, drillDepartmentId, drillDivisionId)
     );
   }, [drillDepartmentId, drillDivisionId, filtered]);
 
   const divisionOnlyEmployeeRows = useMemo(() => {
     if (!divisionOnlyDrillId) return [];
-    return filtered.filter((p) => p.divisionId === divisionOnlyDrillId || p.divisionName === divisionOnlyDrillId);
+    return filtered.filter((p) => personMatchesDivisionScope(p, divisionOnlyDrillId));
   }, [divisionOnlyDrillId, filtered]);
+
+  const employeeWindow = useInfiniteWindow(
+    employeeRows,
+    ACTIVITY_PEOPLE_PAGE_SIZE,
+    `today-emp-${drillDepartmentId}-${drillDivisionId}-${filterStatus}-${search}`
+  );
+  const divisionOnlyEmployeeWindow = useInfiniteWindow(
+    divisionOnlyEmployeeRows,
+    ACTIVITY_PEOPLE_PAGE_SIZE,
+    `today-div-${divisionOnlyDrillId}-${filterStatus}-${search}`
+  );
+  const allPeopleWindow = useInfiniteWindow(
+    filtered,
+    ACTIVITY_PEOPLE_PAGE_SIZE,
+    `today-all-${filterStatus}-${search}-${payFreqFilter}-${roleFilter}-${shiftFilter}-${dayNightFilter}-${departmentFilter}`
+  );
+
+  const handleStatFilter = useCallback((nextStatus) => {
+    // Today activity status values: all | inside | outside | inactive | entered
+    if (nextStatus === 'entered') {
+      setFilterStatus('entered');
+      setListTab('allPeople');
+      return;
+    }
+    if (nextStatus === 'exited') {
+      setFilterStatus('outside');
+      setListTab('allPeople');
+      return;
+    }
+    if (nextStatus === 'inside') {
+      setFilterStatus('inside');
+      setListTab('allPeople');
+      return;
+    }
+    setFilterStatus('all');
+    setListTab('allPeople');
+  }, []);
 
   const isEmployeeDrill = Boolean(drillDepartmentId && drillDivisionId);
   const isDivisionOnlyEmployeeDrill = Boolean(divisionOnlyDrillId);
@@ -2329,9 +2440,13 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
   }, [filtered, divisionRequired, selectedDivision, activityDate]);
 
   useEffect(() => {
+    if (!isActive) {
+      onPrintReady?.(null);
+      return undefined;
+    }
     onPrintReady?.(handlePrintPdf);
     return () => onPrintReady?.(null);
-  }, [handlePrintPdf, onPrintReady]);
+  }, [handlePrintPdf, onPrintReady, isActive]);
 
   const insideCount = filtered.filter(p => p.divisionInside).length;
   const activeCount = filtered.filter(p => p.hadActivityToday).length;
@@ -2465,6 +2580,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
           <select className="rc-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)} aria-label="Filter by status">
             <option value="all">All Status</option>
             <option value="inside">Inside</option>
+            <option value="entered">Entered</option>
             <option value="outside">Outside</option>
             {!divisionRequired && <option value="inactive">Not In {isToday ? 'Today' : 'This Day'}</option>}
           </select>
@@ -2560,6 +2676,13 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
           stats={listTab === 'divisionOnly' ? divisionOnlyStats : hierarchyStats}
           loading={loading}
           scopeLabel={listTab === 'divisionOnly' ? divisionOnlyStats.scopeLabel : hierarchyStats.scopeLabel}
+          onStatFilter={handleStatFilter}
+          activeStatFilter={
+            filterStatus === 'inside' ? 'inside'
+              : filterStatus === 'outside' ? 'exited'
+                : filterStatus === 'entered' ? 'entered'
+                  : 'all'
+          }
         />
       )}
 
@@ -2585,7 +2708,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               {drilledDepartment?.departmentName} · {drilledUnit?.divisionName} · {employeeRows.length} employee{employeeRows.length === 1 ? '' : 's'}
             </div>
             <DepartmentActivityPeopleList
-              rows={employeeRows.map(p => ({
+              rows={employeeWindow.visibleItems.map(p => ({
                 ...p,
                 rowKey: p.registrationId,
                 currentlyIn: p.divisionInside,
@@ -2599,6 +2722,11 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               onViewPerson={openPerson}
               showDivision
               showDepartment
+            />
+            <InfiniteScrollSentinel
+              loaderRef={employeeWindow.loaderRef}
+              hasMore={employeeWindow.hasMore}
+              label={`Showing ${employeeWindow.visibleCount} of ${employeeWindow.totalCount}`}
             />
           </>
         ) : (
@@ -2621,7 +2749,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               {drilledDivisionOnly?.divisionName} · {divisionOnlyEmployeeRows.length} employee{divisionOnlyEmployeeRows.length === 1 ? '' : 's'}
             </div>
             <DepartmentActivityPeopleList
-              rows={divisionOnlyEmployeeRows.map(p => ({
+              rows={divisionOnlyEmployeeWindow.visibleItems.map(p => ({
                 ...p,
                 rowKey: p.registrationId,
                 currentlyIn: p.divisionInside,
@@ -2634,6 +2762,11 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               isToday={isToday}
               onViewPerson={openPerson}
               showDivision
+            />
+            <InfiniteScrollSentinel
+              loaderRef={divisionOnlyEmployeeWindow.loaderRef}
+              hasMore={divisionOnlyEmployeeWindow.hasMore}
+              label={`Showing ${divisionOnlyEmployeeWindow.visibleCount} of ${divisionOnlyEmployeeWindow.totalCount}`}
             />
           </>
         ) : (
@@ -2679,7 +2812,7 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               </tr>
             </thead>
             <tbody>
-              {filtered.map(person => (
+              {allPeopleWindow.visibleItems.map(person => (
                 <tr key={person.registrationId} className="rc-table__row"
                   onClick={() => openPerson(person.registrationId)}
                   tabIndex={0} role="button"
@@ -2732,6 +2865,11 @@ function TodayActivityTab({ onViewPerson, onPrintReady, divisionRequired = false
               ))}
             </tbody>
           </table>
+          <InfiniteScrollSentinel
+            loaderRef={allPeopleWindow.loaderRef}
+            hasMore={allPeopleWindow.hasMore}
+            label={`Showing ${allPeopleWindow.visibleCount} of ${allPeopleWindow.totalCount}`}
+          />
         </div>
       )}
     </div>
@@ -2745,6 +2883,96 @@ function activityGroupStats(people = []) {
     inCount: people.filter((p) => p.currentlyIn || p.divisionInside).length,
     exitCount: people.filter((p) => p.hadExit || p.gateExitAt).length,
   };
+}
+
+const ACTIVITY_UNKNOWN_SCOPE = '__unknown__';
+const ACTIVITY_PEOPLE_PAGE_SIZE = 50;
+
+function activityScopeKey(id, name, fallback = ACTIVITY_UNKNOWN_SCOPE) {
+  const normalizedId = id != null && id !== '' ? String(id) : '';
+  if (normalizedId) return normalizedId;
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  if (normalizedName) return normalizedName;
+  return fallback;
+}
+
+function personDepartmentScopeKey(person) {
+  return activityScopeKey(
+    person?.departmentId,
+    person?.departmentName || person?.currentDepartmentName
+  );
+}
+
+function personDivisionScopeKey(person) {
+  return activityScopeKey(person?.divisionId, person?.divisionName);
+}
+
+function personMatchesDepartmentScope(person, drillDepartmentId) {
+  if (drillDepartmentId == null || drillDepartmentId === '') return false;
+  const target = String(drillDepartmentId);
+  return personDepartmentScopeKey(person) === target
+    || String(person?.departmentId || '') === target
+    || String(person?.departmentName || '') === target
+    || String(person?.currentDepartmentName || '') === target;
+}
+
+function personMatchesDivisionScope(person, drillDivisionId) {
+  if (drillDivisionId == null || drillDivisionId === '') return false;
+  const target = String(drillDivisionId);
+  return personDivisionScopeKey(person) === target
+    || String(person?.divisionId || '') === target
+    || String(person?.divisionName || '') === target;
+}
+
+function personMatchesDeptDivisionScope(person, drillDepartmentId, drillDivisionId) {
+  return personMatchesDepartmentScope(person, drillDepartmentId)
+    && personMatchesDivisionScope(person, drillDivisionId);
+}
+
+/** Client-side windowing for large people lists — does not change stats/counts. */
+function useInfiniteWindow(items, pageSize = ACTIVITY_PEOPLE_PAGE_SIZE, resetKey = '') {
+  const [visibleCount, setVisibleCount] = useState(pageSize);
+  const loaderRef = useRef(null);
+  const itemsLength = Array.isArray(items) ? items.length : 0;
+
+  useEffect(() => {
+    setVisibleCount(pageSize);
+  }, [resetKey, pageSize, itemsLength]);
+
+  const hasMore = visibleCount < itemsLength;
+  const visibleItems = useMemo(
+    () => (Array.isArray(items) ? items.slice(0, visibleCount) : []),
+    [items, visibleCount]
+  );
+
+  const loadMore = useCallback(() => {
+    setVisibleCount((prev) => Math.min(prev + pageSize, itemsLength));
+  }, [pageSize, itemsLength]);
+
+  useEffect(() => {
+    const node = loaderRef.current;
+    if (!node || !hasMore) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore();
+      },
+      { threshold: 0.1, rootMargin: '160px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, visibleCount]);
+
+  return { visibleItems, hasMore, loaderRef, visibleCount, totalCount: itemsLength };
+}
+
+function InfiniteScrollSentinel({ loaderRef, hasMore, label = 'Loading more…' }) {
+  if (!hasMore) return null;
+  return (
+    <div ref={loaderRef} className="rc-infinite-sentinel" aria-hidden={false}>
+      <Spinner size={14} />
+      <span>{label}</span>
+    </div>
+  );
 }
 
 function compareHierarchyHighToLow(a, b) {
@@ -2766,13 +2994,13 @@ function buildDepartmentDivisionActivityRows(people = [], departmentCatalog = []
   const deptMap = new Map();
 
   for (const person of people) {
-    const deptId = person.departmentId || person.departmentName || person.currentDepartmentName || '__unknown__';
+    const deptId = personDepartmentScopeKey(person);
     const deptName = person.departmentName || person.currentDepartmentName || 'General / Unassigned';
-    const divId = person.divisionId || person.divisionName || '__unknown__';
+    const divId = personDivisionScopeKey(person);
     const divName = person.divisionName || 'Main Division';
     if (!deptMap.has(deptId)) {
       deptMap.set(deptId, {
-        departmentId: person.departmentId || deptId,
+        departmentId: deptId,
         departmentName: deptName,
         units: new Map(),
         people: [],
@@ -2782,7 +3010,7 @@ function buildDepartmentDivisionActivityRows(people = [], departmentCatalog = []
     dept.people.push(person);
     if (!dept.units.has(divId)) {
       dept.units.set(divId, {
-        divisionId: person.divisionId || divId,
+        divisionId: divId,
         divisionName: divName,
         people: [],
       });
@@ -2792,9 +3020,10 @@ function buildDepartmentDivisionActivityRows(people = [], departmentCatalog = []
 
   if (includeEmpty) {
     for (const dept of departmentCatalog) {
-      if (!deptMap.has(dept._id)) {
-        deptMap.set(dept._id, {
-          departmentId: dept._id,
+      const catalogId = activityScopeKey(dept._id, dept.name);
+      if (!deptMap.has(catalogId) && !deptMap.has(String(dept._id))) {
+        deptMap.set(catalogId, {
+          departmentId: catalogId,
           departmentName: dept.name,
           units: new Map(),
           people: [],
@@ -2859,11 +3088,11 @@ function buildDepartmentDivisionActivityRows(people = [], departmentCatalog = []
 function groupDepartmentActivity(people = [], departmentCatalog = [], { includeEmpty = true } = {}) {
   const map = new Map();
   for (const person of people) {
-    const id = person.departmentId || person.departmentName || person.currentDepartmentName || '__unknown__';
+    const id = personDepartmentScopeKey(person);
     const name = person.departmentName || person.currentDepartmentName || 'General / Unassigned';
     if (!map.has(id)) {
       map.set(id, {
-        departmentId: person.departmentId || id,
+        departmentId: id,
         departmentName: name,
         people: [],
       });
@@ -2872,8 +3101,8 @@ function groupDepartmentActivity(people = [], departmentCatalog = [], { includeE
   }
   if (includeEmpty) {
     for (const dept of departmentCatalog) {
-      const id = dept._id;
-      if (!map.has(id)) {
+      const id = activityScopeKey(dept._id, dept.name);
+      if (!map.has(id) && !map.has(String(dept._id))) {
         map.set(id, {
           departmentId: id,
           departmentName: dept.name,
@@ -2891,11 +3120,11 @@ function groupDepartmentActivity(people = [], departmentCatalog = [], { includeE
 function groupUnitActivity(people = []) {
   const map = new Map();
   for (const person of people) {
-    const id = person.divisionId || person.divisionName || '__unknown__';
+    const id = personDivisionScopeKey(person);
     const name = person.divisionName || 'Main Division';
     if (!map.has(id)) {
       map.set(id, {
-        divisionId: person.divisionId || id,
+        divisionId: id,
         divisionName: name,
         people: [],
       });
@@ -2907,9 +3136,22 @@ function groupUnitActivity(people = []) {
     .sort(compareHierarchyHighToLow);
 }
 
-function DepartmentHierarchyStatCard({ label, value, sub, color = 'primary', loading }) {
+function DepartmentHierarchyStatCard({ label, value, sub, color = 'primary', loading, onClick, active }) {
+  const clickable = typeof onClick === 'function';
   return (
-    <div className={`rc-dept-hierarchy-card rc-dept-hierarchy-card--${color}`}>
+    <div
+      className={`rc-dept-hierarchy-card rc-dept-hierarchy-card--${color}${clickable ? ' rc-dept-hierarchy-card--clickable' : ''}${active ? ' rc-dept-hierarchy-card--active' : ''}`.trim()}
+      onClick={clickable ? onClick : undefined}
+      onKeyDown={clickable ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      } : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-pressed={clickable ? Boolean(active) : undefined}
+    >
       <div className="rc-dept-hierarchy-card__value">
         {loading ? <span className="rc-skeleton rc-skeleton--sm" /> : fmt(value)}
       </div>
@@ -2919,7 +3161,7 @@ function DepartmentHierarchyStatCard({ label, value, sub, color = 'primary', loa
   );
 }
 
-function DepartmentActivityHierarchyCards({ stats, loading, scopeLabel }) {
+function DepartmentActivityHierarchyCards({ stats, loading, scopeLabel, onStatFilter, activeStatFilter }) {
   return (
     <section className="rc-dept-hierarchy" aria-label="Department activity summary">
       {scopeLabel ? <p className="rc-dept-hierarchy__scope">{scopeLabel}</p> : null}
@@ -2944,24 +3186,32 @@ function DepartmentActivityHierarchyCards({ stats, loading, scopeLabel }) {
           sub={stats.employeeSub}
           color="warning"
           loading={loading}
+          onClick={onStatFilter ? () => onStatFilter('all') : undefined}
+          active={activeStatFilter === 'all'}
         />
         <DepartmentHierarchyStatCard
           label="Entered"
           value={stats.enteredCount}
           color="primary"
           loading={loading}
+          onClick={onStatFilter ? () => onStatFilter('entered') : undefined}
+          active={activeStatFilter === 'entered'}
         />
         <DepartmentHierarchyStatCard
           label="Currently In"
           value={stats.inCount}
           color="success"
           loading={loading}
+          onClick={onStatFilter ? () => onStatFilter('inside') : undefined}
+          active={activeStatFilter === 'inside'}
         />
         <DepartmentHierarchyStatCard
           label="Exited"
           value={stats.exitCount}
           color="danger"
           loading={loading}
+          onClick={onStatFilter ? () => onStatFilter('exited') : undefined}
+          active={activeStatFilter === 'exited'}
         />
       </div>
     </section>
@@ -3590,10 +3840,18 @@ function DepartmentActivityBreadcrumb({ items }) {
  * Department Activity — loads all department check-ins by default (All Status),
  * with optional division/department filters. Drill down: departments → units → employees.
  */
-function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
-  const [data, setData] = useState(null);
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [peopleLoading, setPeopleLoading] = useState(true);
+function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange, isActive = true }) {
+  const activityDate = selectedDate || todayDateStringIst();
+  const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
+  const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
+  const effectiveFrom = rangeFrom || activityDate;
+  const effectiveTo = rangeTo || activityDate;
+  const deptCacheKey = `department:${effectiveFrom}:${effectiveTo}`;
+
+  const [data, setData] = useState(() => reportCacheGet(deptCacheKey));
+  const [statsLoading, setStatsLoading] = useState(() => !reportCacheGet(deptCacheKey));
+  const [peopleLoading, setPeopleLoading] = useState(() => !reportCacheGet(deptCacheKey));
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -3608,18 +3866,20 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
   const [drillDivisionId, setDrillDivisionId] = useState(null);
   const [divisionOnlyDrillId, setDivisionOnlyDrillId] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
-  const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
   const intervalRef = useRef(null);
   const loadSeqRef = useRef(0);
+  const loadingMoreRef = useRef(false);
+  const dataRef = useRef(null);
 
-  const activityDate = selectedDate || todayDateStringIst();
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
   const isToday = activityDate === todayDateStringIst();
   const dayLabel = isToday ? 'Today' : formatDate(activityDate);
-  const effectiveFrom = rangeFrom || activityDate;
-  const effectiveTo = rangeTo || activityDate;
   const periodLabel = `${formatDate(effectiveFrom)} — ${formatDate(effectiveTo)}`;
   const peopleReady = Boolean(data && !data._statsOnly && !peopleLoading);
+  const PEOPLE_FETCH_LIMIT = ACTIVITY_PEOPLE_PAGE_SIZE;
 
   const handleSort = useCallback((key) => {
     setSort((prev) => (
@@ -3668,6 +3928,19 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
     setDivisionOnlyDrillId(null);
   }, []);
 
+  const mergePeopleByKey = useCallback((existing = [], incoming = []) => {
+    const map = new Map();
+    for (const person of existing) {
+      const key = person.rowKey || `${person.registrationId}-${person.departmentId || 'div'}`;
+      map.set(key, person);
+    }
+    for (const person of incoming) {
+      const key = person.rowKey || `${person.registrationId}-${person.departmentId || 'div'}`;
+      map.set(key, { ...map.get(key), ...person });
+    }
+    return [...map.values()];
+  }, []);
+
   const load = useCallback(async (silent = false) => {
     const seq = ++loadSeqRef.current;
     if (!silent) {
@@ -3690,9 +3963,36 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
       };
 
       if (silent) {
-        const peopleResult = await api.reports.departmentActivity(params);
+        // Refresh counts + roster from lightweight stats; keep already-loaded details.
+        const statsResult = await api.reports.departmentActivity({
+          ...params,
+          statsOnly: 'true',
+        });
         if (seq !== loadSeqRef.current) return;
-        setData(peopleResult);
+        setData((prev) => {
+          if (!prev) {
+            return { ...statsResult, _statsOnly: true, page: 1, hasMore: true };
+          }
+          return {
+            ...prev,
+            people: mergePeopleByKey(statsResult.people || [], prev.people || []),
+            divisionOnlyPeople: mergePeopleByKey(
+              statsResult.divisionOnlyPeople || [],
+              prev.divisionOnlyPeople || []
+            ),
+            enteredCount: statsResult.enteredCount ?? prev.enteredCount,
+            inCount: statsResult.inCount ?? prev.inCount,
+            exitCount: statsResult.exitCount ?? prev.exitCount,
+            divisionOnlyCount: statsResult.divisionOnlyCount ?? prev.divisionOnlyCount,
+            total: Array.isArray(statsResult.people) ? statsResult.people.length : prev.total,
+            divisionOnlyTotal: Array.isArray(statsResult.divisionOnlyPeople)
+              ? statsResult.divisionOnlyPeople.length
+              : prev.divisionOnlyTotal,
+            date: statsResult.date || prev.date,
+            dateFrom: statsResult.dateFrom || prev.dateFrom,
+            dateTo: statsResult.dateTo || prev.dateTo,
+          };
+        });
         setPeopleLoading(false);
         setStatsLoading(false);
         return;
@@ -3701,7 +4001,13 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
       api.reports.departmentActivity({ ...params, statsOnly: 'true' })
         .then((statsResult) => {
           if (seq !== loadSeqRef.current) return;
-          setData({ ...statsResult, _statsOnly: true });
+          setData({
+            ...statsResult,
+            _statsOnly: true,
+            // Full lightweight people stay available for stats + drill-down
+            page: 1,
+            hasMore: true,
+          });
           setStatsLoading(false);
         })
         .catch((e) => {
@@ -3710,9 +4016,33 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
           setStatsLoading(false);
         });
 
-      const peopleResult = await api.reports.departmentActivity(params);
+      const peopleResult = await api.reports.departmentActivity({
+        ...params,
+        page: 1,
+        limit: PEOPLE_FETCH_LIMIT,
+      });
       if (seq !== loadSeqRef.current) return;
-      setData(peopleResult);
+      setData((prev) => {
+        const basePeople = prev?._statsOnly ? (prev.people || []) : [];
+        const baseDivisionOnly = prev?._statsOnly ? (prev.divisionOnlyPeople || []) : [];
+        const merged = {
+          ...peopleResult,
+          people: mergePeopleByKey(basePeople, peopleResult.people || []),
+          divisionOnlyPeople: mergePeopleByKey(baseDivisionOnly, peopleResult.divisionOnlyPeople || []),
+          enteredCount: peopleResult.enteredCount ?? prev?.enteredCount,
+          inCount: peopleResult.inCount ?? prev?.inCount,
+          exitCount: peopleResult.exitCount ?? prev?.exitCount,
+          divisionOnlyCount: peopleResult.divisionOnlyCount ?? prev?.divisionOnlyCount,
+          total: peopleResult.total ?? prev?.total,
+          divisionOnlyTotal: peopleResult.divisionOnlyTotal ?? prev?.divisionOnlyTotal,
+          hasMore: Boolean(peopleResult.hasMore),
+          page: peopleResult.page || 1,
+          _statsOnly: false,
+          __cacheKey: `department:${effectiveFrom}:${effectiveTo}`,
+        };
+        reportCacheSet(`department:${effectiveFrom}:${effectiveTo}`, merged);
+        return merged;
+      });
       setPeopleLoading(false);
       setStatsLoading(false);
     } catch (e) {
@@ -3721,15 +4051,91 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
       setPeopleLoading(false);
       setStatsLoading(false);
     }
-  }, [effectiveFrom, effectiveTo]);
+  }, [effectiveFrom, effectiveTo, PEOPLE_FETCH_LIMIT, mergePeopleByKey]);
+
+  const loadMorePeople = useCallback(async () => {
+    if (!data || data._statsOnly || peopleLoading || loadingMoreRef.current || !data.hasMore) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const nextPage = (data.page || 1) + 1;
+      const nextData = await api.reports.departmentActivity({
+        dateFrom: effectiveFrom,
+        dateTo: effectiveTo,
+        page: nextPage,
+        limit: PEOPLE_FETCH_LIMIT,
+      });
+      setData((prev) => {
+        if (!prev) return nextData;
+        const merged = {
+          ...prev,
+          ...nextData,
+          people: mergePeopleByKey(prev.people || [], nextData.people || []),
+          divisionOnlyPeople: mergePeopleByKey(
+            prev.divisionOnlyPeople || [],
+            nextData.divisionOnlyPeople || []
+          ),
+          // Keep authoritative totals from the server response
+          enteredCount: nextData.enteredCount ?? prev.enteredCount,
+          inCount: nextData.inCount ?? prev.inCount,
+          exitCount: nextData.exitCount ?? prev.exitCount,
+          divisionOnlyCount: nextData.divisionOnlyCount ?? prev.divisionOnlyCount,
+          total: nextData.total ?? prev.total,
+          divisionOnlyTotal: nextData.divisionOnlyTotal ?? prev.divisionOnlyTotal,
+          page: nextData.page || nextPage,
+          hasMore: Boolean(nextData.hasMore),
+          _statsOnly: false,
+        };
+        reportCacheSet(`department:${effectiveFrom}:${effectiveTo}`, merged);
+        return merged;
+      });
+    } catch (e) {
+      setError(e.message || 'Failed to load more people');
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [data, effectiveFrom, effectiveTo, peopleLoading, PEOPLE_FETCH_LIMIT, mergePeopleByKey]);
 
   useEffect(() => {
-    load();
+    const cacheKey = `department:${effectiveFrom}:${effectiveTo}`;
+    const cached = reportCacheGet(cacheKey);
+    const scopeChanged = dataRef.current
+      && dataRef.current.__cacheKey
+      && dataRef.current.__cacheKey !== cacheKey;
+    if (scopeChanged) {
+      dataRef.current = null;
+    }
+
+    if (!isActive) {
+      if (!dataRef.current && cached) {
+        const hydrated = { ...cached, __cacheKey: cacheKey };
+        setData(hydrated);
+        dataRef.current = hydrated;
+        setStatsLoading(false);
+        setPeopleLoading(false);
+      }
+      return undefined;
+    }
+
+    if (dataRef.current && dataRef.current.__cacheKey === cacheKey) {
+      setStatsLoading(false);
+      setPeopleLoading(false);
+    } else if (cached) {
+      const hydrated = { ...cached, __cacheKey: cacheKey };
+      setData(hydrated);
+      dataRef.current = hydrated;
+      setStatsLoading(false);
+      setPeopleLoading(false);
+      load(true);
+    } else {
+      load();
+    }
     if (effectiveFrom === todayDateStringIst() && effectiveTo === todayDateStringIst()) {
       intervalRef.current = setInterval(() => load(true), 30000);
     }
     return () => clearInterval(intervalRef.current);
-  }, [load, effectiveFrom, effectiveTo]);
+  }, [load, effectiveFrom, effectiveTo, isActive]);
 
   const allPeople = data?.people || [];
   const divisionOnlyPeople = data?.divisionOnlyPeople || [];
@@ -3807,9 +4213,10 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
       includeEmpty: tableIncludeEmpty,
     }).map((row) => ({
       ...row,
-      isClickable: Boolean(row.isClickable && peopleReady),
+      // Allow drill as soon as stats (lightweight people) are ready
+      isClickable: Boolean(row.isClickable && (peopleReady || data?._statsOnly || (data?.people?.length > 0))),
     })),
-    [tablePeople, departments, tableIncludeEmpty, peopleReady]
+    [tablePeople, departments, tableIncludeEmpty, peopleReady, data]
   );
 
   const divisionOnlyTableRows = useMemo(
@@ -3821,15 +4228,15 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
       inCount: unit.inCount,
       exitCount: unit.exitCount,
       total: unit.total,
-      isClickable: Boolean(unit.divisionId && unit.total > 0 && peopleReady),
+      isClickable: Boolean(unit.divisionId && unit.total > 0 && (peopleReady || data?._statsOnly || (data?.divisionOnlyPeople?.length > 0))),
     })),
-    [divisionOnlyTablePeople, peopleReady]
+    [divisionOnlyTablePeople, peopleReady, data]
   );
 
   const drilledDepartment = useMemo(() => {
     if (!drillDepartmentId) return null;
-    const people = filtered.filter((p) => p.departmentId === drillDepartmentId);
-    return departmentSummaries.find((row) => row.departmentId === drillDepartmentId)
+    const people = filtered.filter((p) => personMatchesDepartmentScope(p, drillDepartmentId));
+    return departmentSummaries.find((row) => String(row.departmentId) === String(drillDepartmentId))
       || {
         departmentId: drillDepartmentId,
         departmentName: people[0]?.departmentName || selectedDepartmentName || 'Department',
@@ -3841,7 +4248,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
   const drilledUnit = useMemo(() => {
     if (!drillDivisionId) return null;
     const people = filtered.filter(
-      (p) => p.departmentId === drillDepartmentId && p.divisionId === drillDivisionId
+      (p) => personMatchesDeptDivisionScope(p, drillDepartmentId, drillDivisionId)
     );
     return {
       divisionId: drillDivisionId,
@@ -3853,7 +4260,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
 
   const drilledDivisionOnly = useMemo(() => {
     if (!divisionOnlyDrillId) return null;
-    const people = filteredDivisionOnly.filter((p) => p.divisionId === divisionOnlyDrillId);
+    const people = filteredDivisionOnly.filter((p) => personMatchesDivisionScope(p, divisionOnlyDrillId));
     return {
       divisionId: divisionOnlyDrillId,
       divisionName: people[0]?.divisionName || selectedDivisionName || 'Division',
@@ -3865,17 +4272,39 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
   const employeeRows = useMemo(() => {
     if (!drillDepartmentId || !drillDivisionId) return [];
     return sortPeople(filtered.filter(
-      (p) => p.departmentId === drillDepartmentId && p.divisionId === drillDivisionId
+      (p) => personMatchesDeptDivisionScope(p, drillDepartmentId, drillDivisionId)
     ));
   }, [drillDepartmentId, drillDivisionId, filtered, sortPeople]);
 
   const divisionOnlyEmployeeRows = useMemo(() => {
     if (!divisionOnlyDrillId) return [];
-    return sortPeople(filteredDivisionOnly.filter((p) => p.divisionId === divisionOnlyDrillId));
+    return sortPeople(filteredDivisionOnly.filter((p) => personMatchesDivisionScope(p, divisionOnlyDrillId)));
   }, [divisionOnlyDrillId, filteredDivisionOnly, sortPeople]);
+
+  const employeeWindow = useInfiniteWindow(
+    employeeRows,
+    ACTIVITY_PEOPLE_PAGE_SIZE,
+    `dept-emp-${drillDepartmentId}-${drillDivisionId}-${filterStatus}-${search}-${employeeRows.length}`
+  );
+  const divisionOnlyEmployeeWindow = useInfiniteWindow(
+    divisionOnlyEmployeeRows,
+    ACTIVITY_PEOPLE_PAGE_SIZE,
+    `dept-div-${divisionOnlyDrillId}-${filterStatus}-${search}-${divisionOnlyEmployeeRows.length}`
+  );
 
   const isEmployeeDrill = Boolean(drillDepartmentId && drillDivisionId);
   const isDivisionOnlyEmployeeDrill = Boolean(divisionOnlyDrillId);
+
+  // Progressively upgrade person details in the background. Stats stay stable because
+  // the full lightweight roster from statsOnly is merged and never discarded.
+  useEffect(() => {
+    if (!isActive) return undefined;
+    if (!data || data._statsOnly || !data.hasMore || peopleLoading || loadingMore) return undefined;
+    const timer = window.setTimeout(() => {
+      loadMorePeople();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [data?._statsOnly, data?.hasMore, data?.page, peopleLoading, loadingMore, loadMorePeople, isActive]);
 
   const breadcrumbItems = useMemo(() => {
     const items = [{
@@ -3986,14 +4415,19 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
   const isDivisionOnlyTab = listTab === 'divisionOnly';
 
   const handleSelectDepartmentDivision = useCallback((row) => {
+    if (!row?.isClickable) return;
     if (!row.departmentId || !row.divisionId) return;
     setDrillDepartmentId(row.departmentId);
     setDrillDivisionId(row.divisionId);
   }, []);
 
   const handleSelectDivisionOnly = useCallback((row) => {
-    if (!row.divisionId) return;
+    if (!row?.divisionId) return;
     setDivisionOnlyDrillId(row.divisionId);
+  }, []);
+
+  const handleStatFilter = useCallback((nextStatus) => {
+    setFilterStatus(nextStatus === 'entered' ? 'entered' : nextStatus === 'exited' ? 'exited' : nextStatus === 'inside' ? 'inside' : 'all');
   }, []);
 
   const openPerson = (registrationId, personDivisionId) => {
@@ -4190,6 +4624,8 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
         stats={isDivisionOnlyTab ? divisionOnlyStats : hierarchyStats}
         loading={statsLoading && !data}
         scopeLabel={isDivisionOnlyTab ? divisionOnlyStats.scopeLabel : hierarchyStats.scopeLabel}
+        onStatFilter={handleStatFilter}
+        activeStatFilter={filterStatus === 'entered' ? 'entered' : filterStatus === 'exited' ? 'exited' : filterStatus === 'inside' ? 'inside' : 'all'}
       />
 
       {peopleLoading && data?._statsOnly && (
@@ -4204,18 +4640,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
         </div>
       ) : isDivisionOnlyTab ? (
         isDivisionOnlyEmployeeDrill ? (
-          peopleLoading ? (
-            <>
-              <DepartmentActivityNavBar
-                breadcrumbItems={divisionOnlyBreadcrumbItems}
-                onBack={clearDivisionOnlyDrill}
-                backLabel="Back to divisions"
-              />
-              <div className="rc-table-loading">
-                {[...Array(4)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
-              </div>
-            </>
-          ) : divisionOnlyEmployeeRows.length === 0 ? (
+          divisionOnlyEmployeeRows.length === 0 ? (
             <>
               <DepartmentActivityNavBar
                 breadcrumbItems={divisionOnlyBreadcrumbItems}
@@ -4243,12 +4668,17 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
                 Gate entry only (no department check-in)
               </div>
               <DepartmentActivityPeopleList
-                rows={divisionOnlyEmployeeRows}
+                rows={divisionOnlyEmployeeWindow.visibleItems}
                 sort={sort}
                 onSort={handleSort}
                 activityDate={activityDate}
                 isToday={isToday}
                 onViewPerson={openPerson}
+              />
+              <InfiniteScrollSentinel
+                loaderRef={divisionOnlyEmployeeWindow.loaderRef}
+                hasMore={divisionOnlyEmployeeWindow.hasMore}
+                label={`Showing ${divisionOnlyEmployeeWindow.visibleCount} of ${divisionOnlyEmployeeRows.length}`}
               />
             </>
           )
@@ -4275,18 +4705,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
           />
         )
       ) : isEmployeeDrill ? (
-        peopleLoading ? (
-          <>
-            <DepartmentActivityNavBar
-              breadcrumbItems={breadcrumbItems}
-              onBack={clearDepartmentDrill}
-              backLabel="Back to department stats"
-            />
-            <div className="rc-table-loading">
-              {[...Array(4)].map((_, i) => <div key={i} className="rc-skeleton rc-skeleton--row" />)}
-            </div>
-          </>
-        ) : employeeRows.length === 0 ? (
+        employeeRows.length === 0 ? (
           <>
             <DepartmentActivityNavBar
               breadcrumbItems={breadcrumbItems}
@@ -4314,12 +4733,17 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange }) {
               {employeeRows.length} employee{employeeRows.length === 1 ? '' : 's'}
             </div>
             <DepartmentActivityPeopleList
-              rows={employeeRows}
+              rows={employeeWindow.visibleItems}
               sort={sort}
               onSort={handleSort}
               activityDate={activityDate}
               isToday={isToday}
               onViewPerson={openPerson}
+            />
+            <InfiniteScrollSentinel
+              loaderRef={employeeWindow.loaderRef}
+              hasMore={employeeWindow.hasMore}
+              label={`Showing ${employeeWindow.visibleCount} of ${employeeRows.length}`}
             />
           </>
         )
@@ -4941,7 +5365,7 @@ function AttendanceAbstractTable({
 /* ═══════════════════════════════════════════════════════════════
    TAB 2 — ATTENDANCE HISTORY
 ════════════════════════════════════════════════════════════════ */
-function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
+function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
   const [data, setData] = useState(null);
   const [roles, setRoles] = useState([]);
   const [divisions, setDivisions] = useState([]);
@@ -5303,9 +5727,13 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady }) {
   }, [employees, resolveDateRange]);
 
   useEffect(() => {
+    if (!isActive) {
+      onPrintReady?.(null);
+      return undefined;
+    }
     onPrintReady?.(handlePrintPdf);
     return () => onPrintReady?.(null);
-  }, [handlePrintPdf, onPrintReady]);
+  }, [handlePrintPdf, onPrintReady, isActive]);
 
   const busy = loading || recalculating || printing;
 
@@ -6089,7 +6517,17 @@ function ReportsContent() {
   const [registrations, setRegistrations] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [mountedTabs, setMountedTabs] = useState(() => new Set([tab]));
   const tabPrintRef = useRef(null);
+
+  useEffect(() => {
+    setMountedTabs((prev) => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
+  }, [tab]);
 
   const registerTabPrint = useCallback((fn) => {
     tabPrintRef.current = fn;
@@ -6122,9 +6560,6 @@ function ReportsContent() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
-  useEffect(() => {
-    tabPrintRef.current = null;
-  }, [tab]);
 
   const displayDate = dateSelectable ? selectedDate : todayDateStringIst(now);
   const dateStr = parseDateForPdf(displayDate).toLocaleDateString('en-GB', {
@@ -6191,40 +6626,84 @@ function ReportsContent() {
       </div>
 
       <div className="rc-body">
-        {/* ── Tab Content — driven by URL ?tab= param ── */}
-        <div className="rc-tab-content admin-fade-in" key={tab}>
-          {tab === 'today' && (
-            <TodayActivityTab
-              selectedDate={selectedDate}
-              onDateChange={setSelectedDate}
-              onViewPerson={handleViewPerson}
-              onPrintReady={registerTabPrint}
-            />
+        {/* Keep visited tabs mounted so switching does not remount + refetch */}
+        <div className="rc-tab-content">
+          {mountedTabs.has('today') && (
+            <div
+              className={`rc-tab-panel${tab === 'today' ? ' rc-tab-panel--active admin-fade-in' : ''}`}
+              hidden={tab !== 'today'}
+              aria-hidden={tab !== 'today'}
+            >
+              <TodayActivityTab
+                isActive={tab === 'today'}
+                selectedDate={selectedDate}
+                onDateChange={setSelectedDate}
+                onViewPerson={handleViewPerson}
+                onPrintReady={registerTabPrint}
+              />
+            </div>
           )}
-          {tab === 'division' && (
-            <TodayActivityTab
-              divisionRequired
-              selectedDate={selectedDate}
-              onDateChange={setSelectedDate}
-              onViewPerson={handleViewPerson}
-              onPrintReady={registerTabPrint}
-            />
+          {mountedTabs.has('division') && (
+            <div
+              className={`rc-tab-panel${tab === 'division' ? ' rc-tab-panel--active admin-fade-in' : ''}`}
+              hidden={tab !== 'division'}
+              aria-hidden={tab !== 'division'}
+            >
+              <TodayActivityTab
+                isActive={tab === 'division'}
+                divisionRequired
+                selectedDate={selectedDate}
+                onDateChange={setSelectedDate}
+                onViewPerson={handleViewPerson}
+                onPrintReady={registerTabPrint}
+              />
+            </div>
           )}
-          {tab === 'department' && (
-            <DepartmentActivityTab
-              selectedDate={selectedDate}
-              onDateChange={setSelectedDate}
-              onViewPerson={handleViewPerson}
-            />
+          {mountedTabs.has('department') && (
+            <div
+              className={`rc-tab-panel${tab === 'department' ? ' rc-tab-panel--active admin-fade-in' : ''}`}
+              hidden={tab !== 'department'}
+              aria-hidden={tab !== 'department'}
+            >
+              <DepartmentActivityTab
+                isActive={tab === 'department'}
+                selectedDate={selectedDate}
+                onDateChange={setSelectedDate}
+                onViewPerson={handleViewPerson}
+              />
+            </div>
           )}
-          {tab === 'history' && (
-            <AttendanceHistoryTab
-              onViewPerson={setSelectedPerson}
-              onPrintReady={registerTabPrint}
-            />
+          {mountedTabs.has('history') && (
+            <div
+              className={`rc-tab-panel${tab === 'history' ? ' rc-tab-panel--active admin-fade-in' : ''}`}
+              hidden={tab !== 'history'}
+              aria-hidden={tab !== 'history'}
+            >
+              <AttendanceHistoryTab
+                isActive={tab === 'history'}
+                onViewPerson={setSelectedPerson}
+                onPrintReady={registerTabPrint}
+              />
+            </div>
           )}
-          {tab === 'analytics' && <AnalyticsTab gateLogs={gateLogs} registrations={registrations} />}
-          {tab === 'export' && <ExportCenterTab />}
+          {mountedTabs.has('analytics') && (
+            <div
+              className={`rc-tab-panel${tab === 'analytics' ? ' rc-tab-panel--active admin-fade-in' : ''}`}
+              hidden={tab !== 'analytics'}
+              aria-hidden={tab !== 'analytics'}
+            >
+              <AnalyticsTab gateLogs={gateLogs} registrations={registrations} />
+            </div>
+          )}
+          {mountedTabs.has('export') && (
+            <div
+              className={`rc-tab-panel${tab === 'export' ? ' rc-tab-panel--active admin-fade-in' : ''}`}
+              hidden={tab !== 'export'}
+              aria-hidden={tab !== 'export'}
+            >
+              <ExportCenterTab />
+            </div>
+          )}
         </div>
       </div>
 

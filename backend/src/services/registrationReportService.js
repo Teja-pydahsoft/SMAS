@@ -1554,8 +1554,18 @@ export async function getDailyPassByRole({ divisionIds = null, date = null, date
         const divisionId = activePass?.divisionId?._id?.toString() || activePass?.divisionId?.toString() || activePass?.qrPayload?.divisionId || null;
         const divisionName = activePass?.qrPayload?.divisionName || activePass?.divisionId?.name || null;
         const shiftName = activePass?.qrPayload?.shiftName || null;
-        const departmentId = session?.currentDepartmentId || null;
-        const departmentName = session?.currentDepartmentName || null;
+        // Prefer the open department; otherwise last visit so exited people still
+        // appear under the department they checked into (stats drill-down).
+        const visits = Array.isArray(session?.departmentVisits) ? session.departmentVisits : [];
+        const lastVisit = visits.length ? visits[visits.length - 1] : null;
+        const departmentId =
+          session?.currentDepartmentId
+          || lastVisit?.departmentId
+          || null;
+        const departmentName =
+          session?.currentDepartmentName
+          || lastVisit?.departmentName
+          || null;
         const currentDepartmentName = session?.currentDepartmentName || null;
         const hadGateActivity = passes.length > 0;
         const activitySeenToday = sightings.length > 0;
@@ -2289,6 +2299,9 @@ export async function getDepartmentActivity({
   dateFrom = null,
   dateTo = null,
   statsOnly = false,
+  page = null,
+  limit = null,
+  listDivisionId = null,
 } = {}) {
   const today = todayDateString();
   const validDate =
@@ -2298,6 +2311,14 @@ export async function getDepartmentActivity({
   const to =
     typeof dateTo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateTo) ? dateTo : validDate;
   const [rangeFrom, rangeTo] = from <= to ? [from, to] : [to, from];
+
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 0, 0), 200);
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+  const paginate = parsedLimit > 0;
+  const scopeDivisionId =
+    listDivisionId && mongoose.Types.ObjectId.isValid(listDivisionId)
+      ? String(listDivisionId)
+      : null;
 
   const divisionScoped = Array.isArray(divisionIds);
   let effectiveDivisionIds = null;
@@ -2319,6 +2340,12 @@ export async function getDepartmentActivity({
         divisionOnlyCount: 0,
         people: [],
         divisionOnlyPeople: [],
+        page: paginate ? parsedPage : 1,
+        limit: paginate ? parsedLimit : null,
+        total: 0,
+        divisionOnlyTotal: 0,
+        hasMore: false,
+        statsOnly: Boolean(statsOnly),
       };
     }
   }
@@ -2355,6 +2382,9 @@ export async function getDepartmentActivity({
   });
   if (divisionObjIds) deptLogFilter.divisionId = { $in: divisionObjIds };
   if (hasDepartmentFilter) deptLogFilter.departmentId = department._id;
+  if (scopeDivisionId) {
+    deptLogFilter.divisionId = new mongoose.Types.ObjectId(scopeDivisionId);
+  }
 
   const gateLogFilter = grantedGateLogFilter({
     scanType: SCAN_TYPES.GATE,
@@ -2362,6 +2392,9 @@ export async function getDepartmentActivity({
     createdAt: { $gte: dayStart, $lte: dayEnd },
   });
   if (divisionObjIds) gateLogFilter.divisionId = { $in: divisionObjIds };
+  if (scopeDivisionId) {
+    gateLogFilter.divisionId = new mongoose.Types.ObjectId(scopeDivisionId);
+  }
 
   const [deptLogs, gateLogs] = await Promise.all([
     GateLog.find(deptLogFilter)
@@ -2421,6 +2454,12 @@ export async function getDepartmentActivity({
       divisionOnlyCount: 0,
       people: [],
       divisionOnlyPeople: [],
+      page: paginate ? parsedPage : 1,
+      limit: paginate ? parsedLimit : null,
+      total: 0,
+      divisionOnlyTotal: 0,
+      hasMore: false,
+      statsOnly: Boolean(statsOnly),
     };
   }
 
@@ -2469,6 +2508,24 @@ export async function getDepartmentActivity({
     }
   }
 
+  // Counts always come from the full (unpaginated) sets so infinite scroll
+  // never changes KPI / table totals.
+  const enteredCount = people.filter((p) => p.hadEntry).length;
+  const inCount = people.filter((p) => p.currentlyIn).length;
+  const exitCount = people.filter((p) => p.hadExit).length;
+  const peopleTotal = people.length;
+  const divisionOnlyTotal = divisionOnlyPeople.length;
+
+  let pagePeople = people;
+  let pageDivisionOnlyPeople = divisionOnlyPeople;
+  let hasMore = false;
+  if (paginate) {
+    const start = (parsedPage - 1) * parsedLimit;
+    pagePeople = people.slice(start, start + parsedLimit);
+    pageDivisionOnlyPeople = divisionOnlyPeople.slice(start, start + parsedLimit);
+    hasMore = start + parsedLimit < Math.max(peopleTotal, divisionOnlyTotal);
+  }
+
   return {
     date: validDate,
     dateFrom: rangeFrom,
@@ -2476,12 +2533,17 @@ export async function getDepartmentActivity({
     divisionId: effectiveDivisionIds?.length === 1 ? effectiveDivisionIds[0] : null,
     departmentId: hasDepartmentFilter ? String(department._id) : null,
     departmentName: department?.name || null,
-    enteredCount: people.filter((p) => p.hadEntry).length,
-    inCount: people.filter((p) => p.currentlyIn).length,
-    exitCount: people.filter((p) => p.hadExit).length,
-    divisionOnlyCount: divisionOnlyPeople.length,
-    people,
-    divisionOnlyPeople,
+    enteredCount,
+    inCount,
+    exitCount,
+    divisionOnlyCount: divisionOnlyTotal,
+    people: pagePeople,
+    divisionOnlyPeople: pageDivisionOnlyPeople,
+    page: paginate ? parsedPage : 1,
+    limit: paginate ? parsedLimit : null,
+    total: peopleTotal,
+    divisionOnlyTotal,
+    hasMore: paginate ? hasMore : false,
     statsOnly: Boolean(statsOnly),
   };
 }

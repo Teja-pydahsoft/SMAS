@@ -362,6 +362,14 @@
   min-width: 0;
 }
 
+.rc-tab-panel[hidden] {
+  display: none !important;
+}
+
+.rc-tab-panel--active {
+  display: block;
+}
+
 /* ── Filters bar ── */
 .rc-filters-bar {
   display: flex;
@@ -4653,6 +4661,30 @@
 .rc-dept-hierarchy-card:hover {
   box-shadow: var(--shadow-md, 0 4px 12px rgba(15, 23, 42, 0.06));
   transform: translateY(-1px);
+}
+
+.rc-dept-hierarchy-card--clickable {
+  cursor: pointer;
+}
+
+.rc-dept-hierarchy-card--clickable:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.rc-dept-hierarchy-card--active {
+  border-color: var(--color-primary, #2563eb);
+  box-shadow: 0 0 0 1px var(--color-primary, #2563eb);
+}
+
+.rc-infinite-sentinel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.85rem 0.5rem 1.25rem;
+  color: var(--text-muted, #64748b);
+  font-size: 0.8125rem;
 }
 
 .rc-dept-hierarchy-card::before {

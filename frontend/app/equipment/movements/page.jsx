@@ -653,32 +653,30 @@ function MovementsContent() {
                       </div>
                     )
                   ) : (
-                    <div style={{ position: 'relative', height: '100%', minHeight: '400px', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--surface-base)' }}>
-                       <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-                         <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Operator Confirmation</h2>
+                    <div className="vehicle-operator-confirm">
+                       <div className="vehicle-operator-confirm__header">
+                         <h2>Operator Confirmation</h2>
                        </div>
-                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', padding: '1.5rem', flex: 1 }}>
-                           <div>
-                             <div className="text-muted" style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Captured Image</div>
-                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', borderRadius: '8px', overflow: 'hidden', height: '350px', border: '1px solid var(--border-color)' }}>
+                       <div className="vehicle-operator-confirm__body">
+                           <div className="vehicle-operator-confirm__photo-section">
+                             <div className="vehicle-operator-confirm__photo-label">Captured Image</div>
+                             <div className="vehicle-operator-confirm__photo-wrap">
                                 {analysisResult.snapshotUrl ? (
                                   <img 
                                     src={analysisResult.snapshotUrl.startsWith('http') ? resolvePhotoUrl(analysisResult.snapshotUrl) : resolvePhotoUrl(`/uploads/activity/${analysisResult.snapshotUrl}`)} 
-                                    alt="Capture" 
-                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                                    alt="Captured vehicle"
                                   />
                                 ) : analysisResult.vehicle?.metadata?.photos?.front ? (
                                   <img 
                                     src={analysisResult.vehicle.metadata.photos.front.startsWith('http') ? resolvePhotoUrl(analysisResult.vehicle.metadata.photos.front) : resolvePhotoUrl(`/uploads/vehicles/${analysisResult.vehicle.metadata.photos.front}`)} 
-                                    alt="Vehicle Front (Master)" 
-                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                                    alt="Vehicle front reference"
                                   />
                                 ) : (
-                                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No Vehicle Image Available</div>
+                                  <div className="vehicle-operator-confirm__photo-empty">No Vehicle Image Available</div>
                                 )}
                              </div>
                            </div>
-                           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                           <div className="vehicle-operator-confirm__form">
                               
                               {analysisResult.driver && (
                                 <div style={{ display: 'flex', gap: '1rem', padding: '1rem', backgroundColor: 'var(--surface-sunken)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
@@ -726,7 +724,7 @@ function MovementsContent() {
                                }
 
                                return (
-                                 <div style={{ marginTop: 'auto', display: 'flex', gap: '1rem' }}>
+                                 <div className="vehicle-operator-confirm__actions">
                                    <button 
                                      onClick={() => { setAnalysisResult(null); setScanMethod(null); setScanStatus('Waiting for Vehicle'); }}
                                      className="admin-btn admin-btn--secondary"

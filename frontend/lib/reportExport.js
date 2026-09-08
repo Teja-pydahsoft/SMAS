@@ -254,16 +254,47 @@ function splitRangeIntoWeekChunks(dateFrom, dateTo) {
   return chunks;
 }
 
+function isBankFormLabel(label) {
+  return /bank|beneficiary|ifsc|account\s*no|account\s*number|branch/i.test(
+    String(label || '')
+  );
+}
+
+function isDuplicateIdentityLabel(label) {
+  const text = String(label || '').trim().toLowerCase();
+  return text === 'name' || text.includes('aadhar') || text.includes('aadhaar');
+}
+
 function buildPersonDetailRows(reportData, options = {}) {
   const details = reportData?.details || {};
   const { dateFrom = '', dateTo = '' } = options;
+  const formDetails = (Array.isArray(details.details) ? details.details : []).filter(
+    (item) => item?.label && item?.value
+  );
+  const bankFields = formDetails.filter((item) => isBankFormLabel(item.label));
+  const otherFormFields = formDetails.filter(
+    (item) => !isBankFormLabel(item.label) && !isDuplicateIdentityLabel(item.label)
+  );
+
   const rows = [
     ['Name', details.holderName || '—'],
     ['Role', details.roleName || '—'],
     ['Code', details.registrationCode || '—'],
-    ['Gender', details.genderLabel || '—'],
-    ['Registered', formatExportDate(details.registeredAt)],
   ];
+
+  // When bank fields exist, replace Gender + Registered (duplicated / less useful on print).
+  if (!bankFields.length) {
+    rows.push(['Gender', details.genderLabel || '—']);
+    rows.push(['Registered', formatExportDate(details.registeredAt)]);
+  }
+
+  for (const item of otherFormFields) {
+    rows.push([item.label, String(item.value)]);
+  }
+  for (const item of bankFields) {
+    rows.push([item.label, String(item.value)]);
+  }
+
   if (dateFrom && dateTo) {
     rows.push(['Period', `${formatExportDate(dateFrom)} — ${formatExportDate(dateTo)}`]);
   }

@@ -280,8 +280,13 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
 
 /**
  * Attendance History — professional PDF abstract table
- * Columns: #, Person, Role, ID, Phone, Total Days, Present, Absent,
+ * Columns: #, Person, Role / Registration Details, ID, Phone,
+ *          Total Days, Present, Partial, Absent,
  *          Pay Frequency, Pay Amount (per day), Payment Days, Calculated Amount
+ *
+ * The Role column prints the role name plus any filled registration-form
+ * select values (Batch, Labour Type, Work Category, etc.) when present —
+ * matching the form details shown on the attendance history page.
  */
 export async function downloadAttendanceHistoryPdf(employees = [], options = {}) {
   const [{ jsPDF }, autoTableModule] = await Promise.all([
@@ -312,10 +317,36 @@ export async function downloadAttendanceHistoryPdf(employees = [], options = {})
   });
 
   const list = Array.isArray(employees) ? employees : [];
+
+  /** Role column: role name + all filled registration form select details. */
+  function formatRoleCell(emp) {
+    const role = emp?.roleName && emp.roleName !== '—' ? String(emp.roleName) : '';
+    const filled = (emp?.selections || []).filter((s) => s?.label && s?.value);
+    if (!filled.length) return role || '—';
+    const detailLines = filled.map((s) => `${s.label}: ${s.value}`);
+    return role ? `${role}\n${detailLines.join('\n')}` : detailLines.join('\n');
+  }
+
+  const headRow = [
+    '#',
+    'Person',
+    'Role / Registration Details',
+    'ID',
+    'Phone',
+    'Total Days',
+    'Present Days',
+    'Partial Days',
+    'Absent Days',
+    'Pay Frequency',
+    'Pay Amount (per day)',
+    'Payment Days',
+    'Calculated Amount',
+  ];
+
   const body = list.map((emp, idx) => [
     String(idx + 1),
     emp.displayName || 'Unnamed',
-    emp.roleName || '—',
+    formatRoleCell(emp),
     emp.registrationCode || '—',
     emp.displayPhone || '—',
     String(emp.summary?.totalDays ?? '—'),
@@ -330,26 +361,13 @@ export async function downloadAttendanceHistoryPdf(employees = [], options = {})
     emp.payment ? formatPdfCurrency(emp.payment.totalAmount) : '—',
   ]);
 
+  const emptyRow = Array(headRow.length).fill('');
+  emptyRow[0] = 'No attendance history for this period.';
+
   autoTable(doc, {
     startY: headerH + 12,
-    head: [[
-      '#',
-      'Person',
-      'Role',
-      'ID',
-      'Phone',
-      'Total Days',
-      'Present Days',
-      'Partial Days',
-      'Absent Days',
-      'Pay Frequency',
-      'Pay Amount (per day)',
-      'Payment Days',
-      'Calculated Amount',
-    ]],
-    body: body.length
-      ? body
-      : [['No attendance history for this period.', '', '', '', '', '', '', '', '', '', '', '', '']],
+    head: [headRow],
+    body: body.length ? body : [emptyRow],
     theme: 'grid',
     styles: {
       fontSize: 6.5,
@@ -372,20 +390,25 @@ export async function downloadAttendanceHistoryPdf(employees = [], options = {})
     columnStyles: {
       0: { cellWidth: 20, halign: 'center' },
       1: { cellWidth: 70 },
-      2: { cellWidth: 52 },
-      3: { cellWidth: 62 },
-      4: { cellWidth: 58 },
+      2: { cellWidth: 110, overflow: 'linebreak' },
+      3: { cellWidth: 56 },
+      4: { cellWidth: 52 },
       5: { cellWidth: 36, halign: 'right' },
-      6: { cellWidth: 42, halign: 'right' },
-      7: { cellWidth: 36, halign: 'right' },
-      8: { cellWidth: 42, halign: 'right' },
-      9: { cellWidth: 58 },
-      10: { cellWidth: 64, halign: 'right' },
-      11: { cellWidth: 44, halign: 'right' },
-      12: { cellWidth: 68, halign: 'right' },
+      6: { cellWidth: 42,halign: 'right' },
+      7: { cellWidth: 36,halign: 'right' },
+      8: { cellWidth: 42,halign: 'right' },
+      9: { cellWidth: 54 },
+      10: { cellWidth: 58,halign: 'right' },
+      11: { cellWidth: 42,halign: 'right' },
+      12: { cellWidth: 62,halign: 'right' },
     },
     didParseCell(data) {
       if (data.section !== 'body') return;
+      if (data.column.index === 2) {
+        data.cell.styles.overflow = 'linebreak';
+        data.cell.styles.valign = 'top';
+        data.cell.styles.fontSize = 5.5;
+      }
       if (data.column.index === 6 || data.column.index === 7) {
         data.cell.styles.textColor = [22, 163, 74];
         data.cell.styles.fontStyle = 'bold';

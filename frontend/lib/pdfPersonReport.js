@@ -148,16 +148,47 @@ function splitRangeIntoWeekChunks(dateFrom, dateTo) {
   return chunks;
 }
 
+function isBankFormLabel(label) {
+  return /bank|beneficiary|ifsc|account\s*no|account\s*number|branch/i.test(
+    String(label || '')
+  );
+}
+
+function isDuplicateIdentityLabel(label) {
+  const text = String(label || '').trim().toLowerCase();
+  return text === 'name' || text.includes('aadhar') || text.includes('aadhaar');
+}
+
 function buildPersonDetailRows(reportData, options = {}) {
   const details = reportData?.details || {};
   const { dateFrom = '', dateTo = '' } = options;
+  const formDetails = (Array.isArray(details.details) ? details.details : []).filter(
+    (item) => item?.label && item?.value
+  );
+  const bankFields = formDetails.filter((item) => isBankFormLabel(item.label));
+  const otherFormFields = formDetails.filter(
+    (item) => !isBankFormLabel(item.label) && !isDuplicateIdentityLabel(item.label)
+  );
+
   const rows = [
     ['Name', details.holderName || '—'],
     ['Role', details.roleName || '—'],
     ['Code', details.registrationCode || '—'],
-    ['Gender', details.genderLabel || '—'],
-    ['Registered', formatExportDate(details.registeredAt)],
   ];
+
+  // When bank fields exist, replace Gender + Registered (duplicated / less useful on print).
+  if (!bankFields.length) {
+    rows.push(['Gender', details.genderLabel || '—']);
+    rows.push(['Registered', formatExportDate(details.registeredAt)]);
+  }
+
+  for (const item of otherFormFields) {
+    rows.push([item.label, String(item.value)]);
+  }
+  for (const item of bankFields) {
+    rows.push([item.label, String(item.value)]);
+  }
+
   if (dateFrom && dateTo) {
     rows.push(['Period', `${formatExportDate(dateFrom)} — ${formatExportDate(dateTo)}`]);
   }
@@ -327,9 +358,23 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
 
   const sectionTitleH = 18;
   const topFont = 9.5;
-  const labelW = 120;
 
-  // DETAILS — full width, top 25%; photo 35% width / data 65% width, same height
+  function toTwoColumnBody(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const mid = Math.ceil(list.length / 2);
+    const left = list.slice(0, mid);
+    const right = list.slice(mid);
+    const paired = [];
+    const n = Math.max(left.length, right.length);
+    for (let i = 0; i < n; i += 1) {
+      const L = left[i] || ['', ''];
+      const R = right[i] || ['', ''];
+      paired.push([L[0] || '', L[1] || '', R[0] || '', R[1] || '']);
+    }
+    return paired;
+  }
+
+  // DETAILS — photo left; registration/bank fields in two columns on the right
   let y = detailsBandY;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
@@ -340,15 +385,17 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
 
   const detailsBodyH = Math.max(60, detailsBandY + detailsBandH - y - 4);
   const photoGap = 8;
-  const photoW = contentWidth * 0.35;
+  const photoW = contentWidth * 0.28;
   const photoH = detailsBodyH;
   const detailsTableLeft = margin + photoW + photoGap;
   const detailsTableWidth = contentWidth - photoW - photoGap;
+  const detailTwoColBody = toTwoColumnBody(detailRows);
+  const detailLabelW = Math.min(78, detailsTableWidth * 0.2);
+  const detailValueW = (detailsTableWidth - detailLabelW * 2) / 2;
 
   if (photo?.dataUrl) {
     try {
       const imageData = photo.dataUrl.includes(',') ? photo.dataUrl.split(',')[1] : photo.dataUrl;
-      // Fill the 35% × full details-band box (cover-style via stretch)
       doc.addImage(imageData, 'JPEG', margin, y, photoW, photoH);
     } catch {
       /* ignore bad photo */
@@ -365,23 +412,23 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
     doc.setTextColor(0, 0, 0);
   }
 
-  // Match table height to photo / details band
   const detailRowH = Math.max(
-    14,
-    Math.floor(detailsBodyH / Math.max(detailRows.length, 1))
+    12,
+    Math.floor(detailsBodyH / Math.max(detailTwoColBody.length, 1))
   );
-  const detailPad = Math.max(2, Math.floor((detailRowH - topFont) / 2));
+  const detailFont = detailTwoColBody.length > 6 ? 7.5 : 8.5;
+  const detailPad = Math.max(1, Math.floor((detailRowH - detailFont) / 2));
 
   autoTable(doc, {
     startY: y,
     head: false,
-    body: detailRows,
+    body: detailTwoColBody,
     theme: 'plain',
-    pageBreak: 'auto',
+    pageBreak: 'avoid',
     styles: {
-      fontSize: topFont,
+      fontSize: detailFont,
       minCellHeight: detailRowH,
-      cellPadding: { top: detailPad, bottom: detailPad, left: 6, right: 6 },
+      cellPadding: { top: detailPad, bottom: detailPad, left: 4, right: 4 },
       lineColor: [226, 232, 240],
       lineWidth: 0.3,
       overflow: 'ellipsize',
@@ -389,12 +436,34 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
     },
     columnStyles: {
       0: {
-        cellWidth: labelW,
+        cellWidth: detailLabelW,
         fontStyle: 'bold',
         textColor: [71, 85, 105],
         fillColor: [248, 250, 252],
       },
-      1: { cellWidth: detailsTableWidth - labelW, textColor: [15, 23, 42] },
+      1: {
+        cellWidth: detailValueW,
+        textColor: [15, 23, 42],
+      },
+      2: {
+        cellWidth: detailLabelW,
+        fontStyle: 'bold',
+        textColor: [71, 85, 105],
+        fillColor: [248, 250, 252],
+      },
+      3: {
+        cellWidth: detailValueW,
+        textColor: [15, 23, 42],
+      },
+    },
+    didParseCell(data) {
+      if (data.section !== 'body') return;
+      // Hide empty trailing pair cells when odd number of fields
+      if (!data.cell.raw) {
+        data.cell.styles.fillColor = [255, 255, 255];
+        data.cell.styles.lineWidth = 0;
+        data.cell.styles.textColor = [255, 255, 255];
+      }
     },
     margin: {
       left: detailsTableLeft,
@@ -404,7 +473,7 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
     tableWidth: detailsTableWidth,
   });
 
-  // PAY DETAILS — full width, below details (next 25%)
+  // PAY DETAILS — two columns (label/value | label/value)
   doc.setPage(1);
   y = payBandY;
   doc.setDrawColor(226, 232, 240);
@@ -419,17 +488,19 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
   doc.setTextColor(0, 0, 0);
   y += sectionTitleH;
 
+  const payTwoColBody = toTwoColumnBody(payRows);
   const payBodyH = payBandY + payBandH - y - 4;
-  const payRowH = Math.max(14, Math.min(28, Math.floor(payBodyH / Math.max(payRows.length, 1))));
+  const payRowH = Math.max(14, Math.min(28, Math.floor(payBodyH / Math.max(payTwoColBody.length, 1))));
   const payPad = Math.max(2, Math.floor((payRowH - topFont) / 2));
-  const payLabelW = 140;
+  const payLabelW = Math.min(110, contentWidth * 0.18);
+  const payValueW = (contentWidth - payLabelW * 2) / 2;
 
   autoTable(doc, {
     startY: y,
     head: false,
-    body: payRows,
+    body: payTwoColBody,
     theme: 'plain',
-    pageBreak: 'auto',
+    pageBreak: 'avoid',
     styles: {
       fontSize: topFont,
       minCellHeight: payRowH,
@@ -447,10 +518,29 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
         fillColor: [240, 253, 250],
       },
       1: {
-        cellWidth: contentWidth - payLabelW,
+        cellWidth: payValueW,
         textColor: [15, 23, 42],
         halign: 'left',
       },
+      2: {
+        cellWidth: payLabelW,
+        fontStyle: 'bold',
+        textColor: [15, 118, 110],
+        fillColor: [240, 253, 250],
+      },
+      3: {
+        cellWidth: payValueW,
+        textColor: [15, 23, 42],
+        halign: 'left',
+      },
+    },
+    didParseCell(data) {
+      if (data.section !== 'body') return;
+      if (!data.cell.raw) {
+        data.cell.styles.fillColor = [255, 255, 255];
+        data.cell.styles.lineWidth = 0;
+        data.cell.styles.textColor = [255, 255, 255];
+      }
     },
     margin: { left: margin, right: margin, bottom: footerReserve },
     tableWidth: contentWidth,

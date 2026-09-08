@@ -873,10 +873,13 @@
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: var(--z-modal);
   padding: 1.5rem;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   animation: overlay-in 0.15s ease;
 }
 
@@ -887,7 +890,11 @@
   box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
-  max-height: 90vh;
+  /* Leave room for overlay padding so footer buttons are never clipped */
+  max-height: calc(100dvh - 3rem);
+  max-height: calc(100vh - 3rem);
+  margin-top: auto;
+  margin-bottom: auto;
   overflow: hidden;
   animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   width: 100%;
@@ -976,6 +983,7 @@
 
 .rc-dialog__footer {
   padding: 1rem 1.5rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
@@ -987,6 +995,20 @@
   position: relative;
   z-index: 3;
   box-shadow: 0 -6px 16px rgba(15, 23, 42, 0.06);
+}
+
+.rc-dialog--person .rc-dialog__footer,
+.rc-dialog--person-wide .rc-dialog__footer {
+  gap: 0.5rem;
+  row-gap: 0.55rem;
+}
+
+.rc-dialog--person .rc-dialog__footer .rc-download-btn,
+.rc-dialog--person-wide .rc-dialog__footer .rc-download-btn,
+.rc-dialog--person .rc-dialog__footer > button,
+.rc-dialog--person-wide .rc-dialog__footer > button {
+  flex: 0 1 auto;
+  min-height: 40px;
 }
 
 .rc-dialog__sub-nav {
@@ -3686,7 +3708,8 @@
     max-width: 100% !important;
     width: 100% !important;
     min-height: 300px !important;
-    max-height: calc(100vh - 1.5rem) !important;
+    max-height: calc(100dvh - 1.5rem - env(safe-area-inset-bottom, 0px)) !important;
+    max-height: calc(100vh - 1.5rem - env(safe-area-inset-bottom, 0px)) !important;
     margin: auto !important;
     animation: none !important;
     opacity: 1 !important;
@@ -3721,6 +3744,11 @@
 
   .rc-dialog--person .rc-dialog__footer,
   .rc-dialog--person-wide .rc-dialog__footer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    padding: 0.875rem 1rem;
+    padding-bottom: max(0.875rem, env(safe-area-inset-bottom, 0px));
     box-shadow: 0 -8px 20px rgba(15, 23, 42, 0.08);
   }
 
@@ -3770,6 +3798,7 @@
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
     padding: 0.875rem 1rem;
+    padding-bottom: max(0.875rem, env(safe-area-inset-bottom, 0px));
   }
 
   .rc-dialog--person .rc-dialog__footer button,

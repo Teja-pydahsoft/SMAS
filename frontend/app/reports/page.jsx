@@ -1625,7 +1625,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
               </div>
 
               {/* Inner tabs */}
-              <div className="sub-nav rc-dialog__sub-nav" style={{ marginBottom: '1rem' }}>
+              <div className="sub-nav rc-dialog__sub-nav">
                 {innerTabs.map(t => (
                   <button key={t.id} type="button"
                     className={`sub-nav-item ${activeInnerTab === t.id ? 'active' : ''}`}
@@ -1814,7 +1814,7 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
           </p>
         )}
 
-        <div className="rc-dialog__footer">
+        <div className="rc-dialog__footer rc-dialog__footer--person-actions">
           {!loading && !error && data && (
             <>
               {canShowDayPass && (
@@ -1845,40 +1845,40 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                 <DownloadIcon />
                 <span>{exporting === 'excel' ? 'Exporting…' : 'Download Excel'}</span>
               </button>
+              <button
+                type="button"
+                className="btn-secondary rc-download-btn"
+                onClick={handleExportPdf}
+                disabled={Boolean(exporting)}
+              >
+                <DownloadIcon />
+                <span>{exporting === 'pdf' ? 'Exporting…' : 'Download PDF'}</span>
+              </button>
+              {canManagePayroll && hasDateRange && (
                 <button
                   type="button"
-                  className="btn-secondary rc-download-btn"
-                  onClick={handleExportPdf}
-                  disabled={Boolean(exporting)}
+                  className="btn-enterprise-primary rc-download-btn"
+                  onClick={handleGeneratePaySlip}
+                  disabled={generatingPaySlip || paySlipStatusLoading || paySlipAlreadyGenerated}
                 >
-                  <DownloadIcon />
-                  <span>{exporting === 'pdf' ? 'Exporting…' : 'Download PDF'}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <rect x="2" y="5" width="20" height="14" rx="2" />
+                    <line x1="2" y1="10" x2="22" y2="10" />
+                  </svg>
+                  <span>
+                    {generatingPaySlip
+                      ? 'Generating…'
+                      : paySlipStatusLoading
+                        ? 'Checking Pay Slip…'
+                        : paySlipAlreadyGenerated
+                          ? 'Pay Slip Generated'
+                          : paySlipPartiallyLocked
+                            ? 'Generate Remaining Days'
+                            : 'Generate Pay Slip'}
+                  </span>
                 </button>
-                {canManagePayroll && hasDateRange && (
-                  <button
-                    type="button"
-                    className="btn-enterprise-primary rc-download-btn"
-                    onClick={handleGeneratePaySlip}
-                    disabled={generatingPaySlip || paySlipStatusLoading || paySlipAlreadyGenerated}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <rect x="2" y="5" width="20" height="14" rx="2" />
-                      <line x1="2" y1="10" x2="22" y2="10" />
-                    </svg>
-                    <span>
-                      {generatingPaySlip
-                        ? 'Generating…'
-                        : paySlipStatusLoading
-                          ? 'Checking Pay Slip…'
-                          : paySlipAlreadyGenerated
-                            ? 'Pay Slip Generated'
-                            : paySlipPartiallyLocked
-                              ? 'Generate Remaining Days'
-                              : 'Generate Pay Slip'}
-                    </span>
-                  </button>
-                )}
-              </>
+              )}
+            </>
           )}
           <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
         </div>

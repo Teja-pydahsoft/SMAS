@@ -81,6 +81,62 @@ function formatShortDate(value) {
   });
 }
 
+const PDF_IST = 'Asia/Kolkata';
+
+function istDateOfPdf(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: PDF_IST,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+function formatPdfTime(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-US', {
+    timeZone: PDF_IST,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+/** Time on work date; append calendar date when overnight spill happens. */
+function formatPdfTimeOnWorkDate(value, workDate = '') {
+  if (!value) return '—';
+  const time = formatPdfTime(value);
+  if (time === '—') return '—';
+  const eventDate = istDateOfPdf(value);
+  if (workDate && eventDate && eventDate !== workDate) {
+    return `${time} (${formatExportDate(value)})`;
+  }
+  return time;
+}
+
+/** Always show time with calendar date — used for Gate In. */
+function formatPdfTimeWithDate(value) {
+  if (!value) return '—';
+  const time = formatPdfTime(value);
+  if (time === '—') return '—';
+  return `${time} (${formatExportDate(value)})`;
+}
+
+function formatPdfHours(hours) {
+  if (hours == null || Number(hours) <= 0) return '—';
+  const totalMinutes = Math.round(Number(hours) * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 function dayStatusLabel(day) {
   if (!day || day.status === 'blank') return 'Not Registered';
   if (day.status === 'P') return 'Present';
@@ -108,11 +164,42 @@ function dayAmount(day, rate) {
   return formatPdfAmount((Number(rate) || 0) * factor);
 }
 
+function dayGateInLabel(day) {
+  if (!day || day.status === 'blank') return '—';
+  return formatPdfTimeWithDate(day.checkIn);
+}
+
+function dayLastActivityLabel(day) {
+  if (!day || day.status === 'blank') return '—';
+  const lastAt = formatPdfTimeOnWorkDate(day.lastActivityAt, day.date);
+  if (lastAt === '—') return '—';
+  const typeLabel =
+    day.lastActivityType === 'exit'
+      ? 'Gate Out'
+      : day.lastActivityType === 'entry'
+        ? 'Gate In'
+        : '';
+  return typeLabel ? `${lastAt} · ${typeLabel}` : lastAt;
+}
+
+function dayHoursLabel(day) {
+  if (!day || day.status === 'blank') return '—';
+  return formatPdfHours(day.activityHours);
+}
+
+/** Columns: Date | Status | Gate In | Last Activity | Hours | Amount */
 function buildAttendanceBodyRow(date, day, rate) {
   if (!day || day.status === 'blank') {
-    return [formatShortDate(date), 'Not Registered', '—'];
+    return [formatShortDate(date), 'Not Registered', '—', '—', '—', '—'];
   }
-  return [formatShortDate(date), dayStatusLabel(day), dayAmount(day, rate)];
+  return [
+    formatShortDate(date),
+    dayStatusLabel(day),
+    dayGateInLabel(day),
+    dayLastActivityLabel(day),
+    dayHoursLabel(day),
+    dayAmount(day, rate),
+  ];
 }
 
 function splitRangeIntoWeekChunks(dateFrom, dateTo) {
@@ -238,7 +325,7 @@ function buildAttendanceWeekTables(reportData, { dateFrom = '', dateTo = '' } = 
 
   const maxRows = Math.max(0, ...weeks.map((week) => week.body.length));
   for (const week of weeks) {
-    while (week.body.length < maxRows) week.body.push(['', '', '']);
+    while (week.body.length < maxRows) week.body.push(['', '', '', '', '', '']);
   }
 
   return {
@@ -280,7 +367,7 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
   function styleAttendanceCell(data) {
     if (data.section !== 'body') return;
     const row = data.row.raw || [];
-    if (!row[0] && !row[1] && !row[2]) {
+    if (!row[0] && !row[1] && !row[2] && !row[3] && !row[4] && !row[5]) {
       data.cell.styles.fillColor = [255, 255, 255];
       data.cell.styles.textColor = [255, 255, 255];
       data.cell.styles.lineWidth = 0;
@@ -312,25 +399,44 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
       data.cell.styles.textColor = [220, 38, 38];
       data.cell.styles.fontStyle = 'bold';
     }
+    if (data.column.index === 2 && data.cell.raw && data.cell.raw !== '—') {
+      data.cell.styles.textColor = [22, 163, 74];
+      data.cell.styles.fontStyle = 'bold';
+    }
+    if (data.column.index === 3 && String(data.cell.raw || '').includes('Gate Out')) {
+      data.cell.styles.textColor = [220, 38, 38];
+    }
   }
 
   function compactWeekBody(body) {
     return body.map((row) => {
       if (!row[0] && !row[1]) return row;
-      if (row[1] === 'Not Registered') return [row[0], 'Not Reg.', row[2]];
-      const label = String(row[1] || '');
-      if (
-        label === 'Half Day' ||
-        label === 'Partial Day' ||
-        label === 'First Half' ||
-        label === 'Second Half' ||
-        label.startsWith('First Half') ||
-        label.startsWith('Second Half') ||
-        label.startsWith('Hours Worked')
+      const status = String(row[1] || '');
+      let compactStatus = status;
+      if (status === 'Not Registered') compactStatus = 'Not Reg.';
+      else if (
+        status === 'Half Day' ||
+        status === 'Partial Day' ||
+        status === 'First Half' ||
+        status === 'Second Half' ||
+        status.startsWith('First Half') ||
+        status.startsWith('Second Half') ||
+        status.startsWith('Hours Worked')
       ) {
-        return [row[0], label.startsWith('Second') ? '2nd' : label.startsWith('First') ? '1st' : 'Partial', row[2]];
+        compactStatus = status.startsWith('Second')
+          ? '2nd'
+          : status.startsWith('First')
+            ? '1st'
+            : 'Partial';
       }
-      return row;
+      return [
+        row[0],
+        compactStatus,
+        row[2] || '—',
+        row[3] || '—',
+        row[4] || '—',
+        row[5] || '—',
+      ];
     });
   }
 
@@ -546,7 +652,7 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
     tableWidth: contentWidth,
   });
 
-  // ATTENDANCE — bottom 50%
+  // ATTENDANCE — bottom 50%: Date | Status | Gate In | Last Activity | Hours | Amount
   doc.setPage(1);
   let ay = attendBandY;
   doc.setDrawColor(226, 232, 240);
@@ -572,6 +678,17 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
     return Math.max(10, Math.floor((attendTableH - headH - 12) / n));
   };
 
+  const headCell = (content, fontSize, minH = 14) => ({
+    content,
+    styles: {
+      fillColor: [37, 99, 235],
+      textColor: 255,
+      fontSize,
+      fontStyle: 'bold',
+      minCellHeight: minH,
+    },
+  });
+
   if (!attendance.weeks.length) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
@@ -580,12 +697,14 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
   } else if (attendance.mode === 'single') {
     const week = attendance.weeks[0];
     const bodyRows = compactWeekBody(
-      week.body.filter((row) => Boolean(row[0] || row[1] || row[2]))
+      week.body.filter((row) =>
+        Boolean(row[0] || row[1] || row[2] || row[3] || row[4] || row[5])
+      )
     );
     const headH = 16 + 14;
     const rowH = fitRows(bodyRows.length, headH);
-    const fontSize = rowH >= 20 ? 9 : 8;
-    const headFontSize = Math.max(fontSize, 9);
+    const fontSize = rowH >= 20 ? 7.5 : 6.5;
+    const headFontSize = Math.max(fontSize, 7.5);
     const padV = Math.max(1, Math.min(5, Math.floor((rowH - fontSize) / 2)));
 
     autoTable(doc, {
@@ -595,7 +714,7 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
         [
           {
             content: `${week.label}  ·  ${week.rangeLabel}`,
-            colSpan: 3,
+            colSpan: 6,
             styles: {
               fillColor: BRAND,
               textColor: 255,
@@ -607,55 +726,34 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
           },
         ],
         [
-          {
-            content: 'Date',
-            styles: {
-              fillColor: [37, 99, 235],
-              textColor: 255,
-              fontSize: headFontSize,
-              fontStyle: 'bold',
-              minCellHeight: 14,
-            },
-          },
-          {
-            content: 'Status',
-            styles: {
-              fillColor: [37, 99, 235],
-              textColor: 255,
-              fontSize: headFontSize,
-              fontStyle: 'bold',
-              minCellHeight: 14,
-            },
-          },
-          {
-            content: 'Amount (Rs)',
-            styles: {
-              fillColor: [37, 99, 235],
-              textColor: 255,
-              fontSize: headFontSize,
-              fontStyle: 'bold',
-              minCellHeight: 14,
-            },
-          },
+          headCell('Date', headFontSize),
+          headCell('Status', headFontSize),
+          headCell('Gate In', headFontSize),
+          headCell('Last Activity', headFontSize),
+          headCell('Hours', headFontSize),
+          headCell('Amount (Rs)', headFontSize),
         ],
       ],
       body: bodyRows,
       styles: {
         fontSize,
         minCellHeight: rowH,
-        cellPadding: { top: padV, bottom: padV, left: 4, right: 4 },
+        cellPadding: { top: padV, bottom: padV, left: 2.5, right: 2.5 },
         overflow: 'ellipsize',
         lineColor: [226, 232, 240],
         lineWidth: 0.3,
         valign: 'middle',
       },
       columnStyles: {
-        0: { cellWidth: contentWidth * 0.28 },
-        1: { cellWidth: contentWidth * 0.4 },
-        2: {
-          cellWidth: contentWidth * 0.32,
+        0: { cellWidth: contentWidth * 0.12 },
+        1: { cellWidth: contentWidth * 0.12 },
+        2: { cellWidth: contentWidth * 0.22 },
+        3: { cellWidth: contentWidth * 0.28 },
+        4: { cellWidth: contentWidth * 0.12, halign: 'right' },
+        5: {
+          cellWidth: contentWidth * 0.14,
           halign: 'right',
-          cellPadding: { top: padV, bottom: padV, left: 4, right: 6 },
+          cellPadding: { top: padV, bottom: padV, left: 2.5, right: 4 },
         },
       },
       didParseCell: styleAttendanceCell,
@@ -663,37 +761,39 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
       tableWidth: contentWidth,
     });
   } else {
-    const perRow = Math.min(4, attendance.weeks.length);
-    const tableWidth = (contentWidth - gap * (perRow - 1)) / perRow;
+    // Multi-week: stack full-width week tables so timings stay readable
     const bodyRowCount = Math.max(...attendance.weeks.map((w) => w.body.length), 1);
-    const headH = 14 + 11 + 11;
-    const rowH = fitRows(bodyRowCount, headH);
-    const fontSize = rowH >= 20 ? 8 : rowH >= 13 ? 7 : 6.5;
-    const headColFont = Math.max(fontSize, 7.5);
-    const padV = Math.max(0.5, Math.min(3, Math.floor((rowH - fontSize) / 2)));
+    const weeksToShow = attendance.weeks;
+    const perWeekBudget = Math.floor(attendTableH / Math.max(weeksToShow.length, 1));
+    let weekY = ay;
 
-    const weekStartY = ay;
-    attendance.weeks.slice(0, perRow).forEach((week, index) => {
-      const left = margin + index * (tableWidth + gap);
-      const body = compactWeekBody(week.body);
-      const colDate = tableWidth * 0.28;
-      const colStatus = tableWidth * 0.38;
-      const colAmount = tableWidth - colDate - colStatus;
+    weeksToShow.forEach((week) => {
+      const body = compactWeekBody(week.body).filter((row) =>
+        Boolean(row[0] || row[1] || row[2] || row[3] || row[4] || row[5])
+      );
+      const headH = 14 + 12;
+      const rowH = Math.max(
+        10,
+        Math.floor((perWeekBudget - headH - 8) / Math.max(bodyRowCount, 1))
+      );
+      const fontSize = rowH >= 16 ? 7 : 6;
+      const headColFont = Math.max(fontSize, 6.5);
+      const padV = Math.max(0.5, Math.min(3, Math.floor((rowH - fontSize) / 2)));
 
       doc.setPage(1);
       autoTable(doc, {
-        startY: weekStartY,
+        startY: weekY,
         pageBreak: 'auto',
         rowPageBreak: 'auto',
         head: [
           [
             {
-              content: week.label,
-              colSpan: 3,
+              content: `${week.label}  ·  ${week.rangeLabel}`,
+              colSpan: 6,
               styles: {
                 fillColor: BRAND,
                 textColor: 255,
-                halign: 'center',
+                halign: 'left',
                 fontStyle: 'bold',
                 fontSize: 9,
                 cellPadding: 2.5,
@@ -702,51 +802,12 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
             },
           ],
           [
-            {
-              content: week.rangeLabel,
-              colSpan: 3,
-              styles: {
-                fillColor: [239, 246, 255],
-                textColor: [30, 64, 175],
-                halign: 'center',
-                fontStyle: 'bold',
-                fontSize: 7,
-                cellPadding: 2,
-                minCellHeight: 11,
-              },
-            },
-          ],
-          [
-            {
-              content: 'Date',
-              styles: {
-                fillColor: [37, 99, 235],
-                textColor: 255,
-                fontSize: headColFont,
-                fontStyle: 'bold',
-                minCellHeight: 11,
-              },
-            },
-            {
-              content: 'Status',
-              styles: {
-                fillColor: [37, 99, 235],
-                textColor: 255,
-                fontSize: headColFont,
-                fontStyle: 'bold',
-                minCellHeight: 11,
-              },
-            },
-            {
-              content: 'Amt',
-              styles: {
-                fillColor: [37, 99, 235],
-                textColor: 255,
-                fontSize: headColFont,
-                fontStyle: 'bold',
-                minCellHeight: 11,
-              },
-            },
+            headCell('Date', headColFont, 11),
+            headCell('Status', headColFont, 11),
+            headCell('Gate In', headColFont, 11),
+            headCell('Last Activity', headColFont, 11),
+            headCell('Hours', headColFont, 11),
+            headCell('Amt', headColFont, 11),
           ],
         ],
         body,
@@ -760,22 +821,26 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
           valign: 'middle',
         },
         columnStyles: {
-          0: { cellWidth: colDate, halign: 'left' },
-          1: { cellWidth: colStatus, halign: 'left' },
-          2: {
-            cellWidth: colAmount,
+          0: { cellWidth: contentWidth * 0.12 },
+          1: { cellWidth: contentWidth * 0.12 },
+          2: { cellWidth: contentWidth * 0.22 },
+          3: { cellWidth: contentWidth * 0.28 },
+          4: { cellWidth: contentWidth * 0.12, halign: 'right' },
+          5: {
+            cellWidth: contentWidth * 0.14,
             halign: 'right',
-            cellPadding: { top: padV, bottom: padV, left: 2, right: 5 },
+            cellPadding: { top: padV, bottom: padV, left: 2, right: 4 },
           },
         },
         didParseCell: styleAttendanceCell,
         margin: {
-          left,
-          right: pageWidth - (left + tableWidth),
+          left: margin,
+          right: margin,
           bottom: attendBottomMargin,
         },
-        tableWidth,
+        tableWidth: contentWidth,
       });
+      weekY = (doc.lastAutoTable?.finalY || weekY) + 8;
     });
   }
 

@@ -6,8 +6,14 @@ import GateSecurityReview from '@/components/GateSecurityReview';
 import ActiveActivityAlert from '@/components/ActiveActivityAlert';
 import { RequiredStepsList } from '@/components/AccessRulesPanel';
 
-function SessionStatus({ sessionState }) {
-  if (!sessionState) return null;
+function isJattuRegistration(registration) {
+  const slug = String(registration?.roleId?.slug || '').toLowerCase();
+  const name = String(registration?.roleId?.name || '').toLowerCase();
+  return slug === 'jattu' || name === 'jattu' || name.includes('jattu');
+}
+
+function SessionStatus({ sessionState, hideDepartmentActivity = false }) {
+  if (!sessionState || hideDepartmentActivity) return null;
 
   const visits = [...(sessionState.departmentVisits || [])].sort((a, b) => {
     const aTime = new Date(a.exitAt || a.entryAt || 0).getTime();
@@ -64,6 +70,7 @@ export default function GateScanDetailsPanel({
 }) {
   const hasScanResult = showSuccess || showDenied || showSecurityReview;
   const activeSession = sessionState || result?.sessionState;
+  const hideDepartmentActivity = isJattuRegistration(result?.registration);
   const activeDepartment =
     result?.activeDepartment ||
     (activeSession?.currentDepartmentId
@@ -126,7 +133,7 @@ export default function GateScanDetailsPanel({
                   : 'Applied automatically from person status'}
               </p>
             )}
-            {result.forcedDepartmentCheckout && (
+            {result.forcedDepartmentCheckout && !hideDepartmentActivity && (
               <p className="field-hint">
                 Forced check-out of{' '}
                 <strong>
@@ -159,9 +166,10 @@ export default function GateScanDetailsPanel({
                 activeDepartment={result.activeDepartment}
                 activeDivision={result.activeDivision}
                 hasGateEntry={result.hasGateEntry ?? activeSession?.divisionInside}
+                hideDepartmentActivity={hideDepartmentActivity}
               />
             )}
-            <SessionStatus sessionState={activeSession} />
+            <SessionStatus sessionState={activeSession} hideDepartmentActivity={hideDepartmentActivity} />
           </div>
         )}
 
@@ -184,9 +192,10 @@ export default function GateScanDetailsPanel({
               activeDivision={result?.activeDivision}
               sessionState={activeSession}
               scanType={scanType}
-              canForceCheckout={Boolean(result?.canForceCheckout)}
+              canForceCheckout={Boolean(result?.canForceCheckout) && !hideDepartmentActivity}
               onForceCheckout={onForceCheckout}
               forceCheckoutLoading={forceCheckoutLoading}
+              hideDepartmentActivity={hideDepartmentActivity}
             />
 
             <GateMatchedPerson
@@ -196,8 +205,9 @@ export default function GateScanDetailsPanel({
               activeDepartment={activeDepartment}
               activeDivision={result.activeDivision}
               hasGateEntry={result.hasGateEntry ?? activeSession?.divisionInside}
+              hideDepartmentActivity={hideDepartmentActivity}
             />
-            <SessionStatus sessionState={activeSession} />
+            <SessionStatus sessionState={activeSession} hideDepartmentActivity={hideDepartmentActivity} />
             <RequiredStepsList steps={result.requiredSteps} />
           </div>
         )}

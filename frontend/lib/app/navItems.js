@@ -47,6 +47,7 @@ export const APP_NAV_ITEMS = [
       { path: '/registrations?roleSlug=jattu', label: 'Registrations', icon: 'registrations', module: 'registrations' },
       { path: '/jattu/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate' },
       { path: '/jattu/activity', label: 'Activity', icon: 'cameras', module: 'activity' },
+      { path: '/jattu/attendance-history', label: 'Attendance History', icon: 'reports', module: 'reports' },
     ],
   },
   {

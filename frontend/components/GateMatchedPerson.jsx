@@ -9,6 +9,12 @@ export function formatVisitTime(value) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+function isJattuRegistration(registration) {
+  const slug = String(registration?.roleId?.slug || '').toLowerCase();
+  const name = String(registration?.roleId?.name || '').toLowerCase();
+  return slug === 'jattu' || name === 'jattu' || name.includes('jattu');
+}
+
 export default function GateMatchedPerson({
   registration,
   matchScore,
@@ -16,17 +22,20 @@ export default function GateMatchedPerson({
   activeDepartment,
   activeDivision,
   hasGateEntry,
+  hideDepartmentActivity = false,
 }) {
   if (!registration) return null;
 
   const photoUrl = resolvePhotoUrl(registration.photoUrl || registration.photoPath);
   const departmentName =
     activeDepartment?.departmentName || sessionState?.currentDepartmentName || null;
+  const hideDepartment = hideDepartmentActivity || isJattuRegistration(registration);
 
   return (
     <div className="gate-matched-person">
       <div className="gate-matched-person__header">
         {photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={photoUrl}
             alt=""
@@ -75,14 +84,16 @@ export default function GateMatchedPerson({
             Active division: <strong>{activeDivision.divisionName}</strong>
           </p>
         )}
-        {departmentName ? (
-          <p className="gate-matched-person__active-dept">
-            Department status: <strong>Checked in — {departmentName}</strong>
-          </p>
-        ) : (
-          <p>
-            Department status: <strong>Not checked in</strong>
-          </p>
+        {!hideDepartment && (
+          departmentName ? (
+            <p className="gate-matched-person__active-dept">
+              Department status: <strong>Checked in — {departmentName}</strong>
+            </p>
+          ) : (
+            <p>
+              Department status: <strong>Not checked in</strong>
+            </p>
+          )
         )}
       </div>
 

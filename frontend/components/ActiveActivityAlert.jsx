@@ -14,6 +14,7 @@ export default function ActiveActivityAlert({
   canForceCheckout = false,
   onForceCheckout,
   forceCheckoutLoading = false,
+  hideDepartmentActivity = false,
 }) {
   const deptName =
     activeDepartment?.departmentName ||
@@ -59,6 +60,7 @@ export default function ActiveActivityAlert({
 
   const showForce =
     canForceCheckout &&
+    !hideDepartmentActivity &&
     reason === 'department_still_active' &&
     typeof onForceCheckout === 'function';
 
@@ -72,13 +74,18 @@ export default function ActiveActivityAlert({
           <strong>{inside ? 'Inside' : 'Outside'}</strong>
           {divisionName ? ` (${divisionName})` : ''}
         </li>
-        <li>
-          Active department:{' '}
-          <strong className={deptName ? 'text-danger' : undefined}>
-            {deptName || 'None'}
-          </strong>
-        </li>
-        {scanType === 'department' && deptName && reason === 'active_in_other_department' && (
+        {!hideDepartmentActivity && (
+          <li>
+            Active department:{' '}
+            <strong className={deptName ? 'text-danger' : undefined}>
+              {deptName || 'None'}
+            </strong>
+          </li>
+        )}
+        {!hideDepartmentActivity &&
+          scanType === 'department' &&
+          deptName &&
+          reason === 'active_in_other_department' && (
           <li className="active-activity-alert__hint">
             Go to <strong>{deptName}</strong> and scan check-out, then return here.
           </li>

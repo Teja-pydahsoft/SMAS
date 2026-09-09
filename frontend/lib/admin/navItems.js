@@ -18,6 +18,7 @@ export const SUPER_ADMIN_NAV_ITEMS = [
       { path: '/registrations?roleSlug=jattu', label: 'Registrations', module: 'registrations' },
       { path: '/jattu/entry-exit', label: 'Entry & Exit', module: 'gate' },
       { path: '/jattu/activity', label: 'Activity', module: 'activity' },
+      { path: '/jattu/attendance-history', label: 'Attendance History', module: 'reports' },
     ],
   },
   {

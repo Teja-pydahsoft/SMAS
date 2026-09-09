@@ -49,7 +49,7 @@ import {
   isObjectStorageEnabled,
   uploadPhoto,
 } from '../services/objectStorage.js';
-import { hasDivisionScope, hasDepartmentScope, hasGateScope, hasGateEventScope, requirePermission } from '../middleware/auth.js';
+import { hasDivisionScope, hasDepartmentScope, hasGateScope, hasGateEventScope, hasDepartmentEventScope, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { getScopedDivisionIds, resolveDivisionFilterIds } from '../services/accessScopeService.js';
 
 const router = Router();
@@ -602,6 +602,12 @@ router.post(
       if (effectiveScanType === SCAN_TYPES.DEPARTMENT && !hasDepartmentScope(req.user, department._id)) {
         return res.status(403).json({ error: 'You do not have access to this department' });
       }
+      if (
+        effectiveScanType === SCAN_TYPES.DEPARTMENT &&
+        !hasDepartmentEventScope(req.user, department._id, eventType)
+      ) {
+        return res.status(403).json({ error: 'You do not have permission for this department event type' });
+      }
     }
 
     // Resolve registration from the pass
@@ -1009,6 +1015,12 @@ router.post(
       if (scanType === SCAN_TYPES.DEPARTMENT && !hasDepartmentScope(req.user, department._id)) {
         return res.status(403).json({ error: 'You do not have access to this department' });
       }
+      if (
+        scanType === SCAN_TYPES.DEPARTMENT &&
+        !hasDepartmentEventScope(req.user, department._id, eventType)
+      ) {
+        return res.status(403).json({ error: 'You do not have permission for this department event type' });
+      }
     }
 
     const identify = await identifyFromPhoto(req.file, registrationId || null);
@@ -1411,7 +1423,7 @@ async function resolveActivityFaceImage(imageBuffer, faceBox, thumbnailB64) {
 
 router.post(
   '/activity-scan',
-  requirePermission('activity', 'read'),
+  requireAnyPermission(['activity', 'jattu_activity'], 'read'),
   upload.single('photo'),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Photo is required' });

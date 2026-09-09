@@ -43,6 +43,10 @@ function serializeUser(user) {
         ? Object.fromEntries(user.gateAccessModes.entries())
         : user.gateAccessModes || {},
     departmentIds: user.departmentIds,
+    departmentAccessModes:
+      user.departmentAccessModes instanceof Map
+        ? Object.fromEntries(user.departmentAccessModes.entries())
+        : user.departmentAccessModes || {},
     systemRoleId: role
       ? {
           _id: role._id,
@@ -64,7 +68,7 @@ function userQueryLean(username) {
     .populate('systemRoleId', 'name slug permissions isActive')
     .populate('divisionIds', 'name slug')
     .populate('gateIds', 'name slug gateType divisionId')
-    .populate('departmentIds', 'name slug');
+    .populate('departmentIds', 'name slug isActive');
 }
 
 // ─── /precheck ───────────────────────────────────────────────────────────────
@@ -180,7 +184,7 @@ router.post(
       .populate('systemRoleId', 'name slug permissions isActive')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType divisionId')
-      .populate('departmentIds', 'name slug');
+      .populate('departmentIds', 'name slug isActive');
 
     if (!user || !user.isActive) {
       // Still run a dummy bcrypt to prevent timing-based username enumeration

@@ -155,9 +155,13 @@ function EditRegistrationModal({ registration, registrationId, onClose, onComple
 
 function ManageRegistrationsContent() {
   const { can } = useAuth();
-  const canWrite = can('registrations', 'write');
   const searchParams = useSearchParams();
   const preselectedEdit = searchParams.get('edit');
+  const urlRoleSlug = (searchParams.get('roleSlug') || '').toLowerCase();
+  const isJattuScope = urlRoleSlug === 'jattu';
+  const canWrite = isJattuScope
+    ? can('jattu_registrations', 'write') || can('registrations', 'write')
+    : can('registrations', 'write');
   const loadMoreRef = useRef(null);
   const loadingMoreRef = useRef(false);
   const requestSeqRef = useRef(0);
@@ -538,7 +542,7 @@ function ManageRegistrationsContent() {
                           >
                             View Details
                           </button>
-                          <WriteAccess module="registrations">
+                          <WriteAccess modules={isJattuScope ? ['registrations', 'jattu_registrations'] : ['registrations']}>
                             <button
                               type="button"
                               className="btn-primary"

@@ -12,7 +12,9 @@ import {
   GATE_ACCESS_MODES,
   gateAccessModesToObject,
   normalizeGateAccessModes,
+  normalizeDepartmentAccessModes,
   resolveGateAccessMode,
+  resolveDepartmentAccessMode,
 } from '../utils/gateAccessModes.js';
 
 const router = Router();
@@ -22,7 +24,7 @@ function normalizeIdList(values) {
   return [...new Set(values.map(String).filter((id) => mongoose.Types.ObjectId.isValid(id)))];
 }
 
-async function validateAccessScope(divisionIds, gateIds, departmentIds, gateModesInput) {
+async function validateAccessScope(divisionIds, gateIds, departmentIds, gateModesInput, deptModesInput) {
   if (divisionIds.length > 0) {
     const found = await Division.countDocuments({ _id: { $in: divisionIds } });
     if (found !== divisionIds.length) {
@@ -73,6 +75,16 @@ async function validateAccessScope(divisionIds, gateIds, departmentIds, gateMode
     }
   }
 
+  if (deptModesInput !== undefined && deptModesInput !== null) {
+    const modesObj = gateAccessModesToObject(deptModesInput);
+    for (const [deptId, mode] of Object.entries(modesObj)) {
+      if (!departmentIds.includes(deptId)) continue;
+      if (![GATE_ACCESS_MODES.ENTRY, GATE_ACCESS_MODES.EXIT, GATE_ACCESS_MODES.BOTH].includes(mode)) {
+        return { error: 'Department access mode must be entry, exit, or both' };
+      }
+    }
+  }
+
   return { ok: true, gates };
 }
 
@@ -83,6 +95,16 @@ function serializeGateAccessModes(user) {
     const id = (gate?._id || gate)?.toString?.() || String(gate);
     const gateType = gate?.gateType;
     modes[id] = resolveGateAccessMode(gateType || 'both', stored[id]);
+  }
+  return modes;
+}
+
+function serializeDepartmentAccessModes(user) {
+  const stored = gateAccessModesToObject(user.departmentAccessModes);
+  const modes = {};
+  for (const dept of user.departmentIds || []) {
+    const id = (dept?._id || dept)?.toString?.() || String(dept);
+    modes[id] = resolveDepartmentAccessMode(stored[id]);
   }
   return modes;
 }
@@ -105,6 +127,7 @@ function serializeUser(user) {
     gateIds: user.gateIds,
     gateAccessModes: serializeGateAccessModes(user),
     departmentIds: user.departmentIds,
+    departmentAccessModes: serializeDepartmentAccessModes(user),
     allowedLocationIds: user.allowedLocationIds,
     systemRoleId: role
       ? {
@@ -129,7 +152,7 @@ router.get(
       .populate('systemRoleId', 'name slug isActive')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType')
-      .populate('departmentIds', 'name slug')
+      .populate('departmentIds', 'name slug isActive')
       .populate('allowedLocationIds', 'name radius')
       .sort({ createdAt: -1 });
     res.json(users.map(serializeUser));
@@ -144,7 +167,7 @@ router.get(
       .populate('systemRoleId', 'name slug isActive permissions')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType')
-      .populate('departmentIds', 'name slug')
+      .populate('departmentIds', 'name slug isActive')
       .populate('allowedLocationIds', 'name radius');
     if (!user) return res.status(404).json({ error: 'System user not found' });
     res.json(serializeUser(user));
@@ -176,7 +199,8 @@ router.post(
       divisionIds,
       gateIds,
       departmentIds,
-      req.body.gateAccessModes
+      req.body.gateAccessModes,
+      req.body.departmentAccessModes
     );
     if (scopeCheck.error) return res.status(400).json({ error: scopeCheck.error });
 
@@ -184,6 +208,10 @@ router.post(
       gateIds,
       scopeCheck.gates || [],
       req.body.gateAccessModes
+    );
+    const departmentAccessModes = normalizeDepartmentAccessModes(
+      departmentIds,
+      req.body.departmentAccessModes
     );
 
     const existing = await SystemUser.findOne({ username: username.toLowerCase().trim() });
@@ -201,13 +229,14 @@ router.post(
       gateIds,
       gateAccessModes,
       departmentIds,
+      departmentAccessModes,
     });
 
     const populated = await SystemUser.findById(user._id)
       .populate('systemRoleId', 'name slug')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType')
-      .populate('departmentIds', 'name slug')
+      .populate('departmentIds', 'name slug isActive')
       .populate('allowedLocationIds', 'name radius');
 
     res.status(201).json(serializeUser(populated));
@@ -241,7 +270,8 @@ router.put(
       req.body.divisionIds !== undefined ||
       req.body.gateIds !== undefined ||
       req.body.departmentIds !== undefined ||
-      req.body.gateAccessModes !== undefined
+      req.body.gateAccessModes !== undefined ||
+      req.body.departmentAccessModes !== undefined
     ) {
       const divisionIds = normalizeIdList(
         req.body.divisionIds !== undefined ? req.body.divisionIds : user.divisionIds
@@ -256,11 +286,16 @@ router.put(
         req.body.gateAccessModes !== undefined
           ? req.body.gateAccessModes
           : gateAccessModesToObject(user.gateAccessModes);
+      const deptModesInput =
+        req.body.departmentAccessModes !== undefined
+          ? req.body.departmentAccessModes
+          : gateAccessModesToObject(user.departmentAccessModes);
       const scopeCheck = await validateAccessScope(
         divisionIds,
         gateIds,
         departmentIds,
-        modesInput
+        modesInput,
+        deptModesInput
       );
       if (scopeCheck.error) return res.status(400).json({ error: scopeCheck.error });
       updates.divisionIds = divisionIds;
@@ -271,6 +306,10 @@ router.put(
         modesInput
       );
       updates.departmentIds = departmentIds;
+      updates.departmentAccessModes = normalizeDepartmentAccessModes(
+        departmentIds,
+        deptModesInput
+      );
     }
 
     if (req.body.password) {
@@ -287,7 +326,7 @@ router.put(
       .populate('systemRoleId', 'name slug permissions')
       .populate('divisionIds', 'name slug')
       .populate('gateIds', 'name slug gateType')
-      .populate('departmentIds', 'name slug')
+      .populate('departmentIds', 'name slug isActive')
       .populate('allowedLocationIds', 'name radius');
 
     invalidateUserCache(user._id);

@@ -40,14 +40,14 @@ export const APP_NAV_ITEMS = [
     path: '/jattu/dashboard',
     label: 'JATTU Maintenance',
     icon: 'registrations',
-    module: null,
+    module: 'jattu',
     section: 'MANAGEMENT',
     children: [
-      { path: '/jattu/dashboard', label: 'Dashboard', icon: 'dashboard', module: 'registrations' },
-      { path: '/registrations?roleSlug=jattu', label: 'Registrations', icon: 'registrations', module: 'registrations' },
-      { path: '/jattu/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate' },
-      { path: '/jattu/activity', label: 'Activity', icon: 'cameras', module: 'activity' },
-      { path: '/jattu/attendance-history', label: 'Attendance History', icon: 'reports', module: 'reports' },
+      { path: '/jattu/dashboard', label: 'Dashboard', icon: 'dashboard', module: 'jattu' },
+      { path: '/registrations?roleSlug=jattu', label: 'Registrations', icon: 'registrations', module: 'jattu_registrations' },
+      { path: '/jattu/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'jattu_entry_exit' },
+      { path: '/jattu/activity', label: 'Activity', icon: 'cameras', module: 'jattu_activity' },
+      { path: '/jattu/attendance-history', label: 'Attendance History', icon: 'reports', module: 'jattu_attendance' },
     ],
   },
   {
@@ -130,6 +130,16 @@ export function getPrivilegeTree() {
 
     const section = item.section || 'OTHER';
     if (!sections.has(section)) sections.set(section, []);
+
+    // One privilege row for a whole group when explicitly collapsed.
+    if (item.privilegeAsLeaf && item.module) {
+      sections.get(section).push({
+        key: item.module,
+        label: item.label,
+        id: `${item.path}::${item.label}`,
+      });
+      continue;
+    }
 
     if (item.children?.length) {
       const children = item.children.map(navItemToLeaf).filter(Boolean);

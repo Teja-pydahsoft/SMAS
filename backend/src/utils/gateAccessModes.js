@@ -26,6 +26,14 @@ export function resolveGateAccessMode(gateType, storedMode) {
   return GATE_ACCESS_MODES.BOTH;
 }
 
+/** Departments always behave like combined (both) access points. */
+export function resolveDepartmentAccessMode(storedMode) {
+  if (storedMode === GATE_ACCESS_MODES.ENTRY || storedMode === GATE_ACCESS_MODES.EXIT) {
+    return storedMode;
+  }
+  return GATE_ACCESS_MODES.BOTH;
+}
+
 /**
  * Build allowedEvents for the access-scope picker / entry-exit selector.
  * Full "both" access exposes auto plus manual entry and exit.
@@ -41,6 +49,10 @@ export function allowedEventsForGateAccess(gateType, accessMode) {
   if (gateType === GATE_TYPES.ENTRY) return [GATE_EVENT_TYPES.ENTRY];
   if (gateType === GATE_TYPES.EXIT) return [GATE_EVENT_TYPES.EXIT];
   return [GATE_EVENT_TYPES.AUTO, GATE_EVENT_TYPES.ENTRY, GATE_EVENT_TYPES.EXIT];
+}
+
+export function allowedEventsForDepartmentAccess(accessMode) {
+  return allowedEventsForGateAccess(GATE_TYPES.BOTH, resolveDepartmentAccessMode(accessMode));
 }
 
 /**
@@ -61,6 +73,14 @@ export function isEventAllowedForGateMode(gateType, accessMode, eventType) {
   return false;
 }
 
+export function isEventAllowedForDepartmentMode(accessMode, eventType) {
+  return isEventAllowedForGateMode(
+    GATE_TYPES.BOTH,
+    resolveDepartmentAccessMode(accessMode),
+    eventType
+  );
+}
+
 /**
  * Normalize API gateModes input against assigned gateIds and loaded gate docs.
  * Returns a plain object suitable for storing in SystemUser.gateAccessModes.
@@ -77,5 +97,16 @@ export function normalizeGateAccessModes(gateIds, gateDocs, gateModesInput) {
     modes[id] = resolveGateAccessMode(gate.gateType, input[id]);
   }
 
+  return modes;
+}
+
+/** Normalize department Entry/Exit/Both modes for assigned departmentIds. */
+export function normalizeDepartmentAccessModes(departmentIds, modesInput) {
+  const input = gateAccessModesToObject(modesInput);
+  const modes = {};
+  for (const departmentId of departmentIds) {
+    const id = String(departmentId);
+    modes[id] = resolveDepartmentAccessMode(input[id]);
+  }
   return modes;
 }

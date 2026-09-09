@@ -78,13 +78,19 @@ export default function EntryExitSelector({
     [gateOptions, draft.gateId]
   );
 
+  const selectedDepartment = useMemo(
+    () => departmentOptions.find((d) => d._id === draft.departmentId) || null,
+    [departmentOptions, draft.departmentId]
+  );
+
   const eventOptions = useMemo(() => {
     if (draft.scanType === 'department') {
-      // Departments always support auto (same as "both" gate type)
+      const events = selectedDepartment?.allowedEvents;
+      if (Array.isArray(events) && events.length > 0) return events;
       return ['auto', 'entry', 'exit'];
     }
     return selectedGate?.allowedEvents || ['entry', 'exit'];
-  }, [draft.scanType, selectedGate]);
+  }, [draft.scanType, selectedGate, selectedDepartment]);
 
   function updateDraft(patch) {
     setDraft((prev) => {
@@ -94,7 +100,6 @@ export default function EntryExitSelector({
         next.divisionId = '';
         next.gateId = '';
         next.departmentId = '';
-        // default to auto for department scan type
         next.eventType = patch.scanType === 'department' ? 'auto' : 'entry';
       }
 
@@ -114,8 +119,12 @@ export default function EntryExitSelector({
       }
 
       if (patch.departmentId !== undefined && patch.departmentId !== prev.departmentId) {
-        // Always default to auto when selecting a department
-        next.eventType = 'auto';
+        const dept = departmentOptions.find((d) => d._id === patch.departmentId);
+        const events = dept?.allowedEvents || [];
+        if (events.includes('auto')) next.eventType = 'auto';
+        else if (events.includes('entry')) next.eventType = 'entry';
+        else if (events.includes('exit')) next.eventType = 'exit';
+        else next.eventType = 'auto';
       }
 
       return next;

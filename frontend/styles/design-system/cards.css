@@ -769,11 +769,13 @@
 }
 
 .su-scope-col .su-scroll-list--dept,
-.su-scope-col .su-dept-picker .checkbox-group {
+.su-scope-col .su-dept-picker .checkbox-group,
+.su-scope-col .su-dept-picker .gate-access-picker {
   max-height: 240px;
   border: none;
   background: transparent;
   padding: 0;
+  overflow-y: auto;
 }
 
 .su-scope-col .checkbox-option {
@@ -840,6 +842,33 @@
 
 .su-account-grid .form-group {
   margin-bottom: 0.75rem;
+}
+
+.su-inactive-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9a3412;
+  background: #ffedd5;
+  vertical-align: middle;
+}
+
+.gate-access-picker__item.is-inactive {
+  opacity: 0.92;
+  border-style: dashed;
+}
+
+.gate-access-picker__item.is-inactive .gate-access-picker__name {
+  color: var(--text-secondary);
+}
+
+.checkbox-option--inactive span {
+  color: var(--text-secondary);
 }
 
 .su-dept-picker {

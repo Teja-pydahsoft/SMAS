@@ -8,7 +8,12 @@ import { formatDate, formatDateTime } from '@/lib/formatDate';
 import PermissionMatrix from '@/components/PermissionMatrix';
 import GateAccessPicker, { gateModeBadgeLabel } from '@/components/GateAccessPicker';
 import ScopeOverflowCell from '@/components/ScopeOverflowCell';
-import DepartmentPicker from '@/components/DepartmentPicker';
+import DepartmentPicker, { departmentDisplayLabel } from '@/components/DepartmentPicker';
+import {
+  filterDepartmentsByDivisions,
+  filterGatesByDivisions,
+  pruneScopeForDivisions,
+} from '@/lib/accessScopeUi';
 
 function normalizePermissions(source) {
   const base = emptyPermissions();
@@ -132,6 +137,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
   const [gateIds, setGateIds]           = useState([]);
   const [gateAccessModes, setGateAccessModes] = useState({});
   const [departmentIds, setDepartmentIds] = useState([]);
+  const [departmentAccessModes, setDepartmentAccessModes] = useState({});
 
   const [rolePerms, setRolePerms]   = useState(emptyPermissions());
   const [saving, setSaving]         = useState(false);
@@ -156,6 +162,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     setGateIds((user.gateIds || []).map((g) => g._id));
     setGateAccessModes(user.gateAccessModes || {});
     setDepartmentIds((user.departmentIds || []).map((d) => d._id));
+    setDepartmentAccessModes(user.departmentAccessModes || {});
     setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
   }, [user]);
 
@@ -165,7 +172,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
       api.systemRoles.list(),
       api.divisions.list({ isActive: 'true' }),
       api.gates.list({ isActive: 'true' }),
-      api.departments.list({ isActive: 'true' }),
+      api.departments.list(),
     ])
       .then(([r, d, g, dep]) => {
         setRoles(r.filter((x) => x.isActive));
@@ -176,34 +183,34 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
       .catch((e) => setError(e.message));
   }, [editing]);
 
-  const scopedGates = useMemo(() => {
-    if (divisionIds.length === 0) return gates;
-    const sel = new Set(divisionIds);
-    return gates.filter((g) => sel.has(g.divisionId?._id || g.divisionId));
-  }, [gates, divisionIds]);
+  const scopedGates = useMemo(
+    () => filterGatesByDivisions(gates, divisionIds),
+    [gates, divisionIds]
+  );
 
-  const scopedDepartments = useMemo(() => {
-    if (divisionIds.length === 0) return departments;
-    const sel = new Set(divisionIds);
-    return departments.filter((d) => (d.divisionIds || []).some((div) => sel.has(div._id)));
-  }, [departments, divisionIds]);
+  const scopedDepartments = useMemo(
+    () => filterDepartmentsByDivisions(departments, divisionIds),
+    [departments, divisionIds]
+  );
 
   if (!user) return null;
 
   function toggleDivision(id) {
     setDivisionIds((prev) => {
       const next = prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id];
-      const okGates = new Set(gates.filter((g) => next.includes(g.divisionId?._id || g.divisionId)).map((g) => g._id));
-      setGateIds((p) => p.filter((gid) => okGates.has(gid)));
-      setGateAccessModes((prevModes) => {
-        const cleaned = {};
-        for (const [gid, mode] of Object.entries(prevModes)) {
-          if (okGates.has(gid)) cleaned[gid] = mode;
-        }
-        return cleaned;
+      const pruned = pruneScopeForDivisions({
+        gates,
+        departments,
+        divisionIds: next,
+        gateIds,
+        gateAccessModes,
+        departmentIds,
+        departmentAccessModes,
       });
-      const okDepts = new Set(departments.filter((d) => (d.divisionIds || []).some((div) => next.includes(div._id))).map((d) => d._id));
-      setDepartmentIds((p) => p.filter((did) => okDepts.has(did)));
+      setGateIds(pruned.gateIds);
+      setGateAccessModes(pruned.gateAccessModes);
+      setDepartmentIds(pruned.departmentIds);
+      setDepartmentAccessModes(pruned.departmentAccessModes);
       return next;
     });
   }
@@ -221,6 +228,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
     setGateIds((user.gateIds || []).map((g) => g._id));
     setGateAccessModes(user.gateAccessModes || {});
     setDepartmentIds((user.departmentIds || []).map((d) => d._id));
+    setDepartmentAccessModes(user.departmentAccessModes || {});
     setRolePerms(normalizePermissions(user.systemRoleId?.permissions));
   }
 
@@ -240,6 +248,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
         gateIds,
         gateAccessModes,
         departmentIds,
+        departmentAccessModes,
       };
       if (password.trim()) payload.password = password.trim();
       await api.systemUsers.update(user._id, payload);
@@ -338,7 +347,7 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                     <>
                       <ScopeBlock title="Divisions" items={user.divisionIds || []} badgeClass="badge-info" />
                       <ScopeBlock
-                        title="Gates"
+                        title="Division Gates"
                         items={user.gateIds || []}
                         badgeClass="badge-success"
                         renderBadge={(gate) => {
@@ -349,7 +358,14 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                           )})`;
                         }}
                       />
-                      <ScopeBlock title="Departments" items={user.departmentIds || []} badgeClass="badge-warning" />
+                      <ScopeBlock
+                        title="Department Gates"
+                        items={user.departmentIds || []}
+                        badgeClass="badge-warning"
+                        renderBadge={(dept) =>
+                          departmentDisplayLabel(dept, user.departmentAccessModes || {})
+                        }
+                      />
                       {!hasScope && <span className="scope-empty">No access scope assigned</span>}
                     </>
                   )}
@@ -415,8 +431,11 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                         </div>
 
                         <div className="su-scope-col">
-                          <p className="su-scope-block__title">Gates</p>
-                          <p className="su-hint">Optional. Combined gates can be entry, exit, or both.</p>
+                          <p className="su-scope-block__title">Division Gates</p>
+                          <p className="su-hint">
+                            Optional. Combined gates can be entry, exit, or both.
+                            {divisionIds.length === 0 ? ' Showing all gates — select divisions to filter.' : ''}
+                          </p>
                           <GateAccessPicker
                             gates={scopedGates}
                             selectedIds={gateIds}
@@ -424,8 +443,8 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                             showDivision={true}
                             emptyMessage={
                               divisionIds.length === 0
-                                ? 'Select divisions to filter gates.'
-                                : 'No gates in the selected divisions.'
+                                ? 'No division gates available.'
+                                : 'No division gates in the selected divisions.'
                             }
                             onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
                               setGateIds(nextIds);
@@ -435,17 +454,24 @@ export default function SystemUserDetailsModal({ user, canWrite, canEditRole = f
                         </div>
 
                         <div className="su-scope-col">
-                          <p className="su-scope-block__title">Departments</p>
-                          <p className="su-hint">Search and assign departments for check-in / check-out.</p>
+                          <p className="su-scope-block__title">Department Gates</p>
+                          <p className="su-hint">
+                            Optional. Pick Entry, Exit, or Both — same as division gates. Inactive departments stay listed and marked.
+                          </p>
                           <DepartmentPicker
                             departments={scopedDepartments}
                             selectedIds={departmentIds}
-                            onToggle={(id) => setDepartmentIds((p) => (p.includes(id) ? p.filter((d) => d !== id) : [...p, id]))}
+                            modes={departmentAccessModes}
+                            searchPlaceholder="Search department gates…"
                             emptyMessage={
                               divisionIds.length === 0
-                                ? 'No departments available.'
-                                : 'No departments in the selected divisions.'
+                                ? 'No department gates available.'
+                                : 'No department gates in the selected divisions.'
                             }
+                            onChange={({ departmentIds: nextIds, departmentAccessModes: nextModes }) => {
+                              setDepartmentIds(nextIds);
+                              setDepartmentAccessModes(nextModes);
+                            }}
                           />
                         </div>
                       </div>

@@ -9,7 +9,12 @@ import { useAuth } from '@/components/AuthProvider';
 import SystemUserDetailsModal from '@/components/SystemUserDetailsModal';
 import GateAccessPicker, { gateModeBadgeLabel } from '@/components/GateAccessPicker';
 import ScopeOverflowCell from '@/components/ScopeOverflowCell';
-import DepartmentPicker from '@/components/DepartmentPicker';
+import DepartmentPicker, { departmentDisplayLabel } from '@/components/DepartmentPicker';
+import {
+  filterDepartmentsByDivisions,
+  filterGatesByDivisions,
+  pruneScopeForDivisions,
+} from '@/lib/accessScopeUi';
 
 function PlusIcon() {
   return (
@@ -34,6 +39,7 @@ function NewUserModal({ onClose, onComplete }) {
   const [gateIds, setGateIds] = useState([]);
   const [gateAccessModes, setGateAccessModes] = useState({});
   const [departmentIds, setDepartmentIds] = useState([]);
+  const [departmentAccessModes, setDepartmentAccessModes] = useState({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -42,7 +48,7 @@ function NewUserModal({ onClose, onComplete }) {
       api.systemRoles.list(),
       api.divisions.list({ isActive: 'true' }),
       api.gates.list({ isActive: 'true' }),
-      api.departments.list({ isActive: 'true' }),
+      api.departments.list(),
     ])
       .then(([roleList, divisionList, gateList, departmentList]) => {
         const activeRoles = roleList.filter((r) => r.isActive);
@@ -55,41 +61,34 @@ function NewUserModal({ onClose, onComplete }) {
       .catch((e) => setError(e.message));
   }, []);
 
-  const scopedGates = useMemo(() => {
-    if (divisionIds.length === 0) return [];
-    const selected = new Set(divisionIds);
-    return gates.filter((gate) => selected.has(gate.divisionId?._id || gate.divisionId));
-  }, [gates, divisionIds]);
+  const scopedGates = useMemo(
+    () => filterGatesByDivisions(gates, divisionIds),
+    [gates, divisionIds]
+  );
 
-  const scopedDepartments = useMemo(() => {
-    if (divisionIds.length === 0) return departments;
-    const selected = new Set(divisionIds);
-    return departments.filter((dept) =>
-      (dept.divisionIds || []).some((div) => selected.has(div._id))
-    );
-  }, [departments, divisionIds]);
+  const scopedDepartments = useMemo(
+    () => filterDepartmentsByDivisions(departments, divisionIds),
+    [departments, divisionIds]
+  );
 
   function toggleDivision(id) {
     setDivisionIds((prev) => {
       const next = prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id];
-      // Remove gates/depts that no longer belong to selected divisions
-      const allowedGateIds = new Set(gates.filter((g) => next.includes(g.divisionId?._id || g.divisionId)).map((g) => g._id));
-      setGateIds((p) => p.filter((gid) => allowedGateIds.has(gid)));
-      setGateAccessModes((prevModes) => {
-        const cleaned = {};
-        for (const [gid, mode] of Object.entries(prevModes)) {
-          if (allowedGateIds.has(gid)) cleaned[gid] = mode;
-        }
-        return cleaned;
+      const pruned = pruneScopeForDivisions({
+        gates,
+        departments,
+        divisionIds: next,
+        gateIds,
+        gateAccessModes,
+        departmentIds,
+        departmentAccessModes,
       });
-      const allowedDeptIds = new Set(departments.filter((d) => (d.divisionIds || []).some((div) => next.includes(div._id))).map((d) => d._id));
-      setDepartmentIds((p) => p.filter((did) => allowedDeptIds.has(did)));
+      setGateIds(pruned.gateIds);
+      setGateAccessModes(pruned.gateAccessModes);
+      setDepartmentIds(pruned.departmentIds);
+      setDepartmentAccessModes(pruned.departmentAccessModes);
       return next;
     });
-  }
-
-  function toggleDepartment(id) {
-    setDepartmentIds((prev) => prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]);
   }
 
   async function handleSubmit(e) {
@@ -113,6 +112,7 @@ function NewUserModal({ onClose, onComplete }) {
         gateIds,
         gateAccessModes,
         departmentIds,
+        departmentAccessModes,
       });
       onComplete(user);
     } catch (err) {
@@ -143,7 +143,7 @@ function NewUserModal({ onClose, onComplete }) {
             </span>
             <div>
               <h3 className="reg-details-modal__title">New System User</h3>
-              <p className="reg-details-modal__sub">Create a user, assign a role, and set access scope</p>
+              <p className="reg-details-modal__sub">Create a user, assign a role, and set division / department gate access</p>
             </div>
           </div>
           <button type="button" className="reg-details-modal__close" onClick={onClose} title="Close" aria-label="Close">
@@ -209,47 +209,48 @@ function NewUserModal({ onClose, onComplete }) {
               </div>
 
               <div className="su-create-col">
-                <p className="su-create-col__title">Departments</p>
+                <p className="su-create-col__title">Division Gates</p>
                 <p className="su-hint">
-                  {divisionIds.length === 0
-                    ? 'Search and assign departments for check-in/check-out. Gate assignment is optional.'
-                    : 'Search and select departments for check-in/check-out.'}
+                  Optional. Combined gates can be entry, exit, or both.
+                  {divisionIds.length === 0 ? ' Showing all gates — select divisions to filter.' : ''}
                 </p>
-                <DepartmentPicker
-                  departments={scopedDepartments}
-                  selectedIds={departmentIds}
-                  onToggle={toggleDepartment}
-                  emptyMessage={divisionIds.length === 0 ? 'No departments available.' : 'No departments in selected divisions.'}
+                <GateAccessPicker
+                  gates={scopedGates}
+                  selectedIds={gateIds}
+                  modes={gateAccessModes}
+                  showDivision={divisionIds.length === 0}
+                  emptyMessage={
+                    divisionIds.length === 0
+                      ? 'No division gates available.'
+                      : 'No division gates in the selected divisions.'
+                  }
+                  onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
+                    setGateIds(nextIds);
+                    setGateAccessModes(nextModes);
+                  }}
                 />
               </div>
 
               <div className="su-create-col">
-                <p className="su-create-col__title">Gates</p>
-                {divisionIds.length === 0 ? (
-                  <div className="su-empty-scope">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }} aria-hidden>
-                      <rect x="3" y="11" width="18" height="11" rx="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    <p>Select divisions to see available gates.</p>
-                  </div>
-                ) : scopedGates.length === 0 ? (
-                  <p className="scope-empty">No gates in the selected divisions.</p>
-                ) : (
-                  <div className="form-group">
-                    <p className="su-hint">Optional. Combined gates can be entry, exit, or both.</p>
-                    <GateAccessPicker
-                      gates={scopedGates}
-                      selectedIds={gateIds}
-                      modes={gateAccessModes}
-                      showDivision={false}
-                      onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
-                        setGateIds(nextIds);
-                        setGateAccessModes(nextModes);
-                      }}
-                    />
-                  </div>
-                )}
+                <p className="su-create-col__title">Department Gates</p>
+                <p className="su-hint">
+                  Optional. Pick Entry, Exit, or Both — same as division gates. Inactive departments stay listed and marked.
+                </p>
+                <DepartmentPicker
+                  departments={scopedDepartments}
+                  selectedIds={departmentIds}
+                  modes={departmentAccessModes}
+                  searchPlaceholder="Search department gates…"
+                  emptyMessage={
+                    divisionIds.length === 0
+                      ? 'No department gates available.'
+                      : 'No department gates in the selected divisions.'
+                  }
+                  onChange={({ departmentIds: nextIds, departmentAccessModes: nextModes }) => {
+                    setDepartmentIds(nextIds);
+                    setDepartmentAccessModes(nextModes);
+                  }}
+                />
               </div>
             </div>
 
@@ -293,7 +294,7 @@ export default function ManageSystemUsersPage() {
     Promise.all([
       api.systemRoles.list(),
       api.divisions.list({ isActive: 'true' }),
-      api.departments.list({ isActive: 'true' }),
+      api.departments.list(),
     ])
       .then(([roleList, divisionList, departmentList]) => {
         setRoles(Array.isArray(roleList) ? roleList : []);
@@ -474,7 +475,9 @@ export default function ManageSystemUsersPage() {
             <option value="">All departments</option>
             <option value="__none__">Unassigned</option>
             {departmentFilterOptions.map((department) => (
-              <option key={department._id} value={department._id}>{department.name}</option>
+              <option key={department._id} value={department._id}>
+                {department.isActive === false ? `${department.name} (Inactive)` : department.name}
+              </option>
             ))}
           </select>
           <select
@@ -537,8 +540,8 @@ export default function ManageSystemUsersPage() {
                   <th style={{ width: '9%' }}>Username</th>
                   <th style={{ width: '9%' }}>Role</th>
                   <th style={{ width: '10%' }}>Divisions</th>
-                  <th style={{ width: '10%' }}>Gates</th>
-                  <th style={{ width: '10%' }}>Departments</th>
+                  <th style={{ width: '10%' }}>Division Gates</th>
+                  <th style={{ width: '10%' }}>Department Gates</th>
                   <th style={{ width: '8%' }}>Status</th>
                   <th style={{ width: '10%' }}>Last Login</th>
                   <th style={{ width: '18%', textAlign: 'right' }}>Actions</th>
@@ -580,7 +583,7 @@ export default function ManageSystemUsersPage() {
                         <ScopeOverflowCell
                           items={user.gateIds || []}
                           badgeClass="badge-success"
-                          title="Gates"
+                          title="Division Gates"
                           subtitle={user.displayName}
                           renderLabel={(gate) => `${gate.name} (${gateModeBadgeLabel(gate, user.gateAccessModes || {})})`}
                         />
@@ -595,8 +598,11 @@ export default function ManageSystemUsersPage() {
                         <ScopeOverflowCell
                           items={user.departmentIds || []}
                           badgeClass="badge-warning"
-                          title="Departments"
+                          title="Department Gates"
                           subtitle={user.displayName}
+                          renderLabel={(dept) =>
+                            departmentDisplayLabel(dept, user.departmentAccessModes || {})
+                          }
                         />
                       )}
                     </td>

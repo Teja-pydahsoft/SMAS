@@ -6,6 +6,7 @@ import { PERMISSION_MODULES } from '@/lib/auth/permissions';
 import { getAccessibleModules } from '@/lib/auth/routing';
 import { formatDate } from '@/lib/formatDate';
 import { gateModeBadgeLabel } from '@/components/GateAccessPicker';
+import { departmentDisplayLabel } from '@/components/DepartmentPicker';
 
 export default function UserDashboardProfile() {
   const { user, can } = useAuth();
@@ -94,12 +95,14 @@ export default function UserDashboardProfile() {
                   ))
                 : <span className="scope-empty">No gate scope assigned</span>}
             </div>
-            <p className="field-hint">Departments you can access</p>
+            <p className="field-hint">Department gates you can access</p>
             <div className="scope-badges">
               {(user.departmentIds || []).length > 0
                 ? user.departmentIds.map((dept) => (
                     <span key={dept._id || dept} className="badge badge-warning">
-                      {dept.name || dept}
+                      {dept.name
+                        ? departmentDisplayLabel(dept, user.departmentAccessModes || {})
+                        : dept}
                     </span>
                   ))
                 : <span className="scope-empty">No department scope assigned</span>}

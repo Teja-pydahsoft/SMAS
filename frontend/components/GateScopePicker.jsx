@@ -59,6 +59,12 @@ export default function GateScopePicker({
 
   const departmentEventOptions = ['auto', 'entry', 'exit'];
 
+  function eventsForDepartment(dept) {
+    const events = dept?.allowedEvents;
+    if (Array.isArray(events) && events.length > 0) return events;
+    return departmentEventOptions;
+  }
+
   const departmentModal =
     portalReady &&
     departmentPickerDivision &&
@@ -96,7 +102,7 @@ export default function GateScopePicker({
                     <span className="gate-landing__gate-type">Auto or manual check-in / out</span>
                   </div>
                   <div className="gate-landing__gate-actions">
-                    {departmentEventOptions.map((eventType) => (
+                    {eventsForDepartment(dept).map((eventType) => (
                       <button
                         key={`${dept._id}-${eventType}`}
                         type="button"

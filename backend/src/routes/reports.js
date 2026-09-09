@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { requirePermission } from '../middleware/auth.js';
+import { requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import {
   getScopedDivisionIds,
   resolveDivisionFilterIds,
@@ -93,7 +93,7 @@ router.get(
 
 router.get(
   '/attendance-history',
-  requirePermission('reports', 'read'),
+  requireAnyPermission(['reports', 'jattu_attendance'], 'read'),
   asyncHandler(async (req, res) => {
     const divisionIds = await resolveRequestDivisionIds(req);
     const data = await getAttendanceHistoryGrid({
@@ -114,7 +114,7 @@ router.get(
 
 router.post(
   '/attendance-history/recalculate',
-  requirePermission('reports', 'read'),
+  requireAnyPermission(['reports', 'jattu_attendance'], 'read'),
   asyncHandler(async (req, res) => {
     const body = req.body || {};
     const scopedIds = await getScopedDivisionIds(req.user);

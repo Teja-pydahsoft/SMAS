@@ -39,6 +39,7 @@ import geoLocationsRouter from './routes/geoLocations.js';
 import { startOverstayMonitor } from './services/overstayMonitor.js';
 import { startIdleMonitor } from './services/idleMonitor.js';
 import { migrateProjectsPermissionsFromDepartments, migrateProjectSubpagePermissions } from './services/projectPermissionMigration.js';
+import { migrateJattuSubpagePermissions } from './services/jattuPermissionMigration.js';
 import vehicleTypesRouter from './routes/vehicleTypes.js';
 import vehicleCategoriesRouter from './routes/vehicleCategories.js';
 import vehiclesRouter from './routes/vehicles.js';
@@ -278,6 +279,17 @@ async function runBackgroundBootstrap() {
     }
   } catch (err) {
     console.warn('Project subpage permission migration skipped:', err.message);
+  }
+
+  try {
+    const jattuSubpageMigration = await migrateJattuSubpagePermissions();
+    if (jattuSubpageMigration.migrated > 0) {
+      console.log(
+        `Copied JATTU Maintenance access onto ${jattuSubpageMigration.migrated} role(s) for Registrations, Entry & Exit, Activity, and Attendance`
+      );
+    }
+  } catch (err) {
+    console.warn('JATTU subpage permission migration skipped:', err.message);
   }
 
   try {

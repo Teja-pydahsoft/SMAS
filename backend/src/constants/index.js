@@ -222,6 +222,11 @@ export const PERMISSION_MODULES = {
   VEHICLE_REPORTS: 'vehicle_reports',
   EQUIPMENT_MOVEMENTS: 'equipment_movements',
   PAYROLL_RATE_MASTER: 'payroll_rate_master',
+  JATTU: 'jattu',
+  JATTU_REGISTRATIONS: 'jattu_registrations',
+  JATTU_ENTRY_EXIT: 'jattu_entry_exit',
+  JATTU_ACTIVITY: 'jattu_activity',
+  JATTU_ATTENDANCE: 'jattu_attendance',
 };
 
 export const PERMISSION_MODULE_LIST = Object.values(PERMISSION_MODULES);
@@ -248,6 +253,11 @@ export const PERMISSION_LABELS = {
   vehicle_reports: 'Vehicle Reports',
   equipment_movements: 'Vehicle Entry & Exit',
   payroll_rate_master: 'Payroll Calculation',
+  jattu: 'JATTU Dashboard',
+  jattu_registrations: 'JATTU Registrations',
+  jattu_entry_exit: 'JATTU Entry & Exit',
+  jattu_activity: 'JATTU Activity',
+  jattu_attendance: 'JATTU Attendance History',
 };
 
 export function emptyPermissions() {

@@ -4,6 +4,7 @@ import { PERMISSION_MODULE_LIST } from '../constants/index.js';
 import {
   gateAccessModesToObject,
   isEventAllowedForGateMode,
+  isEventAllowedForDepartmentMode,
 } from '../utils/gateAccessModes.js';
 import { isPastEmployeeAutoLogoutHour } from '../utils/istTime.js';
 
@@ -243,6 +244,19 @@ export function hasGateEventScope(user, gateId, eventType, gateType) {
   const target = toIdString(gateId);
   const modes = gateAccessModesToObject(user.gateAccessModes);
   return isEventAllowedForGateMode(gateType, modes[target], eventType);
+}
+
+/**
+ * Check whether the user may perform eventType at departmentId.
+ * eventType: 'entry' | 'exit' | 'auto'
+ * Uses departmentAccessModes when present; missing mode = full access.
+ */
+export function hasDepartmentEventScope(user, departmentId, eventType) {
+  if (user.isSuperAdmin) return true;
+  if (!hasDepartmentScope(user, departmentId)) return false;
+  const target = toIdString(departmentId);
+  const modes = gateAccessModesToObject(user.departmentAccessModes);
+  return isEventAllowedForDepartmentMode(modes[target], eventType);
 }
 
 export function applyDivisionScopeFilter(user, filter = {}) {

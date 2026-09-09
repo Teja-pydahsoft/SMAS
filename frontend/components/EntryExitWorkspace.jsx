@@ -78,9 +78,9 @@ function EntryExitContent({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, can } = useAuth();
-  const canWrite = can('gate', 'write');
   const divisionOnly = allowedScanTypes.length === 1 && allowedScanTypes[0] === 'gate';
   const openSelector = allowOpenSelector || divisionOnly;
+  const canWrite = can('gate', 'write') || (divisionOnly && can('jattu_entry_exit', 'write'));
 
   const urlScanType = searchParams.get('scanType');
   const urlDivisionId = searchParams.get('divisionId');
@@ -645,7 +645,7 @@ function EntryExitContent({
                   <>
                     <p className="gate-not-found__title">Person Not Found</p>
                     <p className="gate-not-found__text">{result.message || notFoundMessage(result)}</p>
-                    <WriteAccess module="registrations">
+                    <WriteAccess modules={divisionOnly ? ['registrations', 'jattu_registrations', 'jattu_entry_exit'] : ['registrations']}>
                       <button
                         type="button"
                         className="btn-primary"

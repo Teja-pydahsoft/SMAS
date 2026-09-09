@@ -3,8 +3,10 @@ import Gate from '../models/Gate.js';
 import Department from '../models/Department.js';
 import {
   allowedEventsForGateAccess,
+  allowedEventsForDepartmentAccess,
   gateAccessModesToObject,
   resolveGateAccessMode,
+  resolveDepartmentAccessMode,
 } from '../utils/gateAccessModes.js';
 
 function normalizeId(value) {
@@ -23,11 +25,14 @@ function mapGate(gate, accessMode) {
   };
 }
 
-function mapDepartment(department) {
+function mapDepartment(department, accessMode) {
+  const mode = resolveDepartmentAccessMode(accessMode);
   return {
     _id: department._id,
     name: department.name,
     slug: department.slug,
+    accessMode: mode,
+    allowedEvents: allowedEventsForDepartmentAccess(mode),
   };
 }
 
@@ -156,6 +161,7 @@ export async function getUserAccessScope(user) {
     ? (user.departmentIds || []).map(normalizeId).filter(Boolean)
     : null;
   const accessModes = gateAccessModesToObject(user.gateAccessModes);
+  const departmentAccessModes = gateAccessModesToObject(user.departmentAccessModes);
 
   let gates = [];
   if (isSuperAdmin || assignedGateIds.length > 0) {
@@ -190,7 +196,12 @@ export async function getUserAccessScope(user) {
         .map((gate) => mapGate(gate, isSuperAdmin ? 'both' : accessModes[normalizeId(gate._id)])),
       departments: departments
         .filter((department) => (department.divisionIds || []).some((divRef) => normalizeId(divRef) === divId))
-        .map(mapDepartment),
+        .map((department) =>
+          mapDepartment(
+            department,
+            isSuperAdmin ? 'both' : departmentAccessModes[normalizeId(department._id)]
+          )
+        ),
     };
   });
 

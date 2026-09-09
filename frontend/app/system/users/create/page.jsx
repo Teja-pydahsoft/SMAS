@@ -6,6 +6,11 @@ import { api } from '@/lib/api/client';
 import useRequireWrite from '@/hooks/useRequireWrite';
 import GateAccessPicker from '@/components/GateAccessPicker';
 import DepartmentPicker from '@/components/DepartmentPicker';
+import {
+  filterDepartmentsByDivisions,
+  filterGatesByDivisions,
+  pruneScopeForDivisions,
+} from '@/lib/accessScopeUi';
 
 export default function CreateSystemUserPage() {
   const router = useRouter();
@@ -23,6 +28,7 @@ export default function CreateSystemUserPage() {
   const [gateIds, setGateIds] = useState([]);
   const [gateAccessModes, setGateAccessModes] = useState({});
   const [departmentIds, setDepartmentIds] = useState([]);
+  const [departmentAccessModes, setDepartmentAccessModes] = useState({});
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,7 +38,7 @@ export default function CreateSystemUserPage() {
       api.systemRoles.list(),
       api.divisions.list({ isActive: 'true' }),
       api.gates.list({ isActive: 'true' }),
-      api.departments.list({ isActive: 'true' }),
+      api.departments.list(),
     ])
       .then(([roleList, divisionList, gateList, departmentList]) => {
         const activeRoles = roleList.filter((r) => r.isActive);
@@ -45,52 +51,34 @@ export default function CreateSystemUserPage() {
       .catch((e) => setError(e.message));
   }, []);
 
-  const scopedGates = useMemo(() => {
-    if (divisionIds.length === 0) return gates;
-    const selected = new Set(divisionIds);
-    return gates.filter((gate) => selected.has(gate.divisionId?._id || gate.divisionId));
-  }, [gates, divisionIds]);
+  const scopedGates = useMemo(
+    () => filterGatesByDivisions(gates, divisionIds),
+    [gates, divisionIds]
+  );
 
-  const scopedDepartments = useMemo(() => {
-    if (divisionIds.length === 0) return departments;
-    const selected = new Set(divisionIds);
-    return departments.filter((dept) =>
-      (dept.divisionIds || []).some((div) => selected.has(div._id))
-    );
-  }, [departments, divisionIds]);
+  const scopedDepartments = useMemo(
+    () => filterDepartmentsByDivisions(departments, divisionIds),
+    [departments, divisionIds]
+  );
 
   function toggleDivision(id) {
     setDivisionIds((prev) => {
       const next = prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id];
-      if (!next.includes(id)) {
-        const allowedGateIds = new Set(
-          gates
-            .filter((gate) => next.includes(gate.divisionId?._id || gate.divisionId))
-            .map((gate) => gate._id)
-        );
-        setGateIds((gatePrev) => gatePrev.filter((gateId) => allowedGateIds.has(gateId)));
-        setGateAccessModes((prevModes) => {
-          const cleaned = {};
-          for (const [gid, mode] of Object.entries(prevModes)) {
-            if (allowedGateIds.has(gid)) cleaned[gid] = mode;
-          }
-          return cleaned;
-        });
-        const allowedDeptIds = new Set(
-          departments
-            .filter((dept) => (dept.divisionIds || []).some((div) => next.includes(div._id)))
-            .map((dept) => dept._id)
-        );
-        setDepartmentIds((deptPrev) => deptPrev.filter((deptId) => allowedDeptIds.has(deptId)));
-      }
+      const pruned = pruneScopeForDivisions({
+        gates,
+        departments,
+        divisionIds: next,
+        gateIds,
+        gateAccessModes,
+        departmentIds,
+        departmentAccessModes,
+      });
+      setGateIds(pruned.gateIds);
+      setGateAccessModes(pruned.gateAccessModes);
+      setDepartmentIds(pruned.departmentIds);
+      setDepartmentAccessModes(pruned.departmentAccessModes);
       return next;
     });
-  }
-
-  function toggleDepartment(id) {
-    setDepartmentIds((prev) =>
-      prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]
-    );
   }
 
   async function handleSubmit(e) {
@@ -115,6 +103,7 @@ export default function CreateSystemUserPage() {
         gateIds,
         gateAccessModes,
         departmentIds,
+        departmentAccessModes,
       });
       setSuccess(`User "${user.displayName}" created successfully.`);
       setDisplayName('');
@@ -125,6 +114,7 @@ export default function CreateSystemUserPage() {
       setGateIds([]);
       setGateAccessModes({});
       setDepartmentIds([]);
+      setDepartmentAccessModes({});
       setTimeout(() => router.push('/system/users/manage'), 1500);
     } catch (err) {
       setError(err.message);
@@ -142,7 +132,7 @@ export default function CreateSystemUserPage() {
       <div className="card">
         <h3 className="section-title">New System User</h3>
         <p className="section-desc">
-          Create a system user, assign a role, then limit access by divisions, gates, and departments.
+          Create a system user, assign a role, then limit access by divisions, division gates, and department gates.
         </p>
 
         <div className="su-create-grid" style={{ marginTop: '1rem' }}>
@@ -203,10 +193,10 @@ export default function CreateSystemUserPage() {
           </section>
 
           <section className="su-panel">
-            <h4 className="su-panel__title">Divisions &amp; Departments</h4>
+            <h4 className="su-panel__title">Divisions</h4>
             <div className="form-group">
               <label>Divisions</label>
-              <p className="su-hint">Leave empty for no division restriction.</p>
+              <p className="su-hint">Optional. Leave empty for no division restriction.</p>
               {divisions.length === 0 ? (
                 <p className="scope-empty">No divisions available.</p>
               ) : (
@@ -224,50 +214,58 @@ export default function CreateSystemUserPage() {
                 </div>
               )}
             </div>
+          </section>
+
+          <section className="su-panel">
+            <h4 className="su-panel__title">Gate Access</h4>
+            <p className="su-hint" style={{ marginTop: 0 }}>
+              Assign division gates and/or department gates. Department-only operators do not need division gates.
+            </p>
 
             <div className="form-group">
-              <label>Departments</label>
+              <label>Division Gates</label>
               <p className="su-hint">
-                Search and select departments for check-in/check-out. Gate assignment is optional.
+                Optional. Combined gates can be entry, exit, or both.
+                {divisionIds.length === 0 ? ' Showing all gates — select divisions to filter.' : ''}
+              </p>
+              <GateAccessPicker
+                gates={scopedGates}
+                selectedIds={gateIds}
+                modes={gateAccessModes}
+                showDivision={divisionIds.length === 0}
+                emptyMessage={
+                  divisionIds.length === 0
+                    ? 'No division gates available.'
+                    : 'No division gates in the selected divisions.'
+                }
+                onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
+                  setGateIds(nextIds);
+                  setGateAccessModes(nextModes);
+                }}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Department Gates</label>
+              <p className="su-hint">
+                Optional. Pick Entry, Exit, or Both — same as division gates. Inactive departments stay listed and marked.
               </p>
               <DepartmentPicker
                 departments={scopedDepartments}
                 selectedIds={departmentIds}
-                onToggle={toggleDepartment}
+                modes={departmentAccessModes}
+                searchPlaceholder="Search department gates…"
                 emptyMessage={
                   divisionIds.length === 0
-                    ? 'Select divisions first to filter departments.'
-                    : 'No departments in the selected divisions.'
+                    ? 'No department gates available.'
+                    : 'No department gates in the selected divisions.'
                 }
+                onChange={({ departmentIds: nextIds, departmentAccessModes: nextModes }) => {
+                  setDepartmentIds(nextIds);
+                  setDepartmentAccessModes(nextModes);
+                }}
               />
             </div>
-          </section>
-
-          <section className="su-panel">
-            <h4 className="su-panel__title">Gates</h4>
-            {divisionIds.length === 0 ? (
-              <div className="su-empty-scope">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }} aria-hidden>
-                  <rect x="3" y="11" width="18" height="11" rx="2" />
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
-                <p>Select divisions to see available gates.</p>
-              </div>
-            ) : (
-              <>
-                <p className="su-hint">Optional. Combined gates can be entry, exit, or both.</p>
-                <GateAccessPicker
-                  gates={scopedGates}
-                  selectedIds={gateIds}
-                  modes={gateAccessModes}
-                  emptyMessage="No gates in the selected divisions."
-                  onChange={({ gateIds: nextIds, gateAccessModes: nextModes }) => {
-                    setGateIds(nextIds);
-                    setGateAccessModes(nextModes);
-                  }}
-                />
-              </>
-            )}
           </section>
         </div>
 

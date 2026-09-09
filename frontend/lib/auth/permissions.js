@@ -20,6 +20,11 @@ export const PERMISSION_MODULES = [
   { key: 'vehicle_reports', label: 'Vehicle Reports' },
   { key: 'equipment_movements', label: 'Vehicle Entry & Exit' },
   { key: 'payroll_rate_master', label: 'Payroll Calculation' },
+  { key: 'jattu', label: 'JATTU Dashboard' },
+  { key: 'jattu_registrations', label: 'JATTU Registrations' },
+  { key: 'jattu_entry_exit', label: 'JATTU Entry & Exit' },
+  { key: 'jattu_activity', label: 'JATTU Activity' },
+  { key: 'jattu_attendance', label: 'JATTU Attendance History' },
 ];
 
 /** Modules that can grant or manage other accounts — treat as privileged. */

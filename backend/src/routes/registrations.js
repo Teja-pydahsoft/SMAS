@@ -1085,7 +1085,8 @@ router.post(
         const canBuild = await canBuildRegistrationCodePrefix(registration);
         if (!canBuild) {
           return res.status(400).json({
-            error: 'Labour Type (e.g. Daily Male) is required to issue a registration code (e.g. DM0001)',
+            error:
+              'A registration code prefix could not be determined. For Labour, set Labour Type (e.g. Daily Male → DM0001). For JATTU, codes use JA0001 automatically.',
           });
         }
         try {

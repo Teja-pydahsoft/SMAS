@@ -37,6 +37,19 @@ export const APP_NAV_ITEMS = [
     ],
   },
   {
+    path: '/jattu/dashboard',
+    label: 'JATTU Maintenance',
+    icon: 'registrations',
+    module: null,
+    section: 'MANAGEMENT',
+    children: [
+      { path: '/jattu/dashboard', label: 'Dashboard', icon: 'dashboard', module: 'registrations' },
+      { path: '/registrations?roleSlug=jattu', label: 'Registrations', icon: 'registrations', module: 'registrations' },
+      { path: '/jattu/entry-exit', label: 'Entry & Exit', icon: 'entryExit', module: 'gate' },
+      { path: '/jattu/activity', label: 'Activity', icon: 'cameras', module: 'activity' },
+    ],
+  },
+  {
     path: '/projects/create',
     label: 'Project Management',
     icon: 'projects',

@@ -2,7 +2,13 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import SystemUser from '../models/SystemUser.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { authenticate, signToken } from '../middleware/auth.js';
+import {
+  authenticate,
+  signToken,
+  shouldForceEmployeeAfterHoursLogout,
+  AFTER_HOURS_LOGOUT_CODE,
+  AFTER_HOURS_LOGOUT_MESSAGE,
+} from '../middleware/auth.js';
 import { getUserAccessScope } from '../services/accessScopeService.js';
 import { getLoginFlow } from '../services/loginFlowService.js';
 import { userHasPermission } from '../middleware/auth.js';
@@ -189,6 +195,13 @@ router.post(
 
     if (!user.isSuperAdmin && user.systemRoleId && !user.systemRoleId.isActive) {
       return res.status(403).json({ error: 'Your assigned role is inactive. Contact an administrator.' });
+    }
+
+    if (shouldForceEmployeeAfterHoursLogout(user)) {
+      return res.status(403).json({
+        error: AFTER_HOURS_LOGOUT_MESSAGE,
+        code: AFTER_HOURS_LOGOUT_CODE,
+      });
     }
 
     // ── Bootstrap: auto-approve the very first Super Admin device ────────────

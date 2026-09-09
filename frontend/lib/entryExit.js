@@ -1,4 +1,11 @@
-export function buildEntryExitUrl({ scanType, divisionId, gateId, departmentId, eventType }) {
+export function buildEntryExitUrl({
+  scanType,
+  divisionId,
+  gateId,
+  departmentId,
+  eventType,
+  basePath = '/entry-exit',
+}) {
   const params = new URLSearchParams({
     scanType,
     divisionId: String(divisionId),
@@ -6,7 +13,7 @@ export function buildEntryExitUrl({ scanType, divisionId, gateId, departmentId, 
   });
   if (gateId) params.set('gateId', String(gateId));
   if (departmentId) params.set('departmentId', String(departmentId));
-  return `/entry-exit?${params.toString()}`;
+  return `${basePath}?${params.toString()}`;
 }
 
 export function eventActionLabel(scanType, eventType) {

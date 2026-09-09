@@ -5,9 +5,24 @@ import {
   gateAccessModesToObject,
   isEventAllowedForGateMode,
 } from '../utils/gateAccessModes.js';
+import { isPastEmployeeAutoLogoutHour } from '../utils/istTime.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sams-dev-jwt-secret-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+export const AFTER_HOURS_LOGOUT_CODE = 'AFTER_HOURS_LOGOUT';
+export const AFTER_HOURS_LOGOUT_MESSAGE =
+  'Your session ended after 9:00 PM. Please sign in again tomorrow.';
+
+/**
+ * Active non–super-admin employees must not keep an authenticated session after 9pm IST.
+ */
+export function shouldForceEmployeeAfterHoursLogout(user) {
+  if (!user) return false;
+  if (user.isSuperAdmin) return false;
+  if (user.isActive === false) return false;
+  return isPastEmployeeAutoLogoutHour();
+}
 
 // ─── Simple in-process user cache ────────────────────────────────────────────
 // Avoids hitting MongoDB + 4 populate() calls on every authenticated request.
@@ -113,6 +128,13 @@ export async function authenticate(req, res, next) {
   // ── Cache hit: skip DB round-trip entirely ─────────────────────────────
   const cached = cacheGet(userId);
   if (cached) {
+    if (shouldForceEmployeeAfterHoursLogout(cached)) {
+      invalidateUserCache(userId);
+      return res.status(401).json({
+        error: AFTER_HOURS_LOGOUT_MESSAGE,
+        code: AFTER_HOURS_LOGOUT_CODE,
+      });
+    }
     req.user = cached;
     return next();
   }
@@ -132,6 +154,13 @@ export async function authenticate(req, res, next) {
 
     if (!user.isSuperAdmin && user.systemRoleId && !user.systemRoleId.isActive) {
       return res.status(403).json({ error: 'Assigned system role is inactive' });
+    }
+
+    if (shouldForceEmployeeAfterHoursLogout(user)) {
+      return res.status(401).json({
+        error: AFTER_HOURS_LOGOUT_MESSAGE,
+        code: AFTER_HOURS_LOGOUT_CODE,
+      });
     }
 
     cacheSet(userId, user);

@@ -702,8 +702,12 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState(() => {
-    if (searchParams?.get('error') === 'location_blocked') {
+    const err = searchParams?.get('error');
+    if (err === 'location_blocked') {
       return 'Your session was terminated because you left the authorized location area.';
+    }
+    if (err === 'after_hours') {
+      return 'Your session ended after 9:00 PM. Please sign in again tomorrow.';
     }
     return '';
   });

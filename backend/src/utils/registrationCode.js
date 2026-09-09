@@ -1,5 +1,6 @@
 import Registration from '../models/Registration.js';
 import RegistrationForm from '../models/RegistrationForm.js';
+import Role from '../models/Role.js';
 import Pass from '../models/Pass.js';
 import {
   PAY_FREQUENCY_CODE_LETTERS,
@@ -7,6 +8,11 @@ import {
 } from '../constants/index.js';
 
 const LABOUR_TYPE_VALUE = /^(daily|weekly|monthly|custom(?:\s+days)?)\s+(male|female)$/i;
+
+/** Fixed registration-code prefixes for roles that do not use Labour Type. */
+export const ROLE_CODE_PREFIXES = {
+  jattu: 'JA',
+};
 
 /** Old random format e.g. SAMS-MR0LT9JX-CVNY — must not be issued going forward. */
 export function isLegacySamsCode(code) {
@@ -78,17 +84,53 @@ async function loadFormFields(registration) {
   return form?.fields || [];
 }
 
+async function loadRole(registration) {
+  if (registration?.roleId && typeof registration.roleId === 'object' && registration.roleId.slug) {
+    return registration.roleId;
+  }
+  const roleId = registration?.roleId?._id || registration?.roleId;
+  if (!roleId) return null;
+  return Role.findById(roleId).select('slug name').lean();
+}
+
+/**
+ * Role-specific fixed prefixes (e.g. JATTU → JA0001).
+ */
+export function roleRegistrationCodePrefix(role) {
+  const slug = String(role?.slug || '').toLowerCase().trim();
+  if (slug && ROLE_CODE_PREFIXES[slug]) return ROLE_CODE_PREFIXES[slug];
+
+  const name = String(role?.name || '').toLowerCase().trim();
+  if (name === 'jattu' || name.includes('jattu')) return ROLE_CODE_PREFIXES.jattu;
+
+  return null;
+}
+
+async function resolveRegistrationCodePrefix(registration) {
+  const role = await loadRole(registration);
+  const rolePrefix = roleRegistrationCodePrefix(role);
+  if (rolePrefix) return rolePrefix;
+
+  const fields = await loadFormFields(registration);
+  const labourType = extractLabourType(registration, fields);
+  return (
+    buildRegistrationCodePrefix(labourType) ||
+    buildRegistrationCodePrefix(registration.payFrequency, registration.gender)
+  );
+}
+
 async function nextSequentialCode(prefix) {
   const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Case-insensitive match so ja0001 and JA0001 share one series.
   const existing = await Registration.find({
-    registrationCode: new RegExp(`^${escaped}\\d{4,}$`),
+    registrationCode: new RegExp(`^${escaped}\\d{4,}$`, 'i'),
   })
     .select('registrationCode')
     .lean();
 
   let maxSeq = 0;
   for (const row of existing) {
-    const match = String(row.registrationCode || '').match(new RegExp(`^${escaped}(\\d+)$`));
+    const match = String(row.registrationCode || '').match(new RegExp(`^${escaped}(\\d+)$`, 'i'));
     if (!match) continue;
     const n = Number(match[1]);
     if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
@@ -98,14 +140,12 @@ async function nextSequentialCode(prefix) {
 }
 
 /**
- * Assigns registration codes like DM0001 / DF0001 / WM0001 / WF0001 from Labour Type.
+ * Assigns registration codes:
+ * - JATTU → JA0001, JA0002, …
+ * - Labour → DM0001 / DF0001 / WM0001 / WF0001 from Labour Type
  */
 export async function generateRegistrationCode(registration, { maxAttempts = 8 } = {}) {
-  const fields = await loadFormFields(registration);
-  const labourType = extractLabourType(registration, fields);
-  const prefix =
-    buildRegistrationCodePrefix(labourType) ||
-    buildRegistrationCodePrefix(registration.payFrequency, registration.gender);
+  const prefix = await resolveRegistrationCodePrefix(registration);
 
   if (!prefix) {
     throw new Error(
@@ -115,7 +155,9 @@ export async function generateRegistrationCode(registration, { maxAttempts = 8 }
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const code = await nextSequentialCode(prefix);
-    const clash = await Registration.exists({ registrationCode: code });
+    const clash = await Registration.exists({
+      registrationCode: new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+    });
     if (!clash) return code;
   }
 
@@ -124,7 +166,7 @@ export async function generateRegistrationCode(registration, { maxAttempts = 8 }
 
 /**
  * True when this registration should receive (or replace a legacy SAMS- code with)
- * a labour type code.
+ * a sequential role/labour code.
  */
 export function shouldAssignRegistrationCode(registration) {
   if (!registration?.registrationCode) return true;
@@ -132,12 +174,7 @@ export function shouldAssignRegistrationCode(registration) {
 }
 
 export async function canBuildRegistrationCodePrefix(registration) {
-  const fields = await loadFormFields(registration);
-  const labourType = extractLabourType(registration, fields);
-  return Boolean(
-    buildRegistrationCodePrefix(labourType) ||
-    buildRegistrationCodePrefix(registration.payFrequency, registration.gender)
-  );
+  return Boolean(await resolveRegistrationCodePrefix(registration));
 }
 
 /** Keep Pass documents in sync when the registration code changes. */

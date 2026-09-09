@@ -5,6 +5,16 @@ export const IST_TIMEZONE = 'Asia/Kolkata';
 export const IST_OFFSET = '+05:30';
 
 /**
+ * Active employees (non–super-admin) are force-logged out at/after this IST hour.
+ * Overridable via EMPLOYEE_AUTO_LOGOUT_HOUR (0–23).
+ */
+export const EMPLOYEE_AUTO_LOGOUT_HOUR = (() => {
+  const raw = Number(process.env.EMPLOYEE_AUTO_LOGOUT_HOUR ?? 21);
+  if (!Number.isFinite(raw) || raw < 0 || raw > 23) return 21;
+  return Math.trunc(raw);
+})();
+
+/**
  * Calendar date in IST as YYYY-MM-DD.
  */
 export function todayDateStringIst(date = new Date()) {
@@ -14,6 +24,26 @@ export function todayDateStringIst(date = new Date()) {
     month: '2-digit',
     day: '2-digit',
   }).format(date);
+}
+
+/**
+ * Current hour (0–23) in Asia/Kolkata.
+ */
+export function currentHourIst(date = new Date()) {
+  const hourStr = new Intl.DateTimeFormat('en-GB', {
+    timeZone: IST_TIMEZONE,
+    hour: '2-digit',
+    hour12: false,
+  }).format(date);
+  const hour = Number(hourStr);
+  return Number.isFinite(hour) ? hour % 24 : 0;
+}
+
+/**
+ * True when the clock is at or past the employee auto-logout hour (default 21:00 IST).
+ */
+export function isPastEmployeeAutoLogoutHour(date = new Date()) {
+  return currentHourIst(date) >= EMPLOYEE_AUTO_LOGOUT_HOUR;
 }
 
 /**

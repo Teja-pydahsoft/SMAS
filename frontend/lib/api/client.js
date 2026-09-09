@@ -97,7 +97,11 @@ async function requestOnce(path, options = {}, { timeoutMs = null } = {}) {
             // ignore
           }
           if (!window.location.pathname.startsWith('/login')) {
-            window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+            const afterHours = data?.code === 'AFTER_HOURS_LOGOUT';
+            const next = encodeURIComponent(window.location.pathname);
+            window.location.href = afterHours
+              ? `/login?error=after_hours&next=${next}`
+              : `/login?next=${next}`;
           }
         }
       }

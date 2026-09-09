@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { clearSession, getStoredUser, getToken, setSession, hasPermission } from '@/lib/auth/session';
 import { clearGateFlowState } from '@/lib/gateSession';
+import { shouldAutoLogoutEmployee } from '@/lib/employeeAutoLogout';
 
 const AuthContext = createContext(null);
 
@@ -72,10 +73,27 @@ export function AuthProvider({ children }) {
     setUser(null);
     if (reason === 'location_blocked') {
       router.push('/login?error=location_blocked');
+    } else if (reason === 'after_hours') {
+      router.push('/login?error=after_hours');
     } else {
       router.push('/login');
     }
   }, [router]);
+
+  // Force-logout active employees at/after 9:00 PM IST
+  useEffect(() => {
+    if (!user) return undefined;
+
+    const check = () => {
+      if (shouldAutoLogoutEmployee(user)) {
+        logout('after_hours');
+      }
+    };
+
+    check();
+    const timer = setInterval(check, 30_000);
+    return () => clearInterval(timer);
+  }, [user, logout]);
 
   // Geolocation Continuous Tracking
   useEffect(() => {

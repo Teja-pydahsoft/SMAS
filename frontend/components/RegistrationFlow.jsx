@@ -491,7 +491,9 @@ export default function RegistrationFlow({
               </div>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.125rem', color: '#1e293b' }}>
-                  {isEditMode ? 'Update' : 'New Labour Registration'}
+                  {isEditMode
+                    ? 'Update'
+                    : `New ${role?.name || 'Registration'} Registration`}
                 </h3>
                 <p style={{ margin: 0, marginTop: '2px', color: '#64748b', fontSize: '0.875rem' }}>
                   {isEditMode

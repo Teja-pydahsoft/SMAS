@@ -14,12 +14,49 @@ function emptySelection() {
   };
 }
 
-export default function EntryExitSelector({ divisions, value, onApply, disabled }) {
-  const [draft, setDraft] = useState(value || emptySelection());
+export default function EntryExitSelector({
+  divisions,
+  value,
+  onApply,
+  disabled,
+  allowedScanTypes = ['gate', 'department'],
+}) {
+  const scanTypes = (allowedScanTypes?.length ? allowedScanTypes : ['gate', 'department']).filter(
+    (type) => type === 'gate' || type === 'department'
+  );
+  const defaultScanType = scanTypes.includes('gate') ? 'gate' : scanTypes[0] || 'gate';
+  const divisionOnly = scanTypes.length === 1 && scanTypes[0] === 'gate';
+
+  const [draft, setDraft] = useState(() => {
+    const initial = value || emptySelection();
+    return {
+      ...initial,
+      scanType: scanTypes.includes(initial.scanType) ? initial.scanType : defaultScanType,
+      ...(divisionOnly ? { departmentId: '' } : {}),
+    };
+  });
 
   useEffect(() => {
-    if (value) setDraft(value);
-  }, [value]);
+    if (!value) return;
+    setDraft({
+      ...value,
+      scanType: scanTypes.includes(value.scanType) ? value.scanType : defaultScanType,
+      ...(divisionOnly ? { departmentId: '' } : {}),
+    });
+  }, [value, defaultScanType, divisionOnly, scanTypes.join('|')]);
+
+  // Keep draft scan type within the allowed set (e.g. JATTU division-only).
+  useEffect(() => {
+    if (!scanTypes.includes(draft.scanType)) {
+      setDraft((prev) => ({
+        ...prev,
+        scanType: defaultScanType,
+        departmentId: '',
+        gateId: defaultScanType === 'gate' ? prev.gateId : '',
+        eventType: defaultScanType === 'department' ? 'auto' : prev.eventType || 'entry',
+      }));
+    }
+  }, [draft.scanType, defaultScanType, scanTypes.join('|')]);
 
   const divisionOptions = useMemo(() => {
     if (draft.scanType === 'department') {
@@ -94,6 +131,7 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
     const hasEvent = eventOptions.includes(draft.eventType);
 
     if (!hasDivision || !hasTarget || !hasEvent) return;
+    if (!scanTypes.includes(draft.scanType)) return;
 
     const payload = {
       scanType: draft.scanType,
@@ -115,7 +153,7 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
 
     if (!sameAsValue) onApply(payload);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onApply is stable from parent useCallback
-  }, [draft, disabled, eventOptions, value]);
+  }, [draft, disabled, eventOptions, value, scanTypes.join('|')]);
 
   useEffect(() => {
     if (!eventOptions.includes(draft.eventType)) {
@@ -130,22 +168,30 @@ export default function EntryExitSelector({ divisions, value, onApply, disabled 
 
   return (
     <div className="card entry-exit-selector">
-      <div className="entry-exit-selector__type">
-        <span className="entry-exit-selector__type-label">Scan type</span>
-        <div className="sub-nav entry-exit-selector__tabs">
-          {['gate', 'department'].map((type) => (
-            <button
-              key={type}
-              type="button"
-              className={`sub-nav-item ${draft.scanType === type ? 'active' : ''}`}
-              disabled={disabled}
-              onClick={() => updateDraft({ scanType: type })}
-            >
-              {type === 'gate' ? 'Gate' : 'Department'}
-            </button>
-          ))}
+      {!divisionOnly && (
+        <div className="entry-exit-selector__type">
+          <span className="entry-exit-selector__type-label">Scan type</span>
+          <div className="sub-nav entry-exit-selector__tabs">
+            {scanTypes.map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={`sub-nav-item ${draft.scanType === type ? 'active' : ''}`}
+                disabled={disabled}
+                onClick={() => updateDraft({ scanType: type })}
+              >
+                {type === 'gate' ? 'Gate' : 'Department'}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {divisionOnly && (
+        <p className="entry-exit-selector__auto-hint field-hint" style={{ marginTop: 0 }}>
+          Division gate entry &amp; exit only — department check-in is not used here.
+        </p>
+      )}
 
       <div className="gate-select-grid gate-select-grid--3col">
         <div className="form-group" style={{ marginBottom: 0 }}>

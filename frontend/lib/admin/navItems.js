@@ -9,6 +9,18 @@ export const SUPER_ADMIN_NAV_ITEMS = [
   { path: '/roles', label: 'Roles', icon: 'roles', module: 'registration_roles' },
   { path: '/registrations', label: 'Registrations', icon: 'registrations', module: 'registrations' },
   {
+    path: '/jattu/dashboard',
+    label: 'JATTU Maintenance',
+    icon: 'registrations',
+    module: null,
+    children: [
+      { path: '/jattu/dashboard', label: 'Dashboard', module: 'registrations' },
+      { path: '/registrations?roleSlug=jattu', label: 'Registrations', module: 'registrations' },
+      { path: '/jattu/entry-exit', label: 'Entry & Exit', module: 'gate' },
+      { path: '/jattu/activity', label: 'Activity', module: 'activity' },
+    ],
+  },
+  {
     path: '/organization',
     label: 'Organization',
     icon: 'organization',

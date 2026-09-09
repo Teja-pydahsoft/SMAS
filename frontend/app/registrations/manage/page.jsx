@@ -95,6 +95,8 @@ function RegistrationFlowModal({ title, subtitle, onClose, children, ariaLabel }
 
 function NewRegistrationModal({ roles, roleId, onClose, onComplete }) {
   const [flowKey, setFlowKey] = useState(0);
+  const selectedRole = (roles || []).find((r) => String(r._id) === String(roleId));
+  const roleLabel = selectedRole?.name || 'Registration';
 
   function handleRegistrationComplete(reg) {
     onComplete?.(reg);
@@ -106,10 +108,10 @@ function NewRegistrationModal({ roles, roleId, onClose, onComplete }) {
 
   return (
     <RegistrationFlowModal
-      title="New Labour Registration"
+      title={`New ${roleLabel} Registration`}
       subtitle="Capture identity details and assign workforce access"
       onClose={onClose}
-      ariaLabel="New Registration"
+      ariaLabel={`New ${roleLabel} Registration`}
     >
       <RegistrationFlow
         key={`new-modal-${flowKey}`}
@@ -243,21 +245,21 @@ function ManageRegistrationsContent() {
 
   useEffect(() => {
     api.roles.list().then((loadedRoles) => {
-      const urlRoleSlug = searchParams.get('roleSlug');
-      
+      const urlRoleSlug = (searchParams.get('roleSlug') || '').toLowerCase();
+      // Roles that have their own sidebar maintenance section — keep them scoped there.
+      const SIDEBAR_SCOPED_ROLE_SLUGS = ['driver', 'jattu'];
+
       let finalRoles = loadedRoles;
-      if (urlRoleSlug === 'driver') {
-        const driverRole = loadedRoles.find(r => r.slug === 'driver');
-        if (driverRole) {
-          setFilterRoleId(driverRole._id);
+      if (urlRoleSlug && SIDEBAR_SCOPED_ROLE_SLUGS.includes(urlRoleSlug)) {
+        const scopedRole = loadedRoles.find((r) => r.slug === urlRoleSlug);
+        if (scopedRole) {
+          setFilterRoleId(scopedRole._id);
         }
-        // If we are on the driver page, we probably only need the driver role
-        finalRoles = loadedRoles.filter(r => r.slug === 'driver');
+        finalRoles = loadedRoles.filter((r) => r.slug === urlRoleSlug);
       } else {
-        // Otherwise, hide the driver role from the main dropdown
-        finalRoles = loadedRoles.filter(r => r.slug !== 'driver');
+        finalRoles = loadedRoles.filter((r) => !SIDEBAR_SCOPED_ROLE_SLUGS.includes(r.slug));
       }
-      
+
       setRoles(finalRoles);
     }).catch((e) => setError(e.message));
   }, [searchParams]);

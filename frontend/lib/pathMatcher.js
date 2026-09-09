@@ -38,5 +38,15 @@ export function isPathActive(pathname, searchParams, targetPath) {
 export function isGroupActive(pathname, searchParams, item) {
   if (!item) return false;
   if (item.path && isPathActive(pathname, searchParams, item.path)) return true;
-  return (item.children || []).some((child) => isPathActive(pathname, searchParams, child.path));
+  if ((item.children || []).some((child) => isPathActive(pathname, searchParams, child.path))) {
+    return true;
+  }
+  // Keep JATTU Maintenance open when on its scoped registration manage URL
+  if (item.path === '/jattu/dashboard') {
+    if (pathname.startsWith('/jattu/')) return true;
+    if (pathname.startsWith('/registrations') && searchParams?.get?.('roleSlug') === 'jattu') {
+      return true;
+    }
+  }
+  return false;
 }

@@ -16,14 +16,62 @@ export const AFTER_HOURS_LOGOUT_MESSAGE =
   'Your session ended after 9:00 PM. Please sign in again tomorrow.';
 
 /**
- * Active non–super-admin employees must not keep an authenticated session after 9pm IST.
+ * Check if user is associated with JATTU maintenance / workforce.
+ */
+export function isJattuUser(user) {
+  if (!user) return false;
+  if (user.isSuperAdmin) return false;
+
+  const directSlug = String(user.roleSlug || user.role || '').toLowerCase();
+  const directName = String(user.roleName || '').toLowerCase();
+  if (directSlug === 'jattu' || directName.includes('jattu')) return true;
+
+  const role = user.systemRoleId;
+  if (role && typeof role === 'object') {
+    const slug = String(role.slug || '').toLowerCase();
+    const name = String(role.name || '').toLowerCase();
+    if (slug === 'jattu' || name.includes('jattu')) return true;
+
+    const perms = role.permissions || {};
+    const jattuKeys = [
+      'jattu',
+      'jattu_registrations',
+      'jattu_entry_exit',
+      'jattu_activity',
+      'jattu_attendance',
+    ];
+    if (jattuKeys.some((key) => Boolean(perms[key]?.read || perms[key]?.write))) {
+      return true;
+    }
+  }
+
+  if (user.permissions && typeof user.permissions === 'object') {
+    const jattuKeys = [
+      'jattu',
+      'jattu_registrations',
+      'jattu_entry_exit',
+      'jattu_activity',
+      'jattu_attendance',
+    ];
+    if (jattuKeys.some((key) => Boolean(user.permissions[key]?.read || user.permissions[key]?.write))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Active JATTU employees must not keep an authenticated session after 9pm IST.
  */
 export function shouldForceEmployeeAfterHoursLogout(user) {
   if (!user) return false;
   if (user.isSuperAdmin) return false;
   if (user.isActive === false) return false;
+  if (!isJattuUser(user)) return false;
   return isPastEmployeeAutoLogoutHour();
 }
+
 
 // ─── Simple in-process user cache ────────────────────────────────────────────
 // Avoids hitting MongoDB + 4 populate() calls on every authenticated request.

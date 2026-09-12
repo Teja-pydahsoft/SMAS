@@ -2295,6 +2295,7 @@ export async function getDepartmentActivity({
   divisionId = null,
   divisionIds = null,
   departmentId = null,
+  departmentIds = null,
   date = null,
   dateFrom = null,
   dateTo = null,
@@ -2350,6 +2351,31 @@ export async function getDepartmentActivity({
     }
   }
 
+  const departmentScoped = Array.isArray(departmentIds);
+  const deptObjIds = departmentScoped ? toObjectIdArray(departmentIds) : [];
+  if (departmentScoped && deptObjIds.length === 0) {
+    return {
+      date: validDate,
+      dateFrom: rangeFrom,
+      dateTo: rangeTo,
+      divisionId: null,
+      departmentId: null,
+      departmentName: null,
+      enteredCount: 0,
+      inCount: 0,
+      exitCount: 0,
+      divisionOnlyCount: 0,
+      people: [],
+      divisionOnlyPeople: [],
+      page: paginate ? parsedPage : 1,
+      limit: paginate ? parsedLimit : null,
+      total: 0,
+      divisionOnlyTotal: 0,
+      hasMore: false,
+      statsOnly: Boolean(statsOnly),
+    };
+  }
+
   let department = null;
   const hasDepartmentFilter = Boolean(departmentId && mongoose.Types.ObjectId.isValid(departmentId));
   if (hasDepartmentFilter) {
@@ -2381,7 +2407,11 @@ export async function getDepartmentActivity({
     createdAt: { $gte: dayStart, $lte: dayEnd },
   });
   if (divisionObjIds) deptLogFilter.divisionId = { $in: divisionObjIds };
-  if (hasDepartmentFilter) deptLogFilter.departmentId = department._id;
+  if (hasDepartmentFilter) {
+    deptLogFilter.departmentId = department._id;
+  } else if (departmentScoped) {
+    deptLogFilter.departmentId = { $in: deptObjIds };
+  }
   if (scopeDivisionId) {
     deptLogFilter.divisionId = new mongoose.Types.ObjectId(scopeDivisionId);
   }

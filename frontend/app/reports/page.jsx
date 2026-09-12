@@ -2042,7 +2042,13 @@ function TodayActivityTab({
 
   useEffect(() => {
     api.reports.divisions()
-      .then((res) => setDivisions(Array.isArray(res?.divisions) ? res.divisions : []))
+      .then((res) => {
+        const list = Array.isArray(res?.divisions) ? res.divisions : [];
+        setDivisions(list);
+        if (!res?.isSuperAdmin && list.length === 1) {
+          setDivisionFilter(list[0]._id);
+        }
+      })
       .catch(() => setDivisions([]));
     api.shifts.list()
       .then((list) => setShiftOptions(Array.isArray(list) ? list : []))
@@ -6505,6 +6511,7 @@ const REPORT_TABS = [
 ];
 
 function ReportsContent() {
+  const { user } = useAuth();
   const now = useNow();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -6585,7 +6592,14 @@ function ReportsContent() {
             </svg>
           </div>
           <div>
-            <h1 className="rc-page-header__title">Report Center — {tabLabel}</h1>
+            <h1 className="rc-page-header__title">
+              Report Center — {tabLabel}
+              {user && !user.isSuperAdmin && (
+                <span style={{ fontSize: '0.75rem', backgroundColor: 'rgba(2, 132, 199, 0.12)', color: '#0284c7', padding: '2px 8px', borderRadius: '4px', marginLeft: '10px', fontWeight: 600, border: '1px solid rgba(2, 132, 199, 0.3)', display: 'inline-block', verticalAlign: 'middle' }}>
+                  Scoped View
+                </span>
+              )}
+            </h1>
             <p className="rc-page-header__subtitle">Monitor attendance, access history, analytics and export reports.</p>
           </div>
         </div>

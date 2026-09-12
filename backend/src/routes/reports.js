@@ -5,6 +5,9 @@ import {
   getScopedDivisionIds,
   resolveDivisionFilterIds,
   getScopedDivisionOptions,
+  getScopedDepartmentIds,
+  resolveDepartmentFilterIds,
+  getScopedDepartmentOptions,
 } from '../services/accessScopeService.js';
 import {
   listRegistrationReports,
@@ -28,6 +31,14 @@ async function resolveRequestDivisionIds(req) {
   return resolveDivisionFilterIds(scopedIds, req.query.divisionId);
 }
 
+/**
+ * Resolve the effective department filter for the current request.
+ */
+async function resolveRequestDepartmentIds(req) {
+  const scopedIds = await getScopedDepartmentIds(req.user);
+  return resolveDepartmentFilterIds(scopedIds, req.query.departmentId);
+}
+
 router.get(
   '/divisions',
   requirePermission('reports', 'read'),
@@ -38,14 +49,25 @@ router.get(
 );
 
 router.get(
+  '/departments',
+  requirePermission('reports', 'read'),
+  asyncHandler(async (req, res) => {
+    const data = await getScopedDepartmentOptions(req.user);
+    res.json(data);
+  })
+);
+
+router.get(
   '/registrations',
   requirePermission('reports', 'read'),
   asyncHandler(async (req, res) => {
     const divisionIds = await resolveRequestDivisionIds(req);
+    const departmentIds = await resolveRequestDepartmentIds(req);
     const items = await listRegistrationReports({
       search: req.query.search || '',
       limit: req.query.limit || 100,
       divisionIds,
+      departmentIds,
     });
     res.json(items);
   })
@@ -56,8 +78,10 @@ router.get(
   requirePermission('reports', 'read'),
   asyncHandler(async (req, res) => {
     const divisionIds = await resolveRequestDivisionIds(req);
+    const departmentIds = await resolveRequestDepartmentIds(req);
     const data = await getDailyPassByRole({
       divisionIds,
+      departmentIds,
       date: req.query.date || null,
       dateFrom: req.query.dateFrom || null,
       dateTo: req.query.dateTo || null,
@@ -71,13 +95,18 @@ router.get(
   requirePermission('reports', 'read'),
   asyncHandler(async (req, res) => {
     const divisionIds = await resolveRequestDivisionIds(req);
+    const departmentIds = await resolveRequestDepartmentIds(req);
     // Empty array = requested division is outside the user's scope
     if (Array.isArray(divisionIds) && divisionIds.length === 0 && req.query.divisionId) {
       return res.status(403).json({ error: 'Division is outside your access scope' });
     }
+    if (Array.isArray(departmentIds) && departmentIds.length === 0 && req.query.departmentId) {
+      return res.status(403).json({ error: 'Department is outside your access scope' });
+    }
 
     const data = await getDepartmentActivity({
       divisionIds,
+      departmentIds,
       departmentId: req.query.departmentId || null,
       date: req.query.date || null,
       dateFrom: req.query.dateFrom || null,
@@ -96,6 +125,7 @@ router.get(
   requireAnyPermission(['reports', 'jattu_attendance'], 'read'),
   asyncHandler(async (req, res) => {
     const divisionIds = await resolveRequestDivisionIds(req);
+    const departmentIds = await resolveRequestDepartmentIds(req);
     const data = await getAttendanceHistoryGrid({
       dateFrom: req.query.dateFrom || '',
       dateTo: req.query.dateTo || '',
@@ -104,6 +134,7 @@ router.get(
       limit: req.query.limit || 50,
       page: req.query.page || 1,
       divisionIds,
+      departmentIds,
       payFrequency: req.query.payFrequency || '',
       shiftName: req.query.shiftName || '',
       selectionFilters: req.query.selectionFilters || '{}',

@@ -44,6 +44,8 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
   });
 }));
 
+import { getScopedDivisionIds, getScopedDepartmentIds } from '../services/accessScopeService.js';
+
 router.get('/movements', asyncHandler(async (req, res) => {
   const { vehicleId, plateNumber, direction, departmentId, status, from, to, limit = 500, page = 1 } = req.query;
   const filter = {};
@@ -63,6 +65,23 @@ router.get('/movements', asyncHandler(async (req, res) => {
   }
   if (departmentId) filter.departmentId = departmentId;
   if (status) filter.status = status;
+
+  if (req.user && !req.user.isSuperAdmin) {
+    const scopedDeptIds = await getScopedDepartmentIds(req.user);
+    if (Array.isArray(scopedDeptIds)) {
+      if (filter.departmentId) {
+        if (!scopedDeptIds.includes(String(filter.departmentId))) {
+          filter.departmentId = null;
+        }
+      } else {
+        filter.departmentId = { $in: scopedDeptIds };
+      }
+    }
+    const scopedDivIds = await getScopedDivisionIds(req.user);
+    if (Array.isArray(scopedDivIds)) {
+      filter.divisionId = { $in: scopedDivIds };
+    }
+  }
   
   if (from || to) {
     const dateFilter = {};

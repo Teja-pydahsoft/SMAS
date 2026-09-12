@@ -111,11 +111,21 @@ router.get(
   })
 );
 
+import { getScopedDepartmentIds } from '../services/accessScopeService.js';
+
 // GET /api/equipment/idle-monitoring/reports
 router.get(
   '/reports',
   asyncHandler(async (req, res) => {
-    const idleSessions = await IdleSession.find()
+    const filter = {};
+    if (req.user && !req.user.isSuperAdmin) {
+      const scopedDeptIds = await getScopedDepartmentIds(req.user);
+      if (Array.isArray(scopedDeptIds)) {
+        filter.lastDepartmentId = { $in: scopedDeptIds };
+      }
+    }
+
+    const idleSessions = await IdleSession.find(filter)
       .sort({ startTime: -1 })
       .populate('vehicleId')
       .populate('lastDepartmentId');

@@ -100,6 +100,82 @@ export function resolveDivisionFilterIds(scopedIds, requestedDivisionId) {
 }
 
 /**
+ * Resolve the list of department ObjectId strings a user is allowed to access/view.
+ * Returns `null` for super admins (meaning "no restriction / all departments").
+ * Returns an array (possibly empty) for scoped users.
+ */
+export async function getScopedDepartmentIds(user) {
+  if (!user || Boolean(user.isSuperAdmin)) return null;
+
+  const explicitDeptIds = (user.departmentIds || []).map(normalizeId).filter(Boolean);
+  if (explicitDeptIds.length > 0) {
+    return [...new Set(explicitDeptIds)];
+  }
+
+  const scopedDivIds = await getScopedDivisionIds(user);
+  if (scopedDivIds === null) return null;
+  if (scopedDivIds.length === 0) return [];
+
+  const depts = await Department.find({ divisionIds: { $in: scopedDivIds }, isActive: true })
+    .select('_id')
+    .lean();
+  return depts.map((d) => d._id.toString());
+}
+
+/**
+ * Combine a user's allowed departments (`scopedIds`, null = all) with an optional
+ * requested department id into the effective filter list.
+ */
+export function resolveDepartmentFilterIds(scopedIds, requestedDepartmentId) {
+  const requested = requestedDepartmentId ? String(requestedDepartmentId).trim() : '';
+
+  if (scopedIds === null || scopedIds === undefined) {
+    return requested ? [requested] : null;
+  }
+
+  const scoped = scopedIds.map((id) => String(id));
+  if (requested) {
+    return scoped.includes(requested) ? [requested] : [];
+  }
+  return scoped;
+}
+
+/**
+ * Lightweight list of departments a user may filter reports by.
+ */
+export async function getScopedDepartmentOptions(user) {
+  const isSuperAdmin = Boolean(user.isSuperAdmin);
+  const scopedIds = await getScopedDepartmentIds(user);
+
+  const filter = { isActive: true };
+  if (!isSuperAdmin) {
+    if (!scopedIds || scopedIds.length === 0) {
+      return { isSuperAdmin, departments: [] };
+    }
+    filter._id = { $in: scopedIds };
+  }
+
+  const departments = await Department.find(filter)
+    .populate('divisionIds', 'name slug')
+    .select('name slug divisionIds')
+    .sort({ name: 1 })
+    .lean();
+
+  return {
+    isSuperAdmin,
+    departments: departments.map((d) => ({
+      _id: d._id.toString(),
+      name: d.name,
+      slug: d.slug,
+      divisionIds: (d.divisionIds || []).map((div) => ({
+        _id: div._id?.toString() || div.toString(),
+        name: div.name || '',
+      })),
+    })),
+  };
+}
+
+/**
  * Lightweight list of the divisions a user may filter reports by.
  * Super admins get every active division; scoped users only their own.
  */

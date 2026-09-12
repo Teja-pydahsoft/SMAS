@@ -38,12 +38,25 @@ async function validateDivisions(divisionIds) {
   return { divisions };
 }
 
+import { getScopedDepartmentIds, getScopedDivisionIds } from '../services/accessScopeService.js';
+
 router.get(
   '/',
   asyncHandler(async (req, res) => {
     const filter = {};
     if (req.query.divisionId) filter.divisionIds = req.query.divisionId;
     if (req.query.isActive === 'true') filter.isActive = true;
+
+    if (req.user && !req.user.isSuperAdmin) {
+      const scopedDeptIds = await getScopedDepartmentIds(req.user);
+      if (Array.isArray(scopedDeptIds)) {
+        filter._id = { $in: scopedDeptIds };
+      }
+      const scopedDivIds = await getScopedDivisionIds(req.user);
+      if (Array.isArray(scopedDivIds) && !req.query.divisionId) {
+        filter.divisionIds = { $in: scopedDivIds };
+      }
+    }
 
     const departments = await Department.find(filter)
       .populate('divisionIds', 'name slug isActive')

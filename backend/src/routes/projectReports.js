@@ -24,6 +24,8 @@ async function labourReportHandler(req, res) {
   }
 }
 
+import { getScopedDivisionIds, getScopedDepartmentIds } from '../services/accessScopeService.js';
+
 router.get(
   '/projects',
   requirePermission('project_reports', 'read'),
@@ -48,6 +50,30 @@ router.get(
     ) {
       filter.divisionId = divisionId;
     }
+
+    if (req.user && !req.user.isSuperAdmin) {
+      const scopedDivIds = await getScopedDivisionIds(req.user);
+      if (Array.isArray(scopedDivIds)) {
+        if (filter.divisionId) {
+          if (!scopedDivIds.includes(String(filter.divisionId))) {
+            return res.json([]);
+          }
+        } else {
+          filter.divisionId = { $in: scopedDivIds };
+        }
+      }
+      const scopedDeptIds = await getScopedDepartmentIds(req.user);
+      if (Array.isArray(scopedDeptIds)) {
+        if (filter.departmentId) {
+          if (!scopedDeptIds.includes(String(filter.departmentId))) {
+            return res.json([]);
+          }
+        } else {
+          filter.departmentId = { $in: scopedDeptIds };
+        }
+      }
+    }
+
     const projects = await Project.find(filter)
       .select('projectName status projectType requiredDays departmentId divisionId createdAt')
       .populate('departmentId', 'name')

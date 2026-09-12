@@ -474,7 +474,16 @@ export const api = {
     },
     divisions: () => request('/reports/divisions'),
     attendanceHistory: (params = {}) => {
-      const qs = new URLSearchParams(params).toString();
+      const cleanParams = {};
+      for (const [key, val] of Object.entries(params)) {
+        if (val === undefined || val === null || val === '') continue;
+        if (Array.isArray(val)) {
+          if (val.length > 0) cleanParams[key] = val.join(',');
+        } else {
+          cleanParams[key] = val;
+        }
+      }
+      const qs = new URLSearchParams(cleanParams).toString();
       return requestOnce(`/reports/attendance-history${qs ? `?${qs}` : ''}`, {}, { timeoutMs: REPORT_TIMEOUT_MS });
     },
     recalculateAttendanceHistory: (data = {}) =>

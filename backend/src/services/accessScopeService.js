@@ -86,15 +86,36 @@ export async function getScopedDivisionIds(user) {
  *   - returns [ids]   → restrict to these divisions
  */
 export function resolveDivisionFilterIds(scopedIds, requestedDivisionId) {
-  const requested = requestedDivisionId ? String(requestedDivisionId).trim() : '';
+  let requested = [];
+  if (Array.isArray(requestedDivisionId)) {
+    requested = requestedDivisionId
+      .flatMap((id) => (typeof id === 'string' ? id.split(',') : String(id)))
+      .map((id) => String(id).trim())
+      .filter(Boolean);
+  } else if (typeof requestedDivisionId === 'string' && requestedDivisionId.trim()) {
+    const str = requestedDivisionId.trim();
+    let parsed = null;
+    if (str.startsWith('[') && str.endsWith(']')) {
+      try {
+        parsed = JSON.parse(str);
+      } catch (_) {}
+    }
+    if (Array.isArray(parsed)) {
+      requested = parsed.map((id) => String(id).trim()).filter(Boolean);
+    } else {
+      requested = str.split(',').map((id) => id.trim()).filter(Boolean);
+    }
+  }
+
+  requested = requested.filter((id) => id !== 'all' && id !== '__all__');
 
   if (scopedIds === null || scopedIds === undefined) {
-    return requested ? [requested] : null;
+    return requested.length > 0 ? requested : null;
   }
 
   const scoped = scopedIds.map((id) => String(id));
-  if (requested) {
-    return scoped.includes(requested) ? [requested] : [];
+  if (requested.length > 0) {
+    return requested.filter((id) => scoped.includes(id));
   }
   return scoped;
 }

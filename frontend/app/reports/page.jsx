@@ -5396,6 +5396,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
     dateTo: '',
     roleId: '',
     divisionId: '',
+    divisionIds: [],
     payFrequency: '',
     shiftName: '',
   });
@@ -5427,7 +5428,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
 
   const HISTORY_PAGE_SIZE = 50;
 
-  const fetchHistoryPage = useCallback(async ({ dateFrom, dateTo, roleId, divisionId, payFrequency, shiftName, selectionFilters, page = 1, search = '' }) => {
+  const fetchHistoryPage = useCallback(async ({ dateFrom, dateTo, roleId, divisionId, divisionIds, payFrequency, shiftName, selectionFilters, page = 1, search = '' }) => {
     const params = { 
       dateFrom, 
       dateTo, 
@@ -5439,7 +5440,13 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
       selectionFilters: JSON.stringify(selectionFilters || {})
     };
     if (roleId) params.roleId = roleId;
-    if (divisionId) params.divisionId = divisionId;
+    const divList = Array.isArray(divisionIds)
+      ? divisionIds.filter(Boolean)
+      : (divisionId && divisionId !== 'all' ? [divisionId] : []);
+    if (divList.length > 0) {
+      params.divisionIds = divList.join(',');
+      params.divisionId = divList.join(',');
+    }
     
     return await api.reports.attendanceHistory(params);
   }, []);
@@ -5477,6 +5484,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
           dateTo,
           roleId: filters.roleId,
           divisionId: filters.divisionId,
+          divisionIds: filters.divisionIds,
           payFrequency: filters.payFrequency,
           shiftName: filters.shiftName,
           selectionFilters,
@@ -5518,6 +5526,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
         dateTo,
         roleId: filters.roleId,
         divisionId: filters.divisionId,
+        divisionIds: filters.divisionIds,
         payFrequency: filters.payFrequency,
         shiftName: filters.shiftName,
         selectionFilters,
@@ -5547,6 +5556,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
         dateTo,
         roleId: filters.roleId,
         divisionId: filters.divisionId,
+        divisionIds: filters.divisionIds,
         payFrequency: filters.payFrequency,
         shiftName: filters.shiftName,
         selectionFilters,
@@ -5658,7 +5668,13 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
         registrationIds: employees.map(e => e.registrationId)
       };
       if (filters.roleId) payload.roleId = filters.roleId;
-      if (filters.divisionId) payload.divisionId = filters.divisionId;
+      const divList = Array.isArray(filters.divisionIds)
+        ? filters.divisionIds.filter(Boolean)
+        : (filters.divisionId && filters.divisionId !== 'all' ? [filters.divisionId] : []);
+      if (divList.length > 0) {
+        payload.divisionIds = divList;
+        payload.divisionId = divList.join(',');
+      }
 
       const result = await api.reports.recalculateAttendanceHistory(payload);
       setData(result);
@@ -5859,13 +5875,20 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
 
           {divisions.length > 0 && (
             <div className="form-group rc-filter-inline__item">
-              <label>Division</label>
-              <select value={filters.divisionId} onChange={e => setFilters(f => ({ ...f, divisionId: e.target.value }))} disabled={busy}>
-                <option value="">All Divisions</option>
-                {divisions.map(d => (
-                  <option key={d._id} value={d._id}>{d.name}</option>
-                ))}
-              </select>
+              <label>Divisions</label>
+              <SearchableSelect
+                options={divisions.map((d) => ({ value: d._id, label: d.name }))}
+                value={filters.divisionIds && filters.divisionIds.length > 0 ? filters.divisionIds : 'all'}
+                multiple={true}
+                onChange={(newVal) => {
+                  const ids = Array.isArray(newVal)
+                    ? newVal
+                    : (newVal && newVal !== 'all' ? [newVal] : []);
+                  setFilters((f) => ({ ...f, divisionIds: ids, divisionId: ids.join(',') }));
+                }}
+                placeholder="All Divisions"
+                disabled={busy}
+              />
             </div>
           )}
 

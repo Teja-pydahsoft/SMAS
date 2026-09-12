@@ -28,7 +28,11 @@ const router = Router();
  */
 async function resolveRequestDivisionIds(req) {
   const scopedIds = await getScopedDivisionIds(req.user);
-  return resolveDivisionFilterIds(scopedIds, req.query.divisionId);
+  const requested =
+    req.query.divisionIds ||
+    req.query.divisionId ||
+    (req.body && (req.body.divisionIds || req.body.divisionId));
+  return resolveDivisionFilterIds(scopedIds, requested);
 }
 
 /**
@@ -151,7 +155,7 @@ router.post(
     const scopedIds = await getScopedDivisionIds(req.user);
     const divisionIds = resolveDivisionFilterIds(
       scopedIds,
-      body.divisionId || req.query.divisionId
+      body.divisionIds || body.divisionId || req.query.divisionIds || req.query.divisionId
     );
     const data = await recalculateAttendanceHistory({
       dateFrom: body.dateFrom || req.query.dateFrom || '',

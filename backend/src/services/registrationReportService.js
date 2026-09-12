@@ -488,6 +488,8 @@ function slimPassForAttendance(pass) {
       fullDayMinHours: payload.fullDayMinHours ?? null,
       gateEntryAt: payload.gateEntryAt || null,
       gateExitAt: payload.gateExitAt || null,
+      noGateOut: Boolean(payload.noGateOut),
+      autoClosedAtLastActivity: Boolean(payload.autoClosedAtLastActivity),
     },
   };
 }
@@ -573,6 +575,8 @@ function resolveDayAttendance({
     shiftTotalHours,
     halfDayMinHours: shift?.halfDayMinHours ?? session?.halfDayMinHours ?? null,
     fullDayMinHours: shift?.fullDayMinHours ?? session?.fullDayMinHours ?? null,
+    noGateOut: Boolean(activityWindow.noGateOut || session?.noGateOut),
+    closedAtLastActivity: Boolean(activityWindow.noGateOut || session?.noGateOut || session?.autoClosedAtLastActivity),
   };
 
   const shiftStatus = resolveShiftDayStatus(activityHours, {
@@ -1823,6 +1827,8 @@ export async function getAttendanceHistoryGrid({
             fullDayMinHours: '$qrPayload.fullDayMinHours',
             gateEntryAt: '$qrPayload.gateEntryAt',
             gateExitAt: '$qrPayload.gateExitAt',
+            noGateOut: '$qrPayload.noGateOut',
+            autoClosedAtLastActivity: '$qrPayload.autoClosedAtLastActivity',
           },
         },
       },
@@ -2062,54 +2068,134 @@ export async function recalculateAttendanceHistory({
 
   const passes = await Pass.find(passSyncQuery).lean();
 
+  // Find unclosed past-day passes (where date is before today and gateExitAt is missing)
+  const unclosedPastPasses = passes.filter(
+    (p) => p.validDate && p.validDate < today && !p.qrPayload?.gateExitAt
+  );
+
+  const logsByRegDate = new Map();
+  if (unclosedPastPasses.length > 0) {
+    const unclosedRegIds = [...new Set(unclosedPastPasses.map((p) => p.registrationId))];
+    const unclosedLogs = await GateLog.find(
+      grantedGateLogFilter({
+        registrationId: { $in: unclosedRegIds },
+        createdAt: { $gte: startOfDayIst(from), $lte: endOfDayIst(nextDateIst(toDate)) },
+        ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {}),
+      })
+    )
+      .select({ registrationId: 1, createdAt: 1, scanType: 1, eventType: 1 })
+      .lean();
+
+    for (const log of unclosedLogs) {
+      const rId = log.registrationId.toString();
+      const dKey = logDateKey(log.createdAt);
+      const key = `${rId}|${dKey}`;
+      if (!logsByRegDate.has(key)) logsByRegDate.set(key, []);
+      logsByRegDate.get(key).push(log);
+    }
+  }
+
   const shiftMap = await loadShiftMap(collectShiftIdsFromPasses(passes));
   const bulkOps = [];
+  let passesAutoClosed = 0;
 
   for (const pass of passes) {
     const payload = pass.qrPayload || {};
     const shiftId = payload.shiftId ? String(payload.shiftId) : null;
-    if (!shiftId) continue;
+    const shift = shiftId ? shiftMap.get(shiftId) : null;
 
-    const shift = shiftMap.get(shiftId);
-    if (!shift) continue;
+    const isUnclosedPast = Boolean(pass.validDate && pass.validDate < today && !payload.gateExitAt);
+    let autoClosedExitAt = null;
+    if (isUnclosedPast) {
+      const regKey = `${pass.registrationId.toString()}|${pass.validDate}`;
+      const dayLogs = logsByRegDate.get(regKey) || [];
+      const entryTime = new Date(payload.gateEntryAt || pass.validFrom || pass.createdAt);
+      let maxTime = null;
+      for (const log of dayLogs) {
+        const t = new Date(log.createdAt).getTime();
+        if (!Number.isNaN(t) && (maxTime === null || t > maxTime)) {
+          maxTime = t;
+        }
+      }
+      if (Array.isArray(payload.departmentVisits)) {
+        for (const v of payload.departmentVisits) {
+          if (v?.entryAt) {
+            const t = new Date(v.entryAt).getTime();
+            if (!Number.isNaN(t) && (maxTime === null || t > maxTime)) maxTime = t;
+          }
+          if (v?.exitAt) {
+            const t = new Date(v.exitAt).getTime();
+            if (!Number.isNaN(t) && (maxTime === null || t > maxTime)) maxTime = t;
+          }
+        }
+      }
+      if (maxTime && maxTime > entryTime.getTime()) {
+        autoClosedExitAt = new Date(maxTime);
+      } else {
+        autoClosedExitAt = entryTime;
+      }
+    }
 
-    const nextName = shift.name || payload.shiftName || '';
-    const nextTotalHours = getShiftDurationHours(shift);
-    const nextHalf = shift.halfDayMinHours ?? null;
-    const nextFull = shift.fullDayMinHours ?? null;
-    const nextValidUntil = resolveDayPassValidUntil({
+    if (!shift && !autoClosedExitAt) continue;
+
+    const nextName = shift ? (shift.name || payload.shiftName || '') : payload.shiftName;
+    const nextTotalHours = shift ? getShiftDurationHours(shift) : payload.totalHours;
+    const nextHalf = shift ? (shift.halfDayMinHours ?? null) : payload.halfDayMinHours;
+    const nextFull = shift ? (shift.fullDayMinHours ?? null) : payload.fullDayMinHours;
+    const nextValidUntil = shift ? resolveDayPassValidUntil({
       entryAt: payload.gateEntryAt || pass.validFrom || pass.createdAt,
       fallbackDate: pass.validFrom || new Date(),
       validDate: pass.validDate || payload.validDate || null,
       totalHours: nextTotalHours,
       startTime: shift.startTime || payload.shiftStartTime || null,
       endTime: shift.endTime || payload.shiftEndTime || null,
-    });
-    const hasExited = Boolean(payload.gateExitAt);
+    }) : null;
 
-    const changed =
-      payload.shiftName !== nextName ||
-      payload.totalHours !== nextTotalHours ||
-      payload.halfDayMinHours !== nextHalf ||
-      payload.fullDayMinHours !== nextFull ||
-      (!hasExited &&
-        nextValidUntil &&
-        new Date(pass.validUntil || 0).getTime() !== nextValidUntil.getTime());
+    const hasExited = Boolean(payload.gateExitAt || autoClosedExitAt);
+
+    let changed = Boolean(autoClosedExitAt);
+    if (shift) {
+      if (
+        payload.shiftName !== nextName ||
+        payload.totalHours !== nextTotalHours ||
+        payload.halfDayMinHours !== nextHalf ||
+        payload.fullDayMinHours !== nextFull ||
+        (!hasExited &&
+          nextValidUntil &&
+          new Date(pass.validUntil || 0).getTime() !== nextValidUntil.getTime())
+      ) {
+        changed = true;
+      }
+    }
 
     if (!changed) continue;
+    if (autoClosedExitAt) passesAutoClosed += 1;
 
     const nextPayload = {
       ...payload,
-      shiftId,
-      shiftName: nextName,
-      totalHours: nextTotalHours,
-      halfDayMinHours: nextHalf,
-      fullDayMinHours: nextFull,
+      ...(shiftId ? { shiftId } : {}),
+      ...(shift ? {
+        shiftName: nextName,
+        totalHours: nextTotalHours,
+        halfDayMinHours: nextHalf,
+        fullDayMinHours: nextFull,
+      } : {}),
+      ...(autoClosedExitAt
+        ? {
+            gateExitAt: autoClosedExitAt.toISOString(),
+            noGateOut: true,
+            autoClosedAtLastActivity: true,
+            divisionInside: false,
+          }
+        : {}),
       ...(!hasExited && nextValidUntil
         ? { validUntil: nextValidUntil.toISOString() }
         : {}),
     };
     const update = { qrPayload: nextPayload };
+    if (autoClosedExitAt) {
+      update.isActive = false;
+    }
     if (!hasExited && nextValidUntil) {
       update.validUntil = nextValidUntil;
     }
@@ -2169,6 +2255,7 @@ export async function recalculateAttendanceHistory({
       dateTo: toDate,
       employeeCount: (grid.employees || []).length,
       passesUpdated,
+      passesAutoClosed,
       shiftsApplied: shiftMap.size,
       shiftDays,
       presentDays,

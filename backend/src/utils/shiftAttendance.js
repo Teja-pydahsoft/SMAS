@@ -51,15 +51,51 @@ export function computeDivisionBreaks(dayLogs = []) {
   return { breakHours, breaks };
 }
 
+function findLastActivityDate(dayLogs = [], session = null) {
+  let maxTime = null;
+  for (const log of dayLogs || []) {
+    const t = new Date(log.createdAt || log.timestamp).getTime();
+    if (!Number.isNaN(t)) {
+      if (maxTime === null || t > maxTime) {
+        maxTime = t;
+      }
+    }
+  }
+  if (session?.gateEntryAt) {
+    const t = new Date(session.gateEntryAt).getTime();
+    if (!Number.isNaN(t) && (maxTime === null || t > maxTime)) maxTime = t;
+  }
+  if (session?.gateExitAt) {
+    const t = new Date(session.gateExitAt).getTime();
+    if (!Number.isNaN(t) && (maxTime === null || t > maxTime)) maxTime = t;
+  }
+  if (Array.isArray(session?.departmentVisits)) {
+    for (const v of session.departmentVisits) {
+      if (v?.entryAt) {
+        const t = new Date(v.entryAt).getTime();
+        if (!Number.isNaN(t) && (maxTime === null || t > maxTime)) maxTime = t;
+      }
+      if (v?.exitAt) {
+        const t = new Date(v.exitAt).getTime();
+        if (!Number.isNaN(t) && (maxTime === null || t > maxTime)) maxTime = t;
+      }
+    }
+  }
+  return maxTime !== null ? new Date(maxTime) : null;
+}
+
 /**
  * On-site segments from gate entry → gate exit pairs.
- * Open sessions close at `now` (today) or end-of-day (past days).
+ * Open sessions on today close at `now`.
+ * Open sessions on past days close at the last recorded activity time.
  */
 function buildOnSiteSegments(dayLogs = [], session = null, date, { now = new Date(), today } = {}) {
   const todayKey = today || new Date().toISOString().slice(0, 10);
+  const isPastDay = Boolean(date && date < todayKey);
   const gateLogs = sortedGateLogs(dayLogs);
   const segments = [];
   let openStart = null;
+  let hasMissingGateOut = Boolean(session?.noGateOut);
 
   for (const log of gateLogs) {
     const at = new Date(log.createdAt);
@@ -79,14 +115,23 @@ function buildOnSiteSegments(dayLogs = [], session = null, date, { now = new Dat
   }
 
   if (openStart) {
-    const defaultEnd = date === todayKey ? now : new Date(`${date}T23:59:59.999+05:30`);
-    const end = session?.validUntil ? new Date(session.validUntil) : defaultEnd;
-    
-    // Ensure we don't cap backwards if validUntil is somehow before openStart
-    const finalEnd = end.getTime() > defaultEnd.getTime() ? end : defaultEnd;
+    if (isPastDay) {
+      hasMissingGateOut = true;
+      const lastActivity = findLastActivityDate(dayLogs, session);
+      // Cap at last recorded activity time (e.g. last department scan), or openStart if no further activity
+      const finalEnd = lastActivity && lastActivity.getTime() > openStart.getTime() ? lastActivity : openStart;
+      if (finalEnd.getTime() > openStart.getTime()) {
+        segments.push({ start: openStart, end: finalEnd });
+      }
+    } else {
+      // Current day (today): actively on-site, cap at now or validUntil
+      const defaultEnd = now;
+      const end = session?.validUntil ? new Date(session.validUntil) : defaultEnd;
+      const finalEnd = end.getTime() > defaultEnd.getTime() ? end : defaultEnd;
 
-    if (finalEnd.getTime() > openStart.getTime()) {
-      segments.push({ start: openStart, end: finalEnd });
+      if (finalEnd.getTime() > openStart.getTime()) {
+        segments.push({ start: openStart, end: finalEnd });
+      }
     }
   }
 
@@ -95,15 +140,22 @@ function buildOnSiteSegments(dayLogs = [], session = null, date, { now = new Dat
     let start = session?.gateEntryAt ? new Date(session.gateEntryAt) : null;
     let end = session?.gateExitAt ? new Date(session.gateExitAt) : null;
     if (start && !end) {
-      const defaultEnd = date === todayKey ? now : new Date(`${date}T23:59:59.999+05:30`);
-      end = session?.validUntil ? new Date(session.validUntil) : defaultEnd;
-      if (end.getTime() < defaultEnd.getTime()) end = defaultEnd;
+      if (isPastDay) {
+        hasMissingGateOut = true;
+        const lastActivity = findLastActivityDate(dayLogs, session);
+        end = lastActivity && lastActivity.getTime() > start.getTime() ? lastActivity : start;
+      } else {
+        const defaultEnd = now;
+        end = session?.validUntil ? new Date(session.validUntil) : defaultEnd;
+        if (end.getTime() < defaultEnd.getTime()) end = defaultEnd;
+      }
     }
     if (start && end && end.getTime() > start.getTime()) {
       segments.push({ start, end });
     }
   }
 
+  segments.noGateOut = hasMissingGateOut;
   return segments;
 }
 
@@ -113,8 +165,9 @@ function buildOnSiteSegments(dayLogs = [], session = null, date, { now = new Dat
  */
 export function computeActivityWindow(dayLogs = [], session = null, date, options = {}) {
   const segments = buildOnSiteSegments(dayLogs, session, date, options);
+  const noGateOut = Boolean(segments.noGateOut || session?.noGateOut);
   if (!segments.length) {
-    return { start: null, end: null, hours: 0, segments: [] };
+    return { start: null, end: null, hours: 0, segments: [], noGateOut };
   }
 
   const hours = roundHours(
@@ -126,6 +179,7 @@ export function computeActivityWindow(dayLogs = [], session = null, date, option
     end: segments[segments.length - 1].end,
     hours,
     segments,
+    noGateOut,
   };
 }
 

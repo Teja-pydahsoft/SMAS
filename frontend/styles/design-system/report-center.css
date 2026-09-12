@@ -3059,6 +3059,132 @@
   white-space: nowrap;
 }
 
+/* ─── No Gate Out Highlights ─── */
+.rc-att-cell--no-gate-out {
+  position: relative;
+}
+
+.rc-att-cell--no-gate-out::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  background-color: #f59e0b;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #fff;
+  z-index: 2;
+}
+
+.rc-att-cell .rc-att-cell__no-gate-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #f59e0b;
+  border-radius: 50%;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  margin: 1px auto 0;
+}
+
+.rc-no-gate-out-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  height: 20px;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rc-no-gate-out-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-left: 6px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.rc-period-sessions-table__date--no-gate-out {
+  border-left: 3px solid #f59e0b !important;
+  background-color: rgba(254, 243, 199, 0.25) !important;
+}
+
+.rc-period-sessions-table__date-text--no-gate-out {
+  color: #b45309;
+  font-weight: 700;
+}
+
+.rc-date-no-gate-out-badge {
+  display: block;
+  width: fit-content;
+  margin-top: 3px;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.rc-att-day-detail__no-gate-out-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius, 8px);
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.85rem;
+  color: #92400e;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.rc-att-day-detail__no-gate-out-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.rc-att-day-detail__no-gate-out-alert strong {
+  display: block;
+  font-weight: 700;
+  color: #78350f;
+  margin-bottom: 0.15rem;
+}
+
+.rc-att-day-detail__no-gate-out-alert p {
+  margin: 0;
+  color: #92400e;
+}
+
 .rc-att-grid__employee--clickable {
   cursor: pointer;
 }

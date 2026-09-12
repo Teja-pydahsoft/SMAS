@@ -1062,16 +1062,25 @@ function PeriodDaySessionsTable({
 
               return (
                 <Fragment key={day.date}>
-                  <tr className="rc-period-sessions-table__meta">
-                    <td className="rc-period-sessions-table__date">
+                  <tr className={`rc-period-sessions-table__meta${day.noGateOut ? ' rc-period-sessions-table__meta--no-gate-out' : ''}`}>
+                    <td className={`rc-period-sessions-table__date${day.noGateOut ? ' rc-period-sessions-table__date--no-gate-out' : ''}`}>
                       <span className="rc-period-sessions-table__date-inner">
                         {overnight ? (
                           <span className="rc-period-sessions-table__date-overnight">
-                            {formatDate(day.date)}
+                            <span className={day.noGateOut ? 'rc-period-sessions-table__date-text rc-period-sessions-table__date-text--no-gate-out' : ''}>
+                              {formatDate(day.date)}
+                            </span>
                             <span className="rc-period-sessions-table__date-next"> – {formatDate(nextIstDateStr(day.date))}</span>
                           </span>
                         ) : (
-                          formatDate(day.date)
+                          <span className={day.noGateOut ? 'rc-period-sessions-table__date-text rc-period-sessions-table__date-text--no-gate-out' : ''}>
+                            {formatDate(day.date)}
+                          </span>
+                        )}
+                        {day.noGateOut && (
+                          <span className="rc-date-no-gate-out-badge" title="No Gate Out (Closed at last activity)">
+                            No Gate Out
+                          </span>
                         )}
                       </span>
                     </td>
@@ -5033,12 +5042,25 @@ function isOvernightDay(day) {
   return s !== null && e !== null && e <= s;
 }
 
+function NoGateOutMark() {
+  return (
+    <span
+      className="rc-att-cell__no-gate-mark"
+      title="No Gate Out (Closed at last activity)"
+      aria-label="No Gate Out"
+    >
+      !
+    </span>
+  );
+}
+
 function AttendanceCell({ day, onSelect }) {
   const lockedClass = day?.payLocked ? ' rc-att-cell--pay-locked' : '';
+  const noGateOutClass = day?.noGateOut ? ' rc-att-cell--no-gate-out' : '';
   if (!day || day.status === 'blank') {
     return (
       <td
-        className={`rc-att-cell rc-att-cell--blank${lockedClass}`}
+        className={`rc-att-cell rc-att-cell--blank${lockedClass}${noGateOutClass}`}
         aria-label={day?.payLocked ? 'Pay locked' : 'Not registered'}
       >
         {day?.payLocked ? <PayLockMark /> : null}
@@ -5046,9 +5068,10 @@ function AttendanceCell({ day, onSelect }) {
     );
   }
 
-  const cls = `rc-att-cell rc-att-cell--${day.status.toLowerCase()} rc-att-cell--clickable${lockedClass}`;
+  const cls = `rc-att-cell rc-att-cell--${day.status.toLowerCase()} rc-att-cell--clickable${lockedClass}${noGateOutClass}`;
   const hoursLabel = formatCellHours(day.activityHours);
   const lockedLabel = day.payLocked ? ', pay locked' : '';
+  const noGateOutLabel = day.noGateOut ? ', no gate out' : '';
 
   const handleClick = (e) => {
     e.stopPropagation();
@@ -5057,10 +5080,11 @@ function AttendanceCell({ day, onSelect }) {
 
   if (day.status === 'A') {
     return (
-      <td className={cls} aria-label={`Absent${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`Absent${lockedLabel}${noGateOutLabel}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
         <span className="rc-att-cell__code rc-att-cell__code--plain">A</span>
         {day.payLocked && <PayLockMark />}
+        {day.noGateOut && <NoGateOutMark />}
       </td>
     );
   }
@@ -5069,43 +5093,47 @@ function AttendanceCell({ day, onSelect }) {
     const halfLabel =
       day.status === 'FH' ? 'First Half' : day.status === 'SH' ? 'Second Half' : 'Half Day';
     return (
-      <td className={cls} aria-label={`${halfLabel}${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`${halfLabel}${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}${noGateOutLabel}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
         <span className="rc-att-cell__badge">{day.code || day.status}</span>
         {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
         {day.payLocked && <PayLockMark />}
+        {day.noGateOut && <NoGateOutMark />}
       </td>
     );
   }
 
   if (day.status === 'PT') {
     return (
-      <td className={cls} aria-label={`Hours Worked${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`Hours Worked${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}${noGateOutLabel}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
         <span className="rc-att-cell__badge">PT</span>
         {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
         {day.payLocked && <PayLockMark />}
+        {day.noGateOut && <NoGateOutMark />}
       </td>
     );
   }
 
   if (day.status === 'P') {
     return (
-      <td className={cls} aria-label={`Present${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
+      <td className={cls} aria-label={`Present${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}${noGateOutLabel}`} onClick={handleClick} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
         <span className="rc-att-cell__badge">P</span>
         {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
         {day.payLocked && <PayLockMark />}
+        {day.noGateOut && <NoGateOutMark />}
       </td>
     );
   }
 
   return (
-    <td className={cls} aria-label={`${day.label || day.code || ''}${lockedLabel}`} onClick={handleClick} role="button" tabIndex={0}
+    <td className={cls} aria-label={`${day.label || day.code || ''}${lockedLabel}${noGateOutLabel}`} onClick={handleClick} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
       <span className="rc-att-cell__badge">{day.code}</span>
       {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
       {day.payLocked && <PayLockMark />}
+      {day.noGateOut && <NoGateOutMark />}
     </td>
   );
 }
@@ -5167,8 +5195,24 @@ function AttendanceDayDialog({ employee, day, onClose }) {
                 {day.code}
               </span>
               <span className="rc-att-day-detail__status-label">{statusLabel}</span>
+              {day.noGateOut && (
+                <span className="rc-no-gate-out-chip" title="No gate-out scan was recorded. Attendance was closed at last activity.">
+                  No Gate Out
+                </span>
+              )}
               {day.payLocked && <span className="rc-pay-lock-chip">Pay locked</span>}
             </div>
+            {day.noGateOut && (
+              <div className="rc-att-day-detail__no-gate-out-alert">
+                <span className="rc-att-day-detail__no-gate-out-icon">⚠️</span>
+                <div>
+                  <strong>No Gate Out Scan Recorded</strong>
+                  <p>
+                    The worker did not scan out at the Main Gate. Attendance hours were automatically calculated up to their last recorded activity at {formatTime(day.lastActivityAt)}.
+                  </p>
+                </div>
+              </div>
+            )}
             {day.payLocked && (
               <p className="rc-att-day-detail__empty" style={{ marginTop: 0, marginBottom: '0.75rem' }}>
                 This day is included in a generated pay slip and will not be paid again.

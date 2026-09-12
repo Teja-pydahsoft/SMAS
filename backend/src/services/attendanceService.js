@@ -238,6 +238,8 @@ export function getPassSessionState(pass) {
     departmentVisits: Array.isArray(payload.departmentVisits) ? payload.departmentVisits : [],
     gateEntryAt: payload.gateEntryAt || null,
     gateExitAt: payload.gateExitAt || null,
+    noGateOut: Boolean(payload.noGateOut),
+    autoClosedAtLastActivity: Boolean(payload.autoClosedAtLastActivity),
     shiftId: payload.shiftId || null,
     shiftName: payload.shiftName || null,
     totalHours: payload.totalHours ?? null,

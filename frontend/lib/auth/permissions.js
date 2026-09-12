@@ -10,6 +10,7 @@ export const PERMISSION_MODULES = [
   { key: 'project_photo_capture', label: 'Project Photo Capture' },
   { key: 'project_reports', label: 'Project Reports' },
   { key: 'reports', label: 'Reports' },
+  { key: 'attendance_excel', label: 'Download Attendance Excel' },
   { key: 'system_users', label: 'Manage Users' },
   { key: 'system_roles', label: 'Manage Roles' },
   { key: 'devices', label: 'Device Maintenance' },

@@ -11,6 +11,7 @@ import { formatShiftWindow, formatDurationHours } from '@/lib/shiftTiming';
 import PassCard from '@/components/PassCard';
 import { useAuth } from '@/components/AuthProvider';
 import SearchableSelect from '@/components/SearchableSelect';
+import AttendanceHistoryExportModal from '@/components/AttendanceHistoryExportModal';
 
 /* ═══════════════════════════════════════════════════════════════
    UTILITIES
@@ -5115,6 +5116,19 @@ function AttendanceCell({ day, onSelect }) {
     );
   }
 
+  if (day.code === 'DS' || day.code === '1.5S' || day.code === '1.5') {
+    const badge = day.code === '1.5' ? '1.5S' : day.code;
+    return (
+      <td className={cls} aria-label={`${day.label || badge}${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}${noGateOutLabel}`} onClick={handleClick} role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
+        <span className="rc-att-cell__badge">{badge}</span>
+        {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
+        {day.payLocked && <PayLockMark />}
+        {day.noGateOut && <NoGateOutMark />}
+      </td>
+    );
+  }
+
   if (day.status === 'P') {
     return (
       <td className={cls} aria-label={`Present${hoursLabel ? `, ${hoursLabel}` : ''}${lockedLabel}${noGateOutLabel}`} onClick={handleClick} role="button" tabIndex={0}
@@ -5130,7 +5144,7 @@ function AttendanceCell({ day, onSelect }) {
   return (
     <td className={cls} aria-label={`${day.label || day.code || ''}${lockedLabel}${noGateOutLabel}`} onClick={handleClick} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(e); } }}>
-      <span className="rc-att-cell__badge">{day.code}</span>
+      <span className="rc-att-cell__badge">{day.code === 'OT' ? 'P' : day.code}</span>
       {hoursLabel && <span className="rc-att-cell__time">{hoursLabel}</span>}
       {day.payLocked && <PayLockMark />}
       {day.noGateOut && <NoGateOutMark />}
@@ -5416,6 +5430,9 @@ function AttendanceAbstractTable({
    TAB 2 — ATTENDANCE HISTORY
 ════════════════════════════════════════════════════════════════ */
 function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
+  const { user, can } = useAuth();
+  const searchParams = useSearchParams();
+  const actionParam = searchParams?.get('action');
   const [data, setData] = useState(null);
   const [roles, setRoles] = useState([]);
   const [divisions, setDivisions] = useState([]);
@@ -5430,6 +5447,8 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
   const [selectedDay, setSelectedDay] = useState(null);
   const [printing, setPrinting] = useState(false);
   const [showBulkPaySlips, setShowBulkPaySlips] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(() => actionParam === 'excel');
+  const canDownloadExcel = can('attendance_excel', 'read') || Boolean(user?.isSuperAdmin) || can('reports', 'write');
   const [search, setSearch] = useState('');
   const [pinSortDir, setPinSortDir] = useState('asc');
   const [showFilters, setShowFilters] = useState(false);
@@ -5833,6 +5852,24 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
         <button type="button" className="btn-secondary btn-sm" onClick={handlePrintPdf} disabled={printing} style={{ padding: '0 8px', flexShrink: 0 }} aria-label="Print">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>
         </button>
+        {canDownloadExcel && (
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={() => setShowExportModal(true)}
+            disabled={busy}
+            style={{ padding: '0 8px', flexShrink: 0, color: '#10B981', borderColor: '#A7F3D0' }}
+            title="Download Excel"
+            aria-label="Download Excel"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <path d="M8 13h8" />
+              <path d="M8 17h8" />
+            </svg>
+          </button>
+        )}
       </div>
 
       <div className={`rc-filter-panel rc-filter-panel--inline ${!showFilters ? 'hide-on-mobile' : ''}`}>
@@ -5990,7 +6027,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
             );
           })}
 
-          <div className="form-group rc-filter-inline__item rc-filter-inline__item--action" style={{ display: 'flex', gap: '0.5rem' }}>
+          <div className="form-group rc-filter-inline__item rc-filter-inline__item--action" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <label>&nbsp;</label>
               <button
@@ -6016,6 +6053,36 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
                 Pay Slips
               </button>
             </div>
+
+            {canDownloadExcel && (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label>&nbsp;</label>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setShowExportModal(true)}
+                  disabled={busy}
+                  title="Download filtered attendance records as an Excel spreadsheet"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    borderColor: '#10B981',
+                    color: '#059669',
+                    fontWeight: 600,
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <path d="M8 13h8" />
+                    <path d="M8 17h8" />
+                    <path d="M10 9H8" />
+                  </svg>
+                  Download Excel
+                </button>
+              </div>
+            )}
           </div>
 
           {(loading || loadingMore || recalculating) && (
@@ -6240,6 +6307,27 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
             onClose={() => setShowBulkPaySlips(false)}
           />
         </PortalWrapper>
+      )}
+      {showExportModal && (
+        <AttendanceHistoryExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          initialFilters={{
+            roleId: filters.roleId,
+            dateFrom: resolveDateRange().dateFrom,
+            dateTo: resolveDateRange().dateTo,
+            divisionIds: filters.divisionIds?.length > 0 ? filters.divisionIds : (filters.divisionId && filters.divisionId !== 'all' ? [filters.divisionId] : []),
+            labourType: selectionFilters?.['Labour Type'] || 'all',
+            payFrequency: filters.payFrequency,
+            shiftName: filters.shiftName,
+            search: search,
+            selectionFilters: selectionFilters,
+          }}
+          roles={roles}
+          divisions={divisions}
+          labourTypeOptions={data?.selectionOptions?.['Labour Type'] || []}
+          user={user}
+        />
       )}
     </div>
   );
@@ -6582,7 +6670,9 @@ function ReportsContent() {
   const now = useNow();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const tab = REPORT_TABS.find(t => t.id === tabParam) ? tabParam : 'today';
+  const actionParam = searchParams.get('action');
+  const defaultTab = actionParam === 'excel' ? 'history' : 'today';
+  const tab = REPORT_TABS.find(t => t.id === tabParam) ? tabParam : defaultTab;
   const dateSelectable = tab === 'today' || tab === 'division' || tab === 'department';
 
   const [selectedDate, setSelectedDate] = useState(() => todayDateStringIst());

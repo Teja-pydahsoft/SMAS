@@ -227,6 +227,7 @@ export const PERMISSION_MODULES = {
   JATTU_ENTRY_EXIT: 'jattu_entry_exit',
   JATTU_ACTIVITY: 'jattu_activity',
   JATTU_ATTENDANCE: 'jattu_attendance',
+  ATTENDANCE_EXCEL: 'attendance_excel',
 };
 
 export const PERMISSION_MODULE_LIST = Object.values(PERMISSION_MODULES);
@@ -243,6 +244,7 @@ export const PERMISSION_LABELS = {
   project_photo_capture: 'Project Photo Capture',
   project_reports: 'Project Reports',
   reports: 'Reports',
+  attendance_excel: 'Download Attendance Excel',
   system_users: 'Manage Users',
   system_roles: 'Manage Roles',
   devices: 'Device Maintenance',

@@ -1644,6 +1644,7 @@ export async function getAttendanceHistoryGrid({
   payFrequency = '',
   shiftName = '',
   selectionFilters = '{}',
+  isExport = false,
 } = {}) {
   const today = todayDateString();
   const from = dateFrom || today.slice(0, 8) + '01';
@@ -1662,9 +1663,10 @@ export async function getAttendanceHistoryGrid({
     };
   }
 
-  // Keep pages small — each Registration doc carries a large faceEmbedding on disk,
-  // and Atlas round-trips dominate when we pull hundreds at once.
-  const limitN = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+  // When exporting, allow fetching all matching records (up to 50000)
+  const limitN = isExport
+    ? Math.min(Math.max(parseInt(limit, 10) || 10000, 1), 50000)
+    : Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
   const pageN = Math.max(parseInt(page, 10) || 1, 1);
 
   const regQuery = { status: REGISTRATION_STATUS.VERIFIED };

@@ -45,7 +45,7 @@ async function resolveRequestDepartmentIds(req) {
 
 router.get(
   '/divisions',
-  requirePermission('reports', 'read'),
+  requireAnyPermission(['reports', 'attendance_excel'], 'read'),
   asyncHandler(async (req, res) => {
     const data = await getScopedDivisionOptions(req.user);
     res.json(data);
@@ -126,22 +126,24 @@ router.get(
 
 router.get(
   '/attendance-history',
-  requireAnyPermission(['reports', 'jattu_attendance'], 'read'),
+  requireAnyPermission(['reports', 'jattu_attendance', 'attendance_excel'], 'read'),
   asyncHandler(async (req, res) => {
     const divisionIds = await resolveRequestDivisionIds(req);
     const departmentIds = await resolveRequestDepartmentIds(req);
+    const isExport = req.query.isExport === 'true' || req.query.isExport === '1';
     const data = await getAttendanceHistoryGrid({
       dateFrom: req.query.dateFrom || '',
       dateTo: req.query.dateTo || '',
       search: req.query.search || '',
       roleId: req.query.roleId || '',
-      limit: req.query.limit || 50,
+      limit: req.query.limit ? parseInt(req.query.limit, 10) : (isExport ? 10000 : 50),
       page: req.query.page || 1,
       divisionIds,
       departmentIds,
       payFrequency: req.query.payFrequency || '',
       shiftName: req.query.shiftName || '',
       selectionFilters: req.query.selectionFilters || '{}',
+      isExport,
     });
     res.json(data);
   })

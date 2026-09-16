@@ -5,11 +5,8 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api/client';
 import { useAuth } from '@/components/AuthProvider';
 import GateScopePicker from '@/components/GateScopePicker';
-import GatePasswordConfirm from '@/components/GatePasswordConfirm';
 import { buildEntryExitUrl } from '@/lib/entryExit';
 import {
-  gateSessionsEqual,
-  getGateSession,
   normalizeGateSession,
   setGateSession,
 } from '@/lib/gateSession';
@@ -21,10 +18,6 @@ export default function AccessScopePage() {
   const [scope, setScope] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [step, setStep] = useState('select');
-  const [pendingGateSession, setPendingGateSession] = useState(null);
-  const [passwordError, setPasswordError] = useState('');
-  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -45,36 +38,8 @@ export default function AccessScopePage() {
 
   function handleGateSelect(params) {
     const nextSession = normalizeGateSession(params);
-    const currentSession = getGateSession();
-
-    if (currentSession && gateSessionsEqual(currentSession, nextSession)) {
-      router.push(buildEntryExitUrl(nextSession));
-      return;
-    }
-
-    setPendingGateSession(nextSession);
-    setPasswordError('');
-    setStep('password');
-  }
-
-  async function handlePasswordConfirm(password) {
-    setVerifying(true);
-    setPasswordError('');
-    try {
-      await api.auth.verifyPassword(password);
-      setGateSession(pendingGateSession);
-      router.push(buildEntryExitUrl(pendingGateSession));
-    } catch (err) {
-      setPasswordError(err.message || 'Invalid password');
-    } finally {
-      setVerifying(false);
-    }
-  }
-
-  function handleBackToSelection() {
-    setPendingGateSession(null);
-    setPasswordError('');
-    setStep('select');
+    setGateSession(nextSession);
+    router.push(buildEntryExitUrl(nextSession));
   }
 
   if (authLoading || !user) {
@@ -82,19 +47,6 @@ export default function AccessScopePage() {
       <div className="gate-landing-shell">
         <p className="gate-landing-loading">Loading your gates...</p>
       </div>
-    );
-  }
-
-  if (step === 'password' && pendingGateSession) {
-    return (
-      <GatePasswordConfirm
-        displayName={user.displayName}
-        gateSession={pendingGateSession}
-        onConfirm={handlePasswordConfirm}
-        onBack={handleBackToSelection}
-        submitting={verifying}
-        error={passwordError}
-      />
     );
   }
 

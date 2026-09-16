@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { api, ensureBackendReady, warmBackend } from '@/lib/api/client';
 import { useAuth } from '@/components/AuthProvider';
 import GateScopePicker from '@/components/GateScopePicker';
-import { getPostLoginRoute } from '@/lib/auth/routing';
+import { getPostLoginRoute, hasAssignedEntryExitScope } from '@/lib/auth/routing';
 import { getToken } from '@/lib/auth/session';
 import { buildEntryExitUrl, eventActionLabel } from '@/lib/entryExit';
 import { getGateSession, normalizeGateSession, setGateSession } from '@/lib/gateSession';
@@ -553,8 +553,8 @@ function LoginSteps({ step, flow, onStepClick }) {
     flow === 'gate'
       ? [
           { id: 'username', label: 'Username' },
-          { id: 'gate-select', label: 'Gate' },
           { id: 'password', label: 'Password' },
+          { id: 'gate-select', label: 'Gate' },
         ]
       : [
           { id: 'username', label: 'Username' },
@@ -690,7 +690,7 @@ function LoginCard({ wide, submitting, loaderMessage, title, subtitle, step, flo
 function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationEnabled = false }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, user, loading: authLoading } = useAuth();
+  const { login, user, logout, loading: authLoading } = useAuth();
   const [step, setStep] = useState('username');
   const [flow, setFlow] = useState('standard');
   const [username, setUsername] = useState('');
@@ -698,7 +698,6 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
   const [displayName, setDisplayName] = useState('');
   const [accessScope, setAccessScope] = useState(null);
   const [canGateWrite, setCanGateWrite] = useState(true);
-  const [pendingGateSession, setPendingGateSession] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState(() => {
@@ -732,13 +731,15 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
 
   function resetToUsername() {
     setStep('username'); setFlow('standard'); setPassword('');
-    setDisplayName(''); setAccessScope(null); setPendingGateSession(null); setError('');
+    setDisplayName(''); setAccessScope(null); setError('');
   }
 
   function handleStepClick(targetStep) {
-    if (targetStep === 'username') { resetToUsername(); return; }
-    if (targetStep === 'gate-select' && flow === 'gate') {
-      setPassword(''); setPendingGateSession(null); setStep('gate-select'); setError('');
+    if (targetStep === 'username' || targetStep === 'password') {
+      if (step === 'gate-select') {
+        logout();
+      }
+      resetToUsername();
     }
   }
 
@@ -777,25 +778,46 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
         }
       }
 
-      if (result.flow === 'gate' && result.accessScope) {
-        setFlow('gate'); setAccessScope(result.accessScope);
-        setCanGateWrite(result.canGateWrite !== false); setStep('gate-select');
-      } else { setFlow('standard'); setStep('password'); }
+      if (result.flow === 'gate') {
+        setFlow('gate');
+        if (result.accessScope) setAccessScope(result.accessScope);
+        setCanGateWrite(result.canGateWrite !== false);
+      } else {
+        setFlow('standard');
+      }
+      setStep('password');
     } catch (err) { setError(err.message); }
     finally { setSubmitting(false); }
   }
 
   function handleGateSelect(params) {
-    setPendingGateSession(normalizeGateSession(params)); setStep('password');
+    const session = normalizeGateSession(params);
+    setGateSession(session);
+    router.replace(buildEntryExitUrl(session));
   }
 
   async function handlePasswordSubmit(e) {
     e.preventDefault(); setSubmitting(true); setError('');
-    const gateSession = pendingGateSession ? normalizeGateSession(pendingGateSession) : null;
     try {
       await ensureBackendReady();
-      const loggedInUser = await login(username.trim(), password, { keepGateSession: Boolean(gateSession), fingerprint: deviceFingerprint || null });
-      if (gateSession) { setGateSession(gateSession); router.replace(buildEntryExitUrl(gateSession)); return; }
+      const loggedInUser = await login(username.trim(), password, {
+        fingerprint: deviceFingerprint || null,
+      });
+
+      const isGateUser = flow === 'gate' || hasAssignedEntryExitScope(loggedInUser);
+      if (isGateUser) {
+        setFlow('gate');
+        setPassword('');
+        if (!accessScope) {
+          try {
+            const scope = await api.auth.accessScope();
+            setAccessScope(scope);
+          } catch { /* ignore */ }
+        }
+        setStep('gate-select');
+        return;
+      }
+
       router.replace(getPostLoginRoute(loggedInUser));
     } catch (err) { setError(err.message); }
     finally { setSubmitting(false); }
@@ -808,7 +830,7 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
         <LoginCard
           wide submitting={false}
           title={`Hello, ${displayName || username}`}
-          subtitle="Select your division and department (or gate), then enter your password to continue."
+          subtitle="Select your division and department (or gate) to begin."
           step={step} flow={flow} onStepClick={handleStepClick}
         >
           <div className="login-gate-picker">
@@ -818,8 +840,15 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
               showWelcome={false} compact
             />
           </div>
-          <button type="button" className="login-back-link" onClick={resetToUsername}>
-            ← Change username
+          <button
+            type="button"
+            className="login-back-link"
+            onClick={() => {
+              logout();
+              resetToUsername();
+            }}
+          >
+            ← Sign out / Switch user
           </button>
         </LoginCard>
       </div>
@@ -830,7 +859,7 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
   const headingSubtitle = step === 'username'
     ? 'Enter your credentials to access your account'
     : step === 'geo-verify' ? 'Verifying location...'
-    : pendingGateSession ? `Signing in for ${gateSelectionLabel(pendingGateSession)}` : 'Enter your password to continue';
+    : 'Enter your password to continue';
 
   return (
     <div className="login-shell">

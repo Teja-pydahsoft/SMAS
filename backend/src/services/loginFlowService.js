@@ -15,7 +15,7 @@ export function hasAssignedEntryExitScope(user) {
 /**
  * Login precheck flow type:
  * - standard: username then password (super admin and general users)
- * - gate: username → gate selection → password
+ * - gate: username → password → gate selection
  */
 export function getLoginFlow(user) {
   if (!user || !user.isActive) return 'standard';

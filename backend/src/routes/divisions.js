@@ -72,7 +72,7 @@ router.get(
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { name, description, metadata, gates = [] } = req.body;
+    const { name, description, metadata, gateEntryRequired, gates = [] } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'Division name is required' });
 
     const slug = req.body.slug || slugify(name);
@@ -80,6 +80,7 @@ router.post(
       name: name.trim(),
       slug,
       description: description?.trim() || '',
+      ...(gateEntryRequired !== undefined && { gateEntryRequired: Boolean(gateEntryRequired) }),
       metadata,
     });
 
@@ -104,13 +105,14 @@ router.post(
 router.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const { name, description, isActive, metadata } = req.body;
+    const { name, description, isActive, gateEntryRequired, metadata } = req.body;
     const division = await Division.findByIdAndUpdate(
       req.params.id,
       {
         ...(name !== undefined && { name: name.trim() }),
         ...(description !== undefined && { description }),
         ...(isActive !== undefined && { isActive }),
+        ...(gateEntryRequired !== undefined && { gateEntryRequired: Boolean(gateEntryRequired) }),
         ...(metadata !== undefined && { metadata }),
       },
       { new: true, runValidators: true }

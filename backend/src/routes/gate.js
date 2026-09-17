@@ -4,6 +4,7 @@ import fs from 'fs';
 import Registration from '../models/Registration.js';
 import GateLog from '../models/GateLog.js';
 import Gate from '../models/Gate.js';
+import Division from '../models/Division.js';
 import Department from '../models/Department.js';
 import Pass from '../models/Pass.js';
 import ActivitySighting from '../models/ActivitySighting.js';
@@ -39,6 +40,7 @@ import {
   GATE_DENIAL_REASONS,
   todayDateString,
   forceCheckoutActiveDepartment,
+  findLatestGateEntryAnyDivision,
 } from '../services/attendanceService.js';
 import { startOfDayIst, endOfDayIst } from '../utils/istTime.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
@@ -417,6 +419,63 @@ async function applyForceDepartmentCheckoutIfRequested({
   };
 }
 
+/**
+ * Synthesise a gate-entry GateLog for a division where gateEntryRequired=false.
+ * Called right before the department scan is finalised so the day-pass and
+ * attendance reports have a matching gate entry on the same day.
+ *
+ * The synthetic log is stamped with:
+ *   - the same createdAt as the department scan (so it sorts before it)
+ *   - the photoPath from borrowedGateEntry (the person's most recent gate
+ *     entry from any division today), or the photo captured for this scan
+ *
+ * @returns {Promise<GateLog>}
+ */
+async function createAutoGateEntryLog({
+  registrationId,
+  roleId,
+  divisionId,
+  matchScore,
+  photoPath,
+  borrowedGateEntry,
+  operator,
+  deptLogId,
+  deptLogCreatedAt,
+}) {
+  const entryPhotoPath = borrowedGateEntry?.photoPath || photoPath || undefined;
+  const now = deptLogCreatedAt ? new Date(new Date(deptLogCreatedAt).getTime() - 1000) : new Date();
+
+  const log = await GateLog.create({
+    registrationId,
+    roleId,
+    divisionId,
+    matchScore,
+    matched: true,
+    accessGranted: true,
+    scanType: SCAN_TYPES.GATE,
+    eventType: GATE_EVENT_TYPES.ENTRY,
+    gateId: 'auto-optional',
+    photoPath: entryPhotoPath,
+    scannedBy: operator?.scannedBy || null,
+    scannedByName: operator?.scannedByName || '',
+    scannedByUsername: operator?.scannedByUsername || '',
+    metadata: {
+      autoGateEntry: true,
+      gateEntryOptional: true,
+      triggeringDeptLogId: deptLogId ? String(deptLogId) : null,
+      borrowedFromLogId: borrowedGateEntry?.logId ? String(borrowedGateEntry.logId) : null,
+      borrowedFromDivisionId: borrowedGateEntry?.divisionId ? String(borrowedGateEntry.divisionId) : null,
+      borrowedEntryTime: borrowedGateEntry?.createdAt || null,
+    },
+  });
+
+  // Backdate the log's createdAt so it sorts before the department scan
+  // (MongoDB timestamps are immutable via schema; use a direct update).
+  await GateLog.updateOne({ _id: log._id }, { $set: { createdAt: now } });
+  log.createdAt = now;
+  return log;
+}
+
 async function respondScanDenial(res, options) {
   const { log, reason, error, ...rest } = options;
   const savedLog = await markGateLogDenied(log, reason, error);
@@ -515,8 +574,10 @@ router.post(
       divisionId: bodyDivisionId,
       departmentId,
       forceDepartmentCheckout: forceCheckoutRaw,
+      autoCreateGateEntry: autoCreateGateEntryRaw,
     } = req.body;
     const forceDepartmentCheckout = parseForceDepartmentCheckout(forceCheckoutRaw);
+    const autoCreateGateEntry = autoCreateGateEntryRaw === true || autoCreateGateEntryRaw === 'true';
 
     if (!passCode?.trim()) {
       return res.status(400).json({ error: 'passCode is required' });
@@ -823,12 +884,17 @@ router.post(
         });
       }
 
+      // Load division to check gateEntryRequired
+      const divisionDoc = await Division.findById(divisionId).select('gateEntryRequired name').lean();
+      const gateEntryOptional = divisionDoc ? divisionDoc.gateEntryRequired === false : false;
+
       const deptCheck = await validateDepartmentScan(
         activePass,
         department,
         resolvedDeptEventType,
         matchedRegistration._id,
-        divisionId
+        divisionId,
+        { gateEntryOptional }
       );
       if (!deptCheck.ok) {
         const denialDayPass = deptCheck.pass
@@ -848,6 +914,73 @@ router.post(
             dayPass: denialDayPass,
             requiredSteps: deptCheck.requiredSteps,
           });
+      }
+
+      // ── Optional gate entry ─────────────────────────────────────────────
+      // deptCheck.needsAutoGateEntry is set when the division allows optional
+      // gate entry and the person has no gate entry today.
+      let autoGateLog = null;
+      if (deptCheck.needsAutoGateEntry) {
+        if (!autoCreateGateEntry) {
+          // First pass: tell the UI to show the confirmation popup.
+          await markGateLogDenied(log, 'no_gate_entry_optional_pending', 'Awaiting operator confirmation for auto gate entry');
+          return res.status(202).json({
+            needsAutoGateEntry: true,
+            divisionName: divisionDoc?.name || '',
+            borrowedGateEntry: deptCheck.borrowedGateEntry,
+            registration: populated,
+            matchScore,
+            qrScan: true,
+          });
+        }
+        // Second pass: operator confirmed — synthesise the gate-entry log.
+        autoGateLog = await createAutoGateEntryLog({
+          registrationId: matchedRegistration._id,
+          roleId: matchedRegistration.roleId,
+          divisionId,
+          matchScore,
+          photoPath: log.photoPath || null,
+          borrowedGateEntry: deptCheck.borrowedGateEntry,
+          operator: operatorFields(req.user),
+          deptLogId: log._id,
+          deptLogCreatedAt: log.createdAt,
+        });
+        // Refresh the active pass so updateDayPassAfterDepartmentScan uses
+        // the newly created gate entry context.
+        const { registration, role, display } = await loadRegistrationContext(matchedRegistration._id);
+        await createOrRefreshDayPass({
+          registration,
+          role,
+          display,
+          gateLogId: autoGateLog._id,
+          divisionId,
+          divisionName: divisionDoc?.name || '',
+        });
+        activePass = await getActiveDayPass(matchedRegistration._id, divisionId);
+      }
+
+      if (!activePass && deptCheck.hasGateEntry) {
+        const { registration, role, display } = await loadRegistrationContext(matchedRegistration._id);
+        const todayGateEntry = await GateLog.findOne(grantedGateLogFilter({
+          registrationId: matchedRegistration._id,
+          eventType: GATE_EVENT_TYPES.ENTRY,
+          divisionId,
+        })).sort({ createdAt: -1 });
+
+        await createOrRefreshDayPass({
+          registration,
+          role,
+          display,
+          gateLogId: todayGateEntry?._id || log._id,
+          divisionId,
+          divisionName: divisionDoc?.name || '',
+        });
+        activePass = await getActiveDayPass(matchedRegistration._id, divisionId);
+      }
+
+      if (!activePass) {
+        await markGateLogDenied(log, 'system_error', 'Failed to initialize active day pass for department check-in');
+        return res.status(500).json({ error: 'System error: Could not initialize active day pass.' });
       }
 
       dayPass = await updateDayPassAfterDepartmentScan(
@@ -894,6 +1027,7 @@ router.post(
       autoResolved: isAutoEvent,
       qrScan: true,
       forcedDepartmentCheckout,
+      autoGateLog: autoGateLog ? { _id: autoGateLog._id, createdAt: autoGateLog.createdAt } : null,
     });
     });
   })
@@ -927,8 +1061,10 @@ router.post(
       divisionId: bodyDivisionId,
       scanType = SCAN_TYPES.GATE,
       forceDepartmentCheckout: forceCheckoutRaw,
+      autoCreateGateEntry: autoCreateGateEntryRaw,
     } = req.body;
     const forceDepartmentCheckout = parseForceDepartmentCheckout(forceCheckoutRaw);
+    const autoCreateGateEntry = autoCreateGateEntryRaw === true || autoCreateGateEntryRaw === 'true';
 
     if (!req.file) return res.status(400).json({ error: 'Photo is required' });
     const isAutoEvent = eventType === GATE_EVENT_TYPES.AUTO;
@@ -1089,6 +1225,7 @@ router.post(
     let resolvedEventType = eventType;
     let personInside = null;
     let forcedDepartmentCheckout = null;
+    let autoGateLog = null;
 
     if (scanType === SCAN_TYPES.GATE) {
       if (gateRecord.gateType === GATE_TYPES.BOTH) {
@@ -1276,12 +1413,17 @@ router.post(
         });
       }
 
+      // Load division to check gateEntryRequired
+      const divisionDoc = await Division.findById(divisionId).select('gateEntryRequired name').lean();
+      const gateEntryOptional = divisionDoc ? divisionDoc.gateEntryRequired === false : false;
+
       const deptCheck = await validateDepartmentScan(
         activePass,
         department,
         resolvedDeptEventType,
         matchedRegistration._id,
-        divisionId
+        divisionId,
+        { gateEntryOptional }
       );
       if (!deptCheck.ok) {
         const denialDayPass = deptCheck.pass
@@ -1301,6 +1443,67 @@ router.post(
             dayPass: denialDayPass,
             requiredSteps: deptCheck.requiredSteps,
           });
+      }
+
+      // ── Optional gate entry ─────────────────────────────────────────────
+      if (deptCheck.needsAutoGateEntry) {
+        if (!autoCreateGateEntry) {
+          // First pass: tell the UI to show the confirmation popup.
+          await markGateLogDenied(log, 'no_gate_entry_optional_pending', 'Awaiting operator confirmation for auto gate entry');
+          return res.status(202).json({
+            needsAutoGateEntry: true,
+            divisionName: divisionDoc?.name || '',
+            borrowedGateEntry: deptCheck.borrowedGateEntry,
+            registration: populated,
+            matchScore,
+          });
+        }
+        // Second pass: operator confirmed — synthesise the gate-entry log.
+        autoGateLog = await createAutoGateEntryLog({
+          registrationId: matchedRegistration._id,
+          roleId: matchedRegistration.roleId,
+          divisionId,
+          matchScore,
+          photoPath: log.photoPath || null,
+          borrowedGateEntry: deptCheck.borrowedGateEntry,
+          operator: operatorFields(req.user),
+          deptLogId: log._id,
+          deptLogCreatedAt: log.createdAt,
+        });
+        const { registration, role, display } = await loadRegistrationContext(matchedRegistration._id);
+        await createOrRefreshDayPass({
+          registration,
+          role,
+          display,
+          gateLogId: autoGateLog._id,
+          divisionId,
+          divisionName: divisionDoc?.name || '',
+        });
+        activePass = await getActiveDayPass(matchedRegistration._id, divisionId);
+      }
+
+      if (!activePass && deptCheck.hasGateEntry) {
+        const { registration, role, display } = await loadRegistrationContext(matchedRegistration._id);
+        const todayGateEntry = await GateLog.findOne(grantedGateLogFilter({
+          registrationId: matchedRegistration._id,
+          eventType: GATE_EVENT_TYPES.ENTRY,
+          divisionId,
+        })).sort({ createdAt: -1 });
+
+        await createOrRefreshDayPass({
+          registration,
+          role,
+          display,
+          gateLogId: todayGateEntry?._id || log._id,
+          divisionId,
+          divisionName: divisionDoc?.name || '',
+        });
+        activePass = await getActiveDayPass(matchedRegistration._id, divisionId);
+      }
+
+      if (!activePass) {
+        await markGateLogDenied(log, 'system_error', 'Failed to initialize active day pass for department check-in');
+        return res.status(500).json({ error: 'System error: Could not initialize active day pass.' });
       }
 
       dayPass = await updateDayPassAfterDepartmentScan(
@@ -1350,6 +1553,7 @@ router.post(
       resolvedEventType,
       autoResolved: isAutoEvent,
       forcedDepartmentCheckout,
+      autoGateLog: autoGateLog ? { _id: autoGateLog._id, createdAt: autoGateLog.createdAt } : null,
     });
     });
   })

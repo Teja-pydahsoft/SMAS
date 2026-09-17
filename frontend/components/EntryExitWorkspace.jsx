@@ -8,6 +8,7 @@ import { saveGatePhotoForRegistration } from '@/lib/gateRegistration';
 import GateCameraScanner from '@/components/GateCameraScanner';
 import GateScanDetailsPanel from '@/components/GateScanDetailsPanel';
 import RemarkEntryModal from '@/components/RemarkEntryModal';
+import AutoGateEntryConfirmModal from '@/components/AutoGateEntryConfirmModal';
 import EntryExitSelector from '@/components/EntryExitSelector';
 import PageShell from '@/components/PageShell';
 import { useAuth } from '@/components/AuthProvider';
@@ -116,6 +117,13 @@ function EntryExitContent({
   const [remarkPicker, setRemarkPicker] = useState(null); // { logId, personName, departmentName } | null
   const [lastQrPassCode, setLastQrPassCode] = useState('');
   const [forceCheckoutLoading, setForceCheckoutLoading] = useState(false);
+  /**
+   * autoGateEntryPending — set when the backend returns needsAutoGateEntry:true
+   * (HTTP 202) for a dept scan on a division with gateEntryRequired=false.
+   * Holds { type:'face'|'qr', blob?, passCode?, options, divisionName, borrowedGateEntry, registration }
+   */
+  const [autoGateEntryPending, setAutoGateEntryPending] = useState(null);
+  const [autoGateEntryLoading, setAutoGateEntryLoading] = useState(false);
 
   const divisions = useMemo(() => accessScope?.divisions || [], [accessScope]);
 
@@ -342,6 +350,20 @@ function EntryExitContent({
             : { divisionId: urlDivisionId, departmentId: urlDepartmentId, scanType: 'department' };
 
         const res = await api.gate.scan(blob, eventType, options);
+
+        // ── Optional gate entry: first pass ───────────────────────────────
+        if (res.needsAutoGateEntry) {
+          setAutoGateEntryPending({
+            type: 'face',
+            blob,
+            options,
+            divisionName: res.divisionName || '',
+            borrowedGateEntry: res.borrowedGateEntry || null,
+            registration: res.registration || null,
+          });
+          return; // hold loading=true until operator responds
+        }
+
         applyResult(res, setResult, setSessionState, setDayPass, setError);
         maybePromptRemark(res);
       } catch (e) {
@@ -374,6 +396,20 @@ function EntryExitContent({
             : { divisionId: urlDivisionId, departmentId: urlDepartmentId };
 
         const res = await api.gate.qrScan(passCode, eventType, options);
+
+        // ── Optional gate entry: first pass ───────────────────────────────
+        if (res.needsAutoGateEntry) {
+          setAutoGateEntryPending({
+            type: 'qr',
+            passCode,
+            options,
+            divisionName: res.divisionName || '',
+            borrowedGateEntry: res.borrowedGateEntry || null,
+            registration: res.registration || null,
+          });
+          return; // hold loading=true until operator responds
+        }
+
         applyResult(res, setResult, setSessionState, setDayPass, setError);
         maybePromptRemark(res);
       } catch (e) {
@@ -686,6 +722,48 @@ function EntryExitContent({
             forceCheckoutLoading={forceCheckoutLoading}
           />
         </div>
+      )}
+
+      {/* Auto Gate Entry confirmation modal */}
+      {autoGateEntryPending && (
+        <AutoGateEntryConfirmModal
+          registration={autoGateEntryPending.registration}
+          divisionName={autoGateEntryPending.divisionName}
+          borrowedGateEntry={autoGateEntryPending.borrowedGateEntry}
+          loading={autoGateEntryLoading}
+          onConfirm={async () => {
+            setAutoGateEntryLoading(true);
+            const pending = autoGateEntryPending;
+            try {
+              let res;
+              if (pending.type === 'face') {
+                res = await api.gate.scan(pending.blob, eventType, {
+                  ...pending.options,
+                  autoCreateGateEntry: true,
+                });
+              } else {
+                res = await api.gate.qrScan(pending.passCode, eventType, {
+                  ...pending.options,
+                  autoCreateGateEntry: true,
+                });
+              }
+              setAutoGateEntryPending(null);
+              applyResult(res, setResult, setSessionState, setDayPass, setError);
+              maybePromptRemark(res);
+            } catch (e) {
+              applyErrorData(e, setResult, setSessionState, setDayPass, setError);
+              setAutoGateEntryPending(null);
+            } finally {
+              setAutoGateEntryLoading(false);
+              setLoading(false);
+            }
+          }}
+          onCancel={() => {
+            setAutoGateEntryPending(null);
+            setLoading(false);
+            resetScanState();
+          }}
+        />
       )}
 
       {/* Remark modal — shown after department check-in */}

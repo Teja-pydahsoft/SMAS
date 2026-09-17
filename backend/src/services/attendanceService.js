@@ -688,7 +688,53 @@ export async function madeGateEntryToday(registrationId, divisionId) {
   return count > 0;
 }
 
-export async function validateDepartmentScan(pass, department, eventType, registrationId, divisionId) {
+/**
+ * Find the most recent granted gate ENTRY log for this registration in ANY
+ * division today.  Used when Division Gate Entry is Optional — the returned
+ * log's createdAt and photoPath are referenced in the synthetic gate-entry
+ * record so the audit trail remains coherent.
+ *
+ * Returns { createdAt, photoPath, divisionId, logId } or null.
+ */
+export async function findLatestGateEntryAnyDivision(registrationId) {
+  if (!registrationId) return null;
+
+  const validDate = todayDateString();
+  const dayStart = startOfDay(validDate);
+  const endOfDayDate = endOfDay(validDate);
+
+  const log = await GateLog.findOne(
+    grantedGateLogFilter({
+      registrationId,
+      scanType: SCAN_TYPES.GATE,
+      eventType: GATE_EVENT_TYPES.ENTRY,
+      createdAt: { $gte: dayStart, $lte: endOfDayDate },
+    })
+  )
+    .sort({ createdAt: -1 })
+    .select('createdAt photoPath divisionId _id')
+    .lean();
+
+  if (!log) return null;
+  return {
+    logId: log._id,
+    divisionId: log.divisionId,
+    createdAt: log.createdAt,
+    photoPath: log.photoPath || null,
+  };
+}
+
+/**
+ * Validate a department check-in / check-out.
+ *
+ * @param {object}  options
+ * @param {boolean} options.gateEntryOptional  When true (Division Gate Entry = Optional),
+ *   the NO_GATE_ENTRY denial is skipped.  Instead the function returns
+ *   { ok: true, needsAutoGateEntry: true, borrowedGateEntry } so the caller
+ *   can create a synthetic gate-entry GateLog before proceeding.
+ */
+export async function validateDepartmentScan(pass, department, eventType, registrationId, divisionId, options = {}) {
+  const { gateEntryOptional = false } = options;
   const state = getPassSessionState(pass);
   const activeSession = await getActiveDivisionSession(registrationId);
   const targetDivisionId = divisionId.toString();
@@ -716,6 +762,22 @@ export async function validateDepartmentScan(pass, department, eventType, regist
   const activeDepartment = activeDepartmentFromState(state);
 
   if (!hasGateEntry) {
+    // ── Division Gate Entry Optional mode ─────────────────────────────────
+    // When the division is configured as optional we do NOT block the scan.
+    // Instead we tell the caller that it needs to auto-create a gate entry
+    // first, passing along the best available reference entry (from any
+    // division today) so time + photo can be reused.
+    if (gateEntryOptional) {
+      const borrowedGateEntry = await findLatestGateEntryAnyDivision(registrationId);
+      return {
+        ok: true,
+        hasGateEntry: false,
+        needsAutoGateEntry: true,
+        borrowedGateEntry,
+        activeDepartment: null,
+      };
+    }
+
     return {
       ok: false,
       reason: DEPARTMENT_DENIAL_REASONS.NO_GATE_ENTRY,

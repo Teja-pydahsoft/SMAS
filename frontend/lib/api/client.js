@@ -395,6 +395,7 @@ export const api = {
         divisionId = null,
         scanType = 'gate',
         forceDepartmentCheckout = false,
+        autoCreateGateEntry = false,
       } = options;
       const form = new FormData();
       form.append('photo', photoBlob, 'gate-photo.jpg');
@@ -405,6 +406,7 @@ export const api = {
       if (departmentId) form.append('departmentId', departmentId);
       if (divisionId) form.append('divisionId', divisionId);
       if (forceDepartmentCheckout) form.append('forceDepartmentCheckout', 'true');
+      if (autoCreateGateEntry) form.append('autoCreateGateEntry', 'true');
       // Face match + S3 upload can take a bit; fail clearly instead of hanging on Processing.
       return request('/gate/scan', { method: 'POST', body: form }, { timeoutMs: 60_000 });
     },
@@ -414,6 +416,7 @@ export const api = {
         departmentId = null,
         divisionId = null,
         forceDepartmentCheckout = false,
+        autoCreateGateEntry = false,
       } = options;
       return request(
         '/gate/qr-scan',
@@ -426,6 +429,7 @@ export const api = {
             departmentId,
             divisionId,
             ...(forceDepartmentCheckout ? { forceDepartmentCheckout: true } : {}),
+            ...(autoCreateGateEntry ? { autoCreateGateEntry: true } : {}),
           }),
         },
         { timeoutMs: 60_000 }

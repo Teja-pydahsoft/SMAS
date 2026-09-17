@@ -28,6 +28,7 @@ function NewDivisionModal({ onClose, onComplete }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [gates, setGates] = useState([emptyGate()]);
+  const [gateEntryRequired, setGateEntryRequired] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -63,6 +64,7 @@ function NewDivisionModal({ onClose, onComplete }) {
       const division = await api.divisions.create({
         name: name.trim(),
         description: description.trim(),
+        gateEntryRequired,
         gates: validGates.map((g) => ({
           name: g.name.trim(),
           gateType: g.gateType,
@@ -137,6 +139,33 @@ function NewDivisionModal({ onClose, onComplete }) {
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Optional description"
                 />
+              </div>
+
+              {/* Gate Entry Optional toggle */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: 'var(--bg-inset, #f9fafb)', borderRadius: '8px', border: '1px solid var(--border, #e5e7eb)' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>Division Gate Entry Required</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    When OFF, department check-ins are allowed without a prior gate entry. A gate entry will be auto-created using the department scan details.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGateEntryRequired(v => !v)}
+                  style={{
+                    width: '50px', height: '26px', borderRadius: '9999px', border: 'none', cursor: 'pointer',
+                    backgroundColor: gateEntryRequired ? 'var(--primary)' : 'var(--border-color, #d1d5db)',
+                    position: 'relative', flexShrink: 0, transition: 'background-color 0.2s', padding: 0,
+                  }}
+                  aria-pressed={gateEntryRequired}
+                >
+                  <div style={{
+                    width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#fff',
+                    position: 'absolute', top: '3px',
+                    left: gateEntryRequired ? '27px' : '3px',
+                    transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }} />
+                </button>
               </div>
             </div>
 
@@ -312,6 +341,7 @@ export default function ManageDivisionsPage() {
                   <th>Description</th>
                   <th>Gates</th>
                   <th>Departments</th>
+                  <th>Gate Entry</th>
                   <th>Status</th>
                   <th>Created</th>
                   <th>{canWrite ? 'Actions' : 'View'}</th>
@@ -331,6 +361,14 @@ export default function ManageDivisionsPage() {
                       {division.activeDepartmentCount ?? division.departmentCount ?? 0} active
                       {' / '}
                       {division.departmentCount ?? 0} total
+                    </td>
+                    <td>
+                      <span
+                        className={`badge ${division.gateEntryRequired === false ? 'badge-warning' : 'badge-success'}`}
+                        title={division.gateEntryRequired === false ? 'Department entry allowed without a gate entry (auto gate entry created)' : 'Gate entry is required before department check-in'}
+                      >
+                        {division.gateEntryRequired === false ? 'Optional' : 'Required'}
+                      </span>
                     </td>
                     <td>
                       <span className={`badge ${division.isActive ? 'badge-success' : 'badge-danger'}`}>
@@ -357,6 +395,14 @@ export default function ManageDivisionsPage() {
                             onClick={() => handleToggleActive(division)}
                           >
                             {division.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button
+                            type="button"
+                            className={division.gateEntryRequired === false ? 'btn-primary' : 'btn-secondary'}
+                            title={division.gateEntryRequired === false ? 'Gate Entry is Optional — click to make Required' : 'Gate Entry is Required — click to make Optional'}
+                            onClick={() => api.divisions.update(division._id, { gateEntryRequired: division.gateEntryRequired === false }).then(loadDivisions).catch(e => setError(e.message))}
+                          >
+                            {division.gateEntryRequired === false ? 'Gate Entry: Optional' : 'Gate Entry: Required'}
                           </button>
                           <button
                             type="button"

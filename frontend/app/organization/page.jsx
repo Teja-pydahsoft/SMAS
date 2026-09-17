@@ -13,6 +13,7 @@ import {
 } from '@/lib/shiftTiming';
 import { useAuth } from '@/components/AuthProvider';
 import PageShell from '@/components/PageShell';
+import WriteAccess from '@/components/WriteAccess';
 
 /* ─── Icons ──────────────────────────────────────────────────── */
 function PlusIcon() {
@@ -71,6 +72,7 @@ function DivisionFormModal({ division, onClose, onComplete }) {
   const isEdit = Boolean(division);
   const [name, setName] = useState(division?.name ?? '');
   const [description, setDescription] = useState(division?.description ?? '');
+  const [gateEntryRequired, setGateEntryRequired] = useState(division?.gateEntryRequired !== false);
   const [gates, setGates] = useState([emptyGate()]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -89,6 +91,7 @@ function DivisionFormModal({ division, onClose, onComplete }) {
         const updated = await api.divisions.update(division._id, {
           name: name.trim(),
           description: description.trim(),
+          gateEntryRequired,
         });
         onComplete(updated);
         return;
@@ -98,6 +101,7 @@ function DivisionFormModal({ division, onClose, onComplete }) {
       const created = await api.divisions.create({
         name: name.trim(),
         description: description.trim(),
+        gateEntryRequired,
         gates: validGates.map((g) => ({ name: g.name.trim(), gateType: g.gateType, description: g.description.trim() })),
       });
       onComplete(created);
@@ -125,6 +129,22 @@ function DivisionFormModal({ division, onClose, onComplete }) {
           <div className="form-group">
             <label htmlFor="div-desc">Description</label>
             <input id="div-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional description" />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: 'var(--bg-inset, #f9fafb)', borderRadius: '8px', border: '1px solid var(--border, #e5e7eb)' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>Division Gate Entry Required</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                When OFF, department check-ins can auto-create a gate entry.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setGateEntryRequired((value) => !value)}
+              className="btn-secondary"
+              aria-pressed={gateEntryRequired}
+            >
+              {gateEntryRequired ? 'Required' : 'Optional'}
+            </button>
           </div>
         </div>
 
@@ -230,6 +250,7 @@ function DivisionsTab({ canWrite }) {
                   <th>Description</th>
                   <th>Gates</th>
                   <th>Departments</th>
+                  <th>Gate Entry</th>
                   <th>Status</th>
                   <th>Created</th>
                   <th>{canWrite ? 'Actions' : 'View'}</th>
@@ -242,16 +263,33 @@ function DivisionsTab({ canWrite }) {
                     <td>{division.description || '—'}</td>
                     <td>{division.activeGateCount ?? division.gateCount ?? 0} active / {division.gateCount ?? 0} total</td>
                     <td>{division.activeDepartmentCount ?? division.departmentCount ?? 0} active / {division.departmentCount ?? 0} total</td>
+                    <td>
+                      <span className={`badge ${division.gateEntryRequired === false ? 'badge-warning' : 'badge-success'}`}>
+                        {division.gateEntryRequired === false ? 'Optional' : 'Required'}
+                      </span>
+                    </td>
                     <td><span className={`badge ${division.isActive ? 'badge-success' : 'badge-danger'}`}>{division.isActive ? 'Active' : 'Inactive'}</span></td>
                     <td>{formatDate(division.createdAt)}</td>
                     <td className="actions-cell">
                       <Link href={`/divisions/${division._id}`}>
                         <button type="button" className="btn-secondary">{canWrite ? 'Manage Gates' : 'View Gates'}</button>
                       </Link>
+                      <WriteAccess module="departments">
+                        <Link href={`/departments/create?division=${division._id}`}>
+                          <button type="button" className="btn-secondary">Add Department</button>
+                        </Link>
+                      </WriteAccess>
                       {canWrite && (
                         <>
                           <button type="button" className="btn-secondary" onClick={() => setEditingDivision(division)}>Edit</button>
                           <button type="button" className="btn-secondary" onClick={() => handleToggleActive(division)}>{division.isActive ? 'Deactivate' : 'Activate'}</button>
+                          <button
+                            type="button"
+                            className={division.gateEntryRequired === false ? 'btn-primary' : 'btn-secondary'}
+                            onClick={() => api.divisions.update(division._id, { gateEntryRequired: division.gateEntryRequired === false }).then(loadDivisions).catch((e) => setError(e.message))}
+                          >
+                            Gate Entry: {division.gateEntryRequired === false ? 'Optional' : 'Required'}
+                          </button>
                           <button type="button" className="btn-danger" onClick={() => handleDelete(division._id, division.name)}>Delete</button>
                         </>
                       )}

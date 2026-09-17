@@ -1575,6 +1575,10 @@ export async function getDailyPassByRole({ divisionIds = null, date = null, date
         const activitySeenToday = sightings.length > 0;
         const lastActivitySeenAt = sightings[0]?.createdAt || null;
         const activitySeenCount = sightings.length;
+        const departmentExitAt = visits
+          .map((visit) => visit?.exitAt)
+          .filter(Boolean)
+          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null;
         // Activity for the day = gate pass OR activity-monitor sighting
         const hadActivityToday = hadGateActivity || activitySeenToday;
 
@@ -1595,6 +1599,7 @@ export async function getDailyPassByRole({ divisionIds = null, date = null, date
           departmentName,
           gateEntryAt,
           gateExitAt,
+          departmentExitAt,
           currentDepartmentName,
           shiftName,
           selections: display.selections || [],

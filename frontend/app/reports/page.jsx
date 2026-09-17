@@ -172,6 +172,10 @@ function selectionFilterMatches(value, selectedValue) {
   return value === selectedValue;
 }
 
+function reportExitAt(person) {
+  return person?.gateExitAt || person?.departmentExitAt || null;
+}
+
 /** Value used to sort a daily-activity person for a given column key */
 function dailySortValue(person, key) {
   switch (key) {
@@ -180,7 +184,7 @@ function dailySortValue(person, key) {
     case 'payFreq': return person.payFrequencyLabel || '';
     case 'code': return person.registrationCode || '';
     case 'entry': return person.gateEntryAt ? new Date(person.gateEntryAt).getTime() : 0;
-    case 'exit': return person.gateExitAt ? new Date(person.gateExitAt).getTime() : 0;
+    case 'exit': return reportExitAt(person) ? new Date(reportExitAt(person)).getTime() : 0;
     case 'status': return person.divisionInside ? 2 : person.hadActivityToday ? 1 : 0;
     case 'shift': return person.shiftName || '';
     default:
@@ -2729,7 +2733,7 @@ function TodayActivityTab({
                 rowKey: p.registrationId,
                 currentlyIn: p.divisionInside,
                 entryAt: p.gateEntryAt,
-                exitAt: p.gateExitAt,
+                exitAt: reportExitAt(p),
               }))}
               sort={sort}
               onSort={handleSort}
@@ -2770,7 +2774,7 @@ function TodayActivityTab({
                 rowKey: p.registrationId,
                 currentlyIn: p.divisionInside,
                 entryAt: p.gateEntryAt,
-                exitAt: p.gateExitAt,
+                exitAt: reportExitAt(p),
               }))}
               sort={sort}
               onSort={handleSort}
@@ -2857,18 +2861,18 @@ function TodayActivityTab({
                         : '—'}
                   </td>
                   <td className="rc-table__time">
-                    {person.gateExitAt ? (
+                    {reportExitAt(person) ? (
                       <span className="rc-table__time-stack">
-                        <span>{formatTime(person.gateExitAt)}</span>
-                        {istDateOf(person.gateExitAt) !== activityDate && (
+                        <span>{formatTime(reportExitAt(person))}</span>
+                        {istDateOf(reportExitAt(person)) !== activityDate && (
                           <span className="rc-table__time-date" title="Exited on a different day (overnight shift)">
-                            {formatShortDate(person.gateExitAt)}
+                            {formatShortDate(reportExitAt(person))}
                           </span>
                         )}
                       </span>
                     ) : person.divisionInside ? <span className="rc-badge-live">Active</span> : '—'}
                   </td>
-                  <td className="rc-table__time">{calcDuration(person.gateEntryAt, person.gateExitAt || (person.divisionInside && isToday ? new Date() : null))}</td>
+                  <td className="rc-table__time">{calcDuration(person.gateEntryAt, reportExitAt(person) || (person.divisionInside && isToday ? new Date() : null))}</td>
                   <td><StatusBadge inside={person.divisionInside} hadActivity={person.hadActivityToday} hadGateActivity={person.hadGateActivity} activitySeen={person.activitySeenToday} /></td>
                   <td>{person.shiftName ? <span className="badge badge-info">{person.shiftName}</span> : <span className="rc-table__muted">—</span>}</td>
                   <td>

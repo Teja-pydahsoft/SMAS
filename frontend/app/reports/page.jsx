@@ -1990,6 +1990,7 @@ function TodayActivityTab({
   onDateChange,
   isActive = true,
 }) {
+  const { user } = useAuth();
   const activityDate = selectedDate || todayDateStringIst();
   const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
   const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
@@ -2081,7 +2082,13 @@ function TodayActivityTab({
     if (divisionFilter && divisionFilter !== 'all') params.divisionId = divisionFilter;
     api.departments.list(params)
       .then((list) => {
-        if (!cancelled) setDepartments(Array.isArray(list) ? list : []);
+        if (!cancelled) {
+          const options = Array.isArray(list) ? list : [];
+          setDepartments(options);
+          if (!user?.isSuperAdmin && options.length === 1) {
+            setDepartmentFilter(options[0]._id);
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setDepartments([]);
@@ -2090,7 +2097,7 @@ function TodayActivityTab({
         if (!cancelled) setLoadingDepartments(false);
       });
     return () => { cancelled = true; };
-  }, [divisionFilter, divisionRequired]);
+  }, [divisionFilter, divisionRequired, user?.isSuperAdmin]);
 
   const load = useCallback(async (silent = false) => {
     if (divisionRequired && !divisionFilter) {
@@ -3861,6 +3868,7 @@ function DepartmentActivityBreadcrumb({ items }) {
  * with optional division/department filters. Drill down: departments → units → employees.
  */
 function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange, isActive = true }) {
+  const { user } = useAuth();
   const activityDate = selectedDate || todayDateStringIst();
   const [rangeFrom, setRangeFrom] = useState(() => selectedDate || todayDateStringIst());
   const [rangeTo, setRangeTo] = useState(() => selectedDate || todayDateStringIst());
@@ -3911,7 +3919,13 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange, isAct
 
   useEffect(() => {
     api.reports.divisions()
-      .then((res) => setDivisions(Array.isArray(res?.divisions) ? res.divisions : []))
+      .then((res) => {
+        const list = Array.isArray(res?.divisions) ? res.divisions : [];
+        setDivisions(list);
+        if (!res?.isSuperAdmin && list.length === 1) {
+          setDivisionFilter(list[0]._id);
+        }
+      })
       .catch(() => setDivisions([]));
   }, []);
 
@@ -3922,7 +3936,13 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange, isAct
     if (divisionFilter && divisionFilter !== 'all') params.divisionId = divisionFilter;
     api.departments.list(params)
       .then((list) => {
-        if (!cancelled) setDepartments(Array.isArray(list) ? list : []);
+        if (!cancelled) {
+          const options = Array.isArray(list) ? list : [];
+          setDepartments(options);
+          if (!user?.isSuperAdmin && options.length === 1) {
+            setDepartmentFilter(options[0]._id);
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setDepartments([]);
@@ -3931,7 +3951,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange, isAct
         if (!cancelled) setLoadingDepartments(false);
       });
     return () => { cancelled = true; };
-  }, [divisionFilter]);
+  }, [divisionFilter, user?.isSuperAdmin]);
 
   useEffect(() => {
     setDrillDepartmentId(null);

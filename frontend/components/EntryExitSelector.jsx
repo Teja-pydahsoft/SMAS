@@ -20,6 +20,7 @@ export default function EntryExitSelector({
   onApply,
   disabled,
   allowedScanTypes = ['gate', 'department'],
+  autoSelectSingleScope = false,
 }) {
   const scanTypes = (allowedScanTypes?.length ? allowedScanTypes : ['gate', 'department']).filter(
     (type) => type === 'gate' || type === 'department'
@@ -44,6 +45,37 @@ export default function EntryExitSelector({
       ...(divisionOnly ? { departmentId: '' } : {}),
     });
   }, [value, defaultScanType, divisionOnly, scanTypes.join('|')]);
+
+  useEffect(() => {
+    if (!autoSelectSingleScope || value || draft.divisionId || divisions.length === 0) return;
+
+    const gateDivision = scanTypes.includes('gate')
+      ? divisions.find((division) => (division.gates || []).length === 1)
+      : null;
+    const departmentDivision = scanTypes.includes('department')
+      ? divisions.find((division) => (division.departments || []).length === 1)
+      : null;
+    const division = gateDivision || departmentDivision;
+    if (!division) return;
+
+    const hasSingleGate = (division.gates || []).length === 1;
+    const hasSingleDepartment = (division.departments || []).length === 1;
+    const scanType = hasSingleGate ? 'gate' : hasSingleDepartment ? 'department' : defaultScanType;
+    const gate = scanType === 'gate' ? division.gates[0] : null;
+    const department = scanType === 'department' ? division.departments[0] : null;
+    const events = scanType === 'gate'
+      ? gate?.allowedEvents || ['entry', 'exit']
+      : department?.allowedEvents || ['auto', 'entry', 'exit'];
+
+    setDraft((prev) => ({
+      ...prev,
+      scanType,
+      divisionId: division._id,
+      gateId: gate?._id || '',
+      departmentId: department?._id || '',
+      eventType: events[0] || (scanType === 'department' ? 'auto' : 'entry'),
+    }));
+  }, [autoSelectSingleScope, value, draft.divisionId, divisions, defaultScanType, scanTypes.join('|')]);
 
   // Keep draft scan type within the allowed set (e.g. JATTU division-only).
   useEffect(() => {

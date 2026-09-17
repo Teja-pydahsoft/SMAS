@@ -530,6 +530,7 @@ function EntryExitContent({
               onApply={applySelection}
               disabled={!canWrite}
               allowedScanTypes={allowedScanTypes}
+              autoSelectSingleScope={!isSuperAdmin}
             />
             {error && <p className="error-msg">{error}</p>}
             {divisions.length === 0 && !error && (
@@ -609,6 +610,7 @@ function EntryExitContent({
           onApply={applySelection}
           disabled={!canWrite || setupLoading}
           allowedScanTypes={allowedScanTypes}
+          autoSelectSingleScope={!isSuperAdmin}
         />
       )}
 

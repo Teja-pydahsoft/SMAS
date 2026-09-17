@@ -330,13 +330,6 @@ export function resolveShiftDayStatus(activityHours, shift, options = {}) {
       factor = 1.5;
       label = `1.5 Shift (${hoursLabel}h)`;
       code = '1.5S';
-    } else if (!disconnected && shiftTotalHours && hours > shiftTotalHours + 1 - grace) { // 1 hr minimum for OT
-      // Worked extra partial hours
-      const extraHours = Math.max(0, hours - shiftTotalHours);
-      const otHours = Math.floor(extraHours);
-      factor = roundHours(1 + computeHourlyPayFactor(otHours, payDenominator));
-      label = `Overtime (${otHours}h)`;
-      code = 'OT';
     }
 
     return {

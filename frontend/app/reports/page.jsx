@@ -6037,7 +6037,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
                   />
                 ) : (
                   <select
-                    value={val}
+                    value={Array.isArray(val) ? (val[0] || 'all') : val}
                     onChange={(e) => setSelectionFilters({ ...selectionFilters, [label]: e.target.value })}
                     disabled={busy}
                   >

@@ -527,6 +527,7 @@ function resolveDayAttendance({
   session,
   shift = null,
   workingHours = null,
+  hasCurrentShift = true,
   today = null,
 }) {
   const joinDate = logDateKey(registeredAt);
@@ -558,23 +559,28 @@ function resolveDayAttendance({
   });
   const activityHours = activityWindow.hours;
   const divisionBreaks = computeDivisionBreaks(grantedLogs);
+  
+  const overrideWithWorkingHours = !hasCurrentShift && typeof workingHours === 'number' && workingHours > 0;
+  
   const shiftTotalHours =
+    (overrideWithWorkingHours ? workingHours : null) ??
     getShiftDurationHours(shift) ??
     (session?.totalHours != null ? Number(session.totalHours) : null) ??
-    workingHours ??
+    (hasCurrentShift && typeof workingHours === 'number' && workingHours > 0 ? workingHours : null) ??
     getShiftDurationHours({
       startTime: shift?.startTime || session?.shiftStartTime || null,
       endTime: shift?.endTime || session?.shiftEndTime || null,
     });
+    
   const shiftMeta = {
     activityHours,
     breakHours: divisionBreaks.breakHours,
     ...(divisionBreaks.breaks.length > 0 ? { breaks: divisionBreaks.breaks } : {}),
-    shiftId: shift?._id?.toString?.() || shift?.id || session?.shiftId || null,
-    shiftName: shift?.name || session?.shiftName || null,
+    shiftId: overrideWithWorkingHours ? null : (shift?._id?.toString?.() || shift?.id || session?.shiftId || null),
+    shiftName: overrideWithWorkingHours ? null : (shift?.name || session?.shiftName || null),
     shiftTotalHours,
-    halfDayMinHours: shift?.halfDayMinHours ?? session?.halfDayMinHours ?? null,
-    fullDayMinHours: shift?.fullDayMinHours ?? session?.fullDayMinHours ?? null,
+    halfDayMinHours: overrideWithWorkingHours ? null : (shift?.halfDayMinHours ?? session?.halfDayMinHours ?? null),
+    fullDayMinHours: overrideWithWorkingHours ? null : (shift?.fullDayMinHours ?? session?.fullDayMinHours ?? null),
     noGateOut: Boolean(activityWindow.noGateOut || session?.noGateOut),
     closedAtLastActivity: Boolean(activityWindow.noGateOut || session?.noGateOut || session?.autoClosedAtLastActivity),
   };
@@ -1284,6 +1290,7 @@ export async function getRegistrationReport(
           session,
           shift,
           workingHours: registration.workingHours,
+          hasCurrentShift: !!registration.shiftId,
         }),
       };
       return applyDayOverride(day, overrideMap.get(date));
@@ -1945,6 +1952,7 @@ export async function getAttendanceHistoryGrid({
             session,
             shift,
             workingHours: reg.workingHours,
+            hasCurrentShift: !!reg.shiftId,
             today,
           }),
         };

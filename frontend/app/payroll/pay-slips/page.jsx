@@ -430,7 +430,7 @@ export default function PaySlipsPage() {
                         >
                           View Details
                         </button>
-                        {slip.status === 'Locked' && can('system_access', 'write') && (
+                        {slip.status === 'Locked' && can('payroll_rate_master', 'write') && (
                           <button 
                             className="btn-secondary btn-sm" 
                             onClick={() => handleUnlock(slip._id || slip.id)}

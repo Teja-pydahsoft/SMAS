@@ -9,7 +9,7 @@ import PaySlip from '../models/PaySlip.js';
 import AttendanceOverride from '../models/AttendanceOverride.js';
 import AttendanceOverrideAuditLog from '../models/AttendanceOverrideAuditLog.js';
 import { buildDisplayInfo } from '../utils/displayInfo.js';
-import { authenticate, requirePermission } from '../middleware/auth.js';
+import { authenticate, requirePermission, userHasPermission } from '../middleware/auth.js';
 import {
   buildLockedDateSet,
   isRangeFullyLocked,
@@ -641,7 +641,10 @@ router.post('/pay-slips/generate', authenticate, requirePermission('payroll_rate
 });
 
 // Unlock Pay Slip
-router.post('/pay-slips/:id/unlock', authenticate, requirePermission('system_access', 'write'), async (req, res) => {
+router.post('/pay-slips/:id/unlock', authenticate, async (req, res) => {
+  if (!req.user.isSuperAdmin && !userHasPermission(req.user, 'payroll_rate_master', 'write')) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
   try {
     // Only super admin level access (or explicit permission) can unlock
     const paySlip = await PaySlip.findByIdAndUpdate(req.params.id, { status: 'Unlocked' }, { new: true });

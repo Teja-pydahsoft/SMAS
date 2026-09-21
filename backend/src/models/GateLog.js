@@ -39,6 +39,7 @@ gateLogSchema.index({ eventType: 1, createdAt: -1 });
 gateLogSchema.index({ divisionId: 1, createdAt: -1 });
 gateLogSchema.index({ departmentId: 1, createdAt: -1 });
 gateLogSchema.index({ gateRefId: 1, createdAt: -1 });
+gateLogSchema.index({ divisionId: 1, accessGranted: 1, matched: 1, createdAt: -1, registrationId: 1 });
 gateLogSchema.index({ scanType: 1, divisionId: 1, createdAt: -1 });
 gateLogSchema.index({ registrationId: 1, scanType: 1, divisionId: 1, createdAt: -1 });
 

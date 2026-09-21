@@ -1160,11 +1160,15 @@ export async function getRegistrationReport(
 
   // Activity-monitor sightings for today (even without gate entry).
   if (!hasDateRange) {
-    const todaySightings = await ActivitySighting.find({
+    const sightingQuery = {
       registrationId: registration._id,
       matched: true,
       sightingDate: today,
-    })
+    };
+    if (divisionScoped) {
+      sightingQuery['metadata.divisionId'] = { $in: divisionObjIds.map(String) };
+    }
+    const todaySightings = await ActivitySighting.find(sightingQuery)
       .sort({ createdAt: -1 })
       .limit(100)
       .lean();
@@ -1293,7 +1297,11 @@ export async function getRegistrationReport(
           hasCurrentShift: !!registration.shiftId,
         }),
       };
-      return applyDayOverride(day, overrideMap.get(date));
+      const override = overrideMap.get(date);
+      if (divisionScoped && override && !day.checkIn && !day.lastActivityAt && (!dayLogs || dayLogs.length === 0)) {
+        return day;
+      }
+      return applyDayOverride(day, override);
     });
 
     const lockedDateSets = await loadLockedDateSetsByRegistration(
@@ -1346,6 +1354,9 @@ export async function getRegistrationReport(
       sightingQuery.sightingDate = { $gte: dateFrom, $lte: dateTo };
     } else {
       sightingQuery.sightingDate = today;
+    }
+    if (divisionScoped) {
+      sightingQuery['metadata.divisionId'] = { $in: divisionObjIds.map(String) };
     }
     const sightings = await ActivitySighting.find(sightingQuery)
       .sort({ createdAt: -1 })
@@ -1483,13 +1494,18 @@ export async function getDailyPassByRole({ divisionIds = null, date = null, date
   const passQuery = { passType: PASS_TYPES.DAY_PASS, validDate: { $gte: rangeFrom, $lte: rangeTo } };
   if (divisionScoped) passQuery.divisionId = { $in: divisionObjIds };
 
+  const sightingQuery = {
+    sightingDate: { $gte: rangeFrom, $lte: rangeTo },
+    matched: true,
+    registrationId: { $ne: null },
+  };
+  if (divisionScoped) {
+    sightingQuery['metadata.divisionId'] = { $in: divisionObjIds.map(String) };
+  }
+
   const [todayPasses, daySightings] = await Promise.all([
     Pass.find(passQuery).lean(),
-    ActivitySighting.find({
-      sightingDate: { $gte: rangeFrom, $lte: rangeTo },
-      matched: true,
-      registrationId: { $ne: null },
-    })
+    ActivitySighting.find(sightingQuery)
       .select('registrationId createdAt inActivity matchScore photoPath')
       .sort({ createdAt: -1 })
       .lean(),
@@ -1725,71 +1741,103 @@ export async function getAttendanceHistoryGrid({
     }
   }
 
-  // Hydrate all registrations for JS filtering (fast because no GateLogs/Passes are fetched yet)
-  const allRegDocs = await Registration.find(regQuery)
-    .select({ _id: 1, formData: 1, registrationCode: 1, roleId: 1, payFrequency: 1, formId: 1, createdAt: 1, photoPath: 1, customPayDays: 1, payAmount: 1 })
-    .populate('roleId', 'name slug')
-    .populate('formId', 'fields')
-    .sort({ createdAt: 1 })
-    .lean();
+  if (payFrequency) {
+    regQuery.payFrequency = payFrequency;
+  }
 
-  const normalizedSearch = search.trim().toLowerCase();
-  let parsedSelectionFilters = {};
-  try { parsedSelectionFilters = JSON.parse(selectionFilters || '{}'); } catch (e) { }
-
-  let shiftNoneRegIds = null;
   if (shiftName === '__none__') {
     const withShiftIds = await Pass.distinct('registrationId', {
       validDate: { $gte: from, $lte: toDate },
       'qrPayload.shiftName': { $exists: true, $ne: null },
       ...(divisionScoped ? { divisionId: { $in: divisionObjIds } } : {})
     });
-    shiftNoneRegIds = new Set(withShiftIds.map(id => id.toString()));
+    const shiftNoneRegIds = new Set(withShiftIds.map(id => id.toString()));
+    if (regQuery._id) {
+      if (regQuery._id.$in) {
+        regQuery._id.$in = regQuery._id.$in.filter(id => !shiftNoneRegIds.has(id.toString()));
+      }
+    } else {
+      regQuery._id = { $nin: withShiftIds.map(id => new mongoose.Types.ObjectId(id)) };
+    }
   }
 
-  const globalSelectionOptions = {};
-
-  const filteredRegs = allRegDocs.filter(reg => {
-    if (payFrequency && reg.payFrequency !== payFrequency) return false;
-
-    if (shiftNoneRegIds && shiftNoneRegIds.has(reg._id.toString())) return false;
-
-    const display = buildDisplayInfo(reg.formData, reg.formId?.fields || []);
-
-    for (const sel of display.selections || []) {
-      if (sel.label && sel.value) {
-        if (!globalSelectionOptions[sel.label]) globalSelectionOptions[sel.label] = new Set();
-        globalSelectionOptions[sel.label].add(sel.value);
-      }
+  const normalizedSearch = search.trim().toLowerCase();
+  if (normalizedSearch) {
+    const pattern = new RegExp(String(normalizedSearch).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const matchingRoles = await Role.find({ name: { $regex: pattern } }).select('_id');
+    const matchingRoleIds = matchingRoles.map(r => r._id);
+    
+    regQuery.$or = [
+      { displayName: { $regex: pattern } },
+      { displayPhone: { $regex: pattern } },
+      { registrationCode: { $regex: pattern } }
+    ];
+    if (matchingRoleIds.length > 0) {
+      regQuery.$or.push({ roleId: { $in: matchingRoleIds } });
     }
+  }
 
-    for (const [label, val] of Object.entries(parsedSelectionFilters)) {
-      const wantedValues = Array.isArray(val)
-        ? val.filter(Boolean)
-        : (val && val !== 'all' ? [val] : []);
-      if (wantedValues.length > 0) {
-        const sel = (display.selections || []).find((s) => s.label === label);
-        if (!sel || !wantedValues.includes(sel.value)) return false;
-      }
+  let parsedSelectionFilters = {};
+  try { parsedSelectionFilters = JSON.parse(selectionFilters || '{}'); } catch (e) { }
+
+  const selectionAnds = [];
+  for (const [label, val] of Object.entries(parsedSelectionFilters)) {
+    const wantedValues = Array.isArray(val) ? val.filter(Boolean) : (val && val !== 'all' ? [val] : []);
+    if (wantedValues.length > 0) {
+      selectionAnds.push({
+        selections: {
+          $elemMatch: {
+            label: label,
+            value: { $in: wantedValues }
+          }
+        }
+      });
     }
-
-    if (normalizedSearch) {
-      const match =
-        (display.displayName || '').toLowerCase().includes(normalizedSearch) ||
-        (reg.registrationCode || '').toLowerCase().includes(normalizedSearch) ||
-        (reg.roleId?.name || '').toLowerCase().includes(normalizedSearch) ||
-        (display.displayPhone || '').toLowerCase().includes(normalizedSearch);
-      if (!match) return false;
+  }
+  if (selectionAnds.length > 0) {
+    if (regQuery.$and) {
+      regQuery.$and.push(...selectionAnds);
+    } else {
+      regQuery.$and = selectionAnds;
     }
+  }
 
-    reg._display = display; // cache it
-    return true;
+  // Get total count from DB directly
+  const total = await Registration.countDocuments(regQuery);
+  const startIdx = (pageN - 1) * limitN;
+
+  // Fetch only the registrations for the current page
+  const pageRegs = await Registration.find(regQuery)
+    .select({ _id: 1, formData: 1, registrationCode: 1, roleId: 1, payFrequency: 1, formId: 1, createdAt: 1, photoPath: 1, customPayDays: 1, payAmount: 1, displayName: 1, displayPhone: 1, selections: 1 })
+    .populate('roleId', 'name slug')
+    .populate('formId', 'fields')
+    .sort({ createdAt: 1 })
+    .skip(startIdx)
+    .limit(limitN)
+    .lean();
+
+  pageRegs.forEach(reg => {
+    reg._display = buildDisplayInfo(reg.formData || {}, reg.formId?.fields || []);
   });
 
-  const total = filteredRegs.length;
-  const startIdx = (pageN - 1) * limitN;
-  const pageRegs = filteredRegs.slice(startIdx, startIdx + limitN);
   const pageIds = pageRegs.map(r => r._id);
+
+  // Extract global selections using MongoDB aggregation for all verified registrations
+  const globalSelectionOptions = {};
+  try {
+    const optionsAgg = await Registration.aggregate([
+      { $match: { status: REGISTRATION_STATUS.VERIFIED } },
+      { $unwind: "$selections" },
+      { $group: { _id: { label: "$selections.label", value: "$selections.value" } } }
+    ]);
+    for (const { _id } of optionsAgg) {
+      if (!_id || !_id.label || !_id.value) continue;
+      if (!globalSelectionOptions[_id.label]) globalSelectionOptions[_id.label] = new Set();
+      globalSelectionOptions[_id.label].add(_id.value);
+    }
+  } catch (e) {
+    console.error('Failed to aggregate global selection options:', e.message);
+  }
 
   if (pageIds.length === 0) {
     return {
@@ -1956,7 +2004,11 @@ export async function getAttendanceHistoryGrid({
             today,
           }),
         };
-        return applyDayOverride(day, overrideMap.get(`${regId}|${date}`));
+        const override = overrideMap.get(`${regId}|${date}`);
+        if (divisionScoped && override && !day.checkIn && !day.lastActivityAt && (!dayLogs || dayLogs.length === 0)) {
+          return day;
+        }
+        return applyDayOverride(day, override);
       }), lockedDates);
 
       const unlockedDays = days.filter((day) => !day.payLocked);

@@ -27,5 +27,6 @@ passSchema.index({ registrationId: 1, passType: 1 });
 passSchema.index({ gateLogId: 1 });
 passSchema.index({ validDate: 1, registrationId: 1 });
 passSchema.index({ validDate: 1, registrationId: 1, divisionId: 1, passType: 1 });
+passSchema.index({ divisionId: 1, validDate: 1, isActive: 1, passType: 1, registrationId: 1 });
 
 export default mongoose.model('Pass', passSchema);

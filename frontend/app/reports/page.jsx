@@ -1341,12 +1341,20 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
   // (previously Absent-with-scans were hidden → false "No activity in selected period").
   const periodDays = (data?.attendanceRange?.days || []).filter((day) => {
     if (day.status === 'blank') return false;
+    const scanCount = entriesByDateMap[day.date]?.length || 0;
+    const hasActivity = Boolean(day.checkIn || day.lastActivityAt || day.checkInTime || scanCount > 0);
+    
+    // If a division filter is explicitly applied, do not show days that have absolutely no activity 
+    // in this division, even if there is a global override marking them present.
+    if (divisionId && !hasActivity) {
+      return false;
+    }
+
     if (day.payLocked) return true;
     if (day.status === 'P' || day.status === 'HD' || day.status === 'FH' || day.status === 'SH' || day.status === 'PT') {
       return true;
     }
-    const scanCount = entriesByDateMap[day.date]?.length || 0;
-    return Boolean(day.checkIn || day.lastActivityAt || day.checkInTime || scanCount > 0);
+    return hasActivity;
   });
   const rangeLabel = hasDateRange
     ? `${formatDate(dateFrom)} — ${formatDate(dateTo)}`
@@ -5513,7 +5521,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
     return { dateFrom: filters.dateFrom, dateTo: filters.dateTo };
   }, [rangeMode, filters.week, filters.month, filters.dateFrom, filters.dateTo]);
 
-  const HISTORY_PAGE_SIZE = 50;
+  const HISTORY_PAGE_SIZE = 20;
 
   const fetchHistoryPage = useCallback(async ({ dateFrom, dateTo, roleId, divisionId, divisionIds, payFrequency, shiftName, selectionFilters, page = 1, search = '' }) => {
     const params = { 
@@ -5804,7 +5812,7 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
   };
 
 
-  const displayedEmployees = employees.slice(0, renderPage * 50);
+  const displayedEmployees = employees; // Removed manual page slicing so infinite scroll can grow naturally
   const dates = data?.dates || [];
   const hasLockedDays = employees.some((emp) => (emp.lockedDayCount || 0) > 0);
 
@@ -5814,8 +5822,12 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
 
   const handleViewPerson = useCallback((registrationId) => {
     const { dateFrom, dateTo } = resolveDateRange();
-    onViewPerson({ registrationId, dateFrom, dateTo });
-  }, [onViewPerson, resolveDateRange]);
+    const divList = Array.isArray(filters.divisionIds)
+      ? filters.divisionIds.filter(Boolean)
+      : (filters.divisionId && filters.divisionId !== 'all' ? [filters.divisionId] : []);
+    const divisionIdParam = divList.length > 0 ? divList.join(',') : undefined;
+    onViewPerson({ registrationId, dateFrom, dateTo, divisionId: divisionIdParam });
+  }, [onViewPerson, resolveDateRange, filters]);
 
   const handlePrintPdf = useCallback(async () => {
     const { dateFrom, dateTo } = resolveDateRange();

@@ -29,11 +29,39 @@ const registrationSchema = new mongoose.Schema(
     customPayDays: { type: Number, min: 1 },
     payAmount: { type: Number, min: 0, default: null },
     gender: { type: String, enum: GENDERS, default: null },
+    // Denormalized fields for high-performance searching and filtering
+    displayName: { type: String, default: null },
+    displayPhone: { type: String, default: null },
+    selections: [{ _id: false, label: String, value: String }],
   },
   { timestamps: true }
 );
 
 registrationSchema.index({ roleId: 1, status: 1 });
 registrationSchema.index({ status: 1, createdAt: 1 });
+registrationSchema.index({ displayName: 'text', displayPhone: 'text', registrationCode: 'text' });
+registrationSchema.index({ 'selections.label': 1, 'selections.value': 1 });
+
+import RegistrationForm from './RegistrationForm.js';
+import { buildDisplayInfo } from '../utils/displayInfo.js';
+
+registrationSchema.pre('save', async function (next) {
+  if (this.isModified('formData') || this.isModified('formId') || this.isNew) {
+    if (this.formId) {
+      try {
+        const form = await mongoose.model('RegistrationForm').findById(this.formId).select('fields');
+        if (form && form.fields) {
+          const display = buildDisplayInfo(this.formData || {}, form.fields);
+          this.displayName = display.displayName || null;
+          this.displayPhone = display.displayPhone || null;
+          this.selections = display.selections || [];
+        }
+      } catch (err) {
+        console.error('Failed to populate display fields on registration:', err.message);
+      }
+    }
+  }
+  next();
+});
 
 export default mongoose.model('Registration', registrationSchema);

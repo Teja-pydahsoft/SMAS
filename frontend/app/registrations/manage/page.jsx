@@ -11,6 +11,7 @@ import { STATUS_BADGE, actionLabel, photoUrlFromPath } from '../shared';
 import { useAuth } from '@/components/AuthProvider';
 import WriteAccess from '@/components/WriteAccess';
 import RegistrationReportModal from '@/components/RegistrationReportModal';
+import { downloadRegistrationsExcel } from '@/lib/registrationExport';
 
 const PAGE_SIZE = 25;
 
@@ -185,6 +186,7 @@ function ManageRegistrationsContent() {
   const [summary, setSummary] = useState({ verified: 0, withPass: 0 });
   const [detailsRegistration, setDetailsRegistration] = useState(null);
   const [showNewRegistrationModal, setShowNewRegistrationModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const loadRegistrations = useCallback(async (
     roleId = filterRoleId,
@@ -374,6 +376,23 @@ function ManageRegistrationsContent() {
     setEditingRegistrationId(null);
   }
 
+  async function handleExport() {
+    setExporting(true);
+    setError('');
+    try {
+      const filters = {
+        ...(filterRoleId ? { roleId: filterRoleId } : {}),
+        ...(searchQuery ? { search: searchQuery } : {}),
+        ...dynamicFilters,
+      };
+      await downloadRegistrationsExcel(filters, { fields: roleFormFields });
+    } catch (e) {
+      setError('Export failed: ' + e.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const editingRegistration = editingRegistrationId
     ? registrations.find((r) => r._id === editingRegistrationId)
     : null;
@@ -453,6 +472,21 @@ function ManageRegistrationsContent() {
                 New
               </button>
             )}
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', alignSelf: 'flex-end', marginBottom: '0' }}
+              onClick={handleExport}
+              disabled={exporting}
+              aria-label="Export to Excel"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              {exporting ? 'Exporting...' : 'Export'}
+            </button>
           </div>
         </div>
 

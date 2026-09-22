@@ -27,7 +27,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { FaceLandmarker, ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision';
 
 function extractPassCode(rawValue) {
   try {
@@ -91,16 +91,18 @@ export default function GateCameraScanner({
   const [flipping, setFlipping] = useState(false);
   const [pendingQr, setPendingQr] = useState(null); // {passCode, raw} when QR detected but not confirmed
   const [blinkPrompt, setBlinkPrompt] = useState(false); // To show 'Please blink' UI
+  const [spoofDetected, setSpoofDetected] = useState(false); // True if a phone/screen is detected
 
   const capturingRef = useRef(false);
   const faceLandmarkerRef = useRef(null);
+  const objectDetectorRef = useRef(null);
   const lastVideoTimeRef = useRef(-1);
   const blinkPhaseRef = useRef('open'); // 'open' -> 'closed' -> 'open'
 
-  // ── Init FaceLandmarker ───────────────────────────────────────────────────
+  // ── Init Vision Tasks ───────────────────────────────────────────────────
   useEffect(() => {
     let isMounted = true;
-    async function initFaceLandmarker() {
+    async function initVisionTasks() {
       try {
         const filesetResolver = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
@@ -115,11 +117,21 @@ export default function GateCameraScanner({
           numFaces: 1
         });
         if (isMounted) faceLandmarkerRef.current = landmarker;
+
+        const objDetector = await ObjectDetector.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          scoreThreshold: 0.15 // Lowered to catch partially visible/cropped screens
+        });
+        if (isMounted) objectDetectorRef.current = objDetector;
       } catch (err) {
-        console.error("Failed to initialize FaceLandmarker", err);
+        console.error("Failed to initialize Vision Tasks", err);
       }
     }
-    initFaceLandmarker();
+    initVisionTasks();
     return () => { isMounted = false; };
   }, []);
 
@@ -182,6 +194,7 @@ export default function GateCameraScanner({
     const video = videoRef.current;
     const detector = detectorRef.current;
     const landmarker = faceLandmarkerRef.current;
+    const objectDetector = objectDetectorRef.current;
 
     // Only scan if video is ready and not currently processing
     if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0 && !processing) {
@@ -202,16 +215,18 @@ export default function GateCameraScanner({
         }
       }
 
-      // 2. Face Blink Detection
-      if (landmarker && !pendingQr && !preview && !capturingRef.current) {
+      // 2. Face Blink Detection & Spoofing Check
+      if (landmarker && objectDetector && !pendingQr && !preview && !capturingRef.current) {
         try {
           // Use performance.now() but ensure strictly monotonic increasing timestamps for MediaPipe
           let nowMs = performance.now();
           if (!landmarker.lastTimestamp) landmarker.lastTimestamp = -1;
+          if (!objectDetector.lastTimestamp) objectDetector.lastTimestamp = -1;
           
-          if (lastVideoTimeRef.current !== video.currentTime && nowMs > landmarker.lastTimestamp) {
+          if (lastVideoTimeRef.current !== video.currentTime && nowMs > landmarker.lastTimestamp && nowMs > objectDetector.lastTimestamp) {
             lastVideoTimeRef.current = video.currentTime;
             landmarker.lastTimestamp = nowMs;
+            objectDetector.lastTimestamp = nowMs;
             
             // MediaPipe's WASM backend prints 'INFO:' logs to the console on first frame.
             // Next.js intercepts these and shows them as errors/warnings in the dev overlay.
@@ -219,39 +234,55 @@ export default function GateCameraScanner({
             const _log = console.log, _info = console.info, _warn = console.warn, _error = console.error;
             console.log = console.info = console.warn = console.error = () => {};
             
-            let results;
+            let results, objResults;
             try {
               results = landmarker.detectForVideo(video, nowMs);
+              objResults = objectDetector.detectForVideo(video, nowMs);
             } finally {
               console.log = _log; console.info = _info; console.warn = _warn; console.error = _error;
             }
 
-            if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
-              setBlinkPrompt(true);
-              const shapes = results.faceBlendshapes[0].categories;
-              const leftBlink = shapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
-              const rightBlink = shapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
-              
-              const isClosed = (leftBlink > 0.4 && rightBlink > 0.4);
-              
-              if (blinkPhaseRef.current === 'open' && isClosed) {
-                blinkPhaseRef.current = 'closed';
-              } else if (blinkPhaseRef.current === 'closed' && !isClosed) {
-                blinkPhaseRef.current = 'open';
-                setBlinkPrompt(false);
-                
-                // Lock capture immediately so we don't trigger multiple times
-                capturingRef.current = true;
-                
-                // Wait 250ms for the eyes to fully open before taking the snapshot
-                setTimeout(() => {
-                  capturingRef.current = false; 
-                  captureFrame(); 
-                }, 250);
-              }
-            } else {
+            // Anti-spoofing check
+            // Phones held very close might be misclassified as remotes or books, or have lower confidence due to cropping
+            const spoofClasses = ['cell phone', 'laptop', 'tv', 'remote', 'book'];
+            const isSpoof = objResults?.detections?.some(d => 
+              d.categories.some(c => spoofClasses.includes(c.categoryName))
+            );
+
+            if (isSpoof) {
+              setSpoofDetected(true);
               setBlinkPrompt(false);
               blinkPhaseRef.current = 'open';
+            } else {
+              setSpoofDetected(false);
+
+              if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
+                setBlinkPrompt(true);
+                const shapes = results.faceBlendshapes[0].categories;
+                const leftBlink = shapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
+                const rightBlink = shapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
+                
+                const isClosed = (leftBlink > 0.4 && rightBlink > 0.4);
+                
+                if (blinkPhaseRef.current === 'open' && isClosed) {
+                  blinkPhaseRef.current = 'closed';
+                } else if (blinkPhaseRef.current === 'closed' && !isClosed) {
+                  blinkPhaseRef.current = 'open';
+                  setBlinkPrompt(false);
+                  
+                  // Lock capture immediately so we don't trigger multiple times
+                  capturingRef.current = true;
+                  
+                  // Wait 250ms for the eyes to fully open before taking the snapshot
+                  setTimeout(() => {
+                    capturingRef.current = false; 
+                    captureFrame(); 
+                  }, 250);
+                }
+              } else {
+                setBlinkPrompt(false);
+                blinkPhaseRef.current = 'open';
+              }
             }
           }
         } catch (e) {
@@ -526,13 +557,21 @@ export default function GateCameraScanner({
 
       {/* ── Hint row ── */}
       {active && !preview && !processing && !pendingQr && (
-        <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: blinkPrompt ? 'bold' : 'normal', color: blinkPrompt ? 'var(--primary)' : 'inherit' }}>
-          {blinkPrompt
-            ? 'Please blink your eyes to capture...'
-            : qrSupported
-              ? 'Show QR code, or face the camera and blink to capture'
-              : 'Face the camera and blink to capture'}
-        </p>
+        <>
+          {spoofDetected ? (
+            <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: 'bold', color: 'var(--color-danger, #ef4444)' }}>
+              Screen / Mobile Device Detected! Please remove device to capture.
+            </p>
+          ) : (
+            <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: blinkPrompt ? 'bold' : 'normal', color: blinkPrompt ? 'var(--primary)' : 'inherit' }}>
+              {blinkPrompt
+                ? 'Please blink your eyes to capture...'
+                : qrSupported
+                  ? 'Show QR code, or face the camera and blink to capture'
+                  : 'Face the camera and blink to capture'}
+            </p>
+          )}
+        </>
       )}
 
       {/* ── Action row ── */}

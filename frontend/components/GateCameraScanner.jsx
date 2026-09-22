@@ -27,7 +27,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FaceLandmarker, ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision';
+import { FaceLandmarker, PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 function extractPassCode(rawValue) {
   try {
@@ -91,12 +91,15 @@ export default function GateCameraScanner({
   const [flipping, setFlipping] = useState(false);
   const [pendingQr, setPendingQr] = useState(null); // {passCode, raw} when QR detected but not confirmed
   const [blinkPrompt, setBlinkPrompt] = useState(false); // To show 'Please blink' UI
-  const [spoofDetected, setSpoofDetected] = useState(false); // True if a phone/screen is detected
+  const [poseWarning, setPoseWarning] = useState(false); // True if shoulders not detected or face wrong size
 
   const capturingRef = useRef(false);
   const faceLandmarkerRef = useRef(null);
-  const objectDetectorRef = useRef(null);
+  const poseLandmarkerRef = useRef(null);
   const lastVideoTimeRef = useRef(-1);
+  const lastFaceDetectTimeRef = useRef(0);
+  const lastObjDetectTimeRef = useRef(0);
+  const poseStatusRef = useRef(false); // true if pose is BAD (warning)
   const blinkPhaseRef = useRef('open'); // 'open' -> 'closed' -> 'open'
 
   // ── Init Vision Tasks ───────────────────────────────────────────────────
@@ -118,15 +121,15 @@ export default function GateCameraScanner({
         });
         if (isMounted) faceLandmarkerRef.current = landmarker;
 
-        const objDetector = await ObjectDetector.createFromOptions(filesetResolver, {
+        const poseLandmarker = await PoseLandmarker.createFromOptions(filesetResolver, {
           baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
             delegate: "GPU"
           },
           runningMode: "VIDEO",
-          scoreThreshold: 0.15 // Lowered to catch partially visible/cropped screens
+          numPoses: 1
         });
-        if (isMounted) objectDetectorRef.current = objDetector;
+        if (isMounted) poseLandmarkerRef.current = poseLandmarker;
       } catch (err) {
         console.error("Failed to initialize Vision Tasks", err);
       }
@@ -185,16 +188,17 @@ export default function GateCameraScanner({
     setActive(false);
     setPendingQr(null);
     setBlinkPrompt(false);
+    setPoseWarning(false);
   }, [stopStream]);
 
   useEffect(() => () => stopStream(), [stopStream]);
 
-  // ── Main Scan Loop (QR + Blink) ───────────────────────────────────────────
+  // ── Main Scan Loop (QR + Blink + Pose) ────────────────────────────────────
   const scanLoop = useCallback(async () => {
     const video = videoRef.current;
     const detector = detectorRef.current;
     const landmarker = faceLandmarkerRef.current;
-    const objectDetector = objectDetectorRef.current;
+    const poseLandmarker = poseLandmarkerRef.current;
 
     // Only scan if video is ready and not currently processing
     if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0 && !processing) {
@@ -215,73 +219,106 @@ export default function GateCameraScanner({
         }
       }
 
-      // 2. Face Blink Detection & Spoofing Check
-      if (landmarker && objectDetector && !pendingQr && !preview && !capturingRef.current) {
+      // 2. Face Blink & Pose Distance Detection
+      if (landmarker && poseLandmarker && !pendingQr && !preview && !capturingRef.current) {
         try {
           // Use performance.now() but ensure strictly monotonic increasing timestamps for MediaPipe
           let nowMs = performance.now();
           if (!landmarker.lastTimestamp) landmarker.lastTimestamp = -1;
-          if (!objectDetector.lastTimestamp) objectDetector.lastTimestamp = -1;
+          if (!poseLandmarker.lastTimestamp) poseLandmarker.lastTimestamp = -1;
           
-          if (lastVideoTimeRef.current !== video.currentTime && nowMs > landmarker.lastTimestamp && nowMs > objectDetector.lastTimestamp) {
-            lastVideoTimeRef.current = video.currentTime;
-            landmarker.lastTimestamp = nowMs;
-            objectDetector.lastTimestamp = nowMs;
+          if (lastVideoTimeRef.current !== video.currentTime) {
+            const timeSinceLastFace = nowMs - lastFaceDetectTimeRef.current;
+            const timeSinceLastObj = nowMs - lastObjDetectTimeRef.current;
             
-            // MediaPipe's WASM backend prints 'INFO:' logs to the console on first frame.
-            // Next.js intercepts these and shows them as errors/warnings in the dev overlay.
-            // We temporarily suppress console output during the call to prevent this.
-            const _log = console.log, _info = console.info, _warn = console.warn, _error = console.error;
-            console.log = console.info = console.warn = console.error = () => {};
-            
-            let results, objResults;
-            try {
-              results = landmarker.detectForVideo(video, nowMs);
-              objResults = objectDetector.detectForVideo(video, nowMs);
-            } finally {
-              console.log = _log; console.info = _info; console.warn = _warn; console.error = _error;
-            }
+            // Throttle FaceLandmarker to ~20fps (50ms) to reduce mobile lag
+            if (timeSinceLastFace > 50) {
+              lastVideoTimeRef.current = video.currentTime;
+              
+              const _log = console.log, _info = console.info, _warn = console.warn, _error = console.error;
+              console.log = console.info = console.warn = console.error = () => {};
+              
+              let results;
+              try {
+                landmarker.lastTimestamp = nowMs;
+                results = landmarker.detectForVideo(video, nowMs);
+                lastFaceDetectTimeRef.current = nowMs;
 
-            // Anti-spoofing check
-            // Phones held very close might be misclassified as remotes or books, or have lower confidence due to cropping
-            const spoofClasses = ['cell phone', 'laptop', 'tv', 'remote', 'book'];
-            const isSpoof = objResults?.detections?.some(d => 
-              d.categories.some(c => spoofClasses.includes(c.categoryName))
-            );
-
-            if (isSpoof) {
-              setSpoofDetected(true);
-              setBlinkPrompt(false);
-              blinkPhaseRef.current = 'open';
-            } else {
-              setSpoofDetected(false);
-
-              if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
-                setBlinkPrompt(true);
-                const shapes = results.faceBlendshapes[0].categories;
-                const leftBlink = shapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
-                const rightBlink = shapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
-                
-                const isClosed = (leftBlink > 0.4 && rightBlink > 0.4);
-                
-                if (blinkPhaseRef.current === 'open' && isClosed) {
-                  blinkPhaseRef.current = 'closed';
-                } else if (blinkPhaseRef.current === 'closed' && !isClosed) {
-                  blinkPhaseRef.current = 'open';
-                  setBlinkPrompt(false);
+                // Throttle PoseLandmarker to ~3fps (300ms) as it is very heavy
+                if (timeSinceLastObj > 300) {
+                  poseLandmarker.lastTimestamp = nowMs;
+                  const poseResults = poseLandmarker.detectForVideo(video, nowMs);
+                  lastObjDetectTimeRef.current = nowMs;
                   
-                  // Lock capture immediately so we don't trigger multiple times
-                  capturingRef.current = true;
-                  
-                  // Wait 250ms for the eyes to fully open before taking the snapshot
-                  setTimeout(() => {
-                    capturingRef.current = false; 
-                    captureFrame(); 
-                  }, 250);
+                  let hasPoseWarning = true; // Assume bad pose unless proven otherwise
+
+                  if (poseResults.landmarks && poseResults.landmarks.length > 0) {
+                    const landmarks = poseResults.landmarks[0];
+                    const leftShoulder = landmarks[11];
+                    const rightShoulder = landmarks[12];
+                    
+                    // Check if both shoulders are within the frame and have high visibility
+                    const isLeftShoulderValid = leftShoulder && leftShoulder.visibility > 0.5 && leftShoulder.x >= 0 && leftShoulder.x <= 1 && leftShoulder.y >= 0 && leftShoulder.y <= 1;
+                    const isRightShoulderValid = rightShoulder && rightShoulder.visibility > 0.5 && rightShoulder.x >= 0 && rightShoulder.x <= 1 && rightShoulder.y >= 0 && rightShoulder.y <= 1;
+                    
+                    if (isLeftShoulderValid && isRightShoulderValid) {
+                      hasPoseWarning = false; // Shoulders are clearly visible!
+                    }
+                  }
+
+                  // Also check Face distance (bounding box size)
+                  if (!hasPoseWarning && results.faceLandmarks && results.faceLandmarks.length > 0) {
+                    const faceMarks = results.faceLandmarks[0];
+                    const leftPoint = faceMarks[234];
+                    const rightPoint = faceMarks[454];
+                    if (leftPoint && rightPoint) {
+                      const faceWidth = Math.abs(rightPoint.x - leftPoint.x);
+                      // Require face to be a reasonable size relative to screen width (not a huge phone screen held closely)
+                      if (faceWidth > 0.40 || faceWidth < 0.10) {
+                        hasPoseWarning = true;
+                      }
+                    }
+                  }
+
+                  poseStatusRef.current = hasPoseWarning;
+                  setPoseWarning(hasPoseWarning);
                 }
-              } else {
+              } finally {
+                console.log = _log; console.info = _info; console.warn = _warn; console.error = _error;
+              }
+
+              // Use the synchronous ref for anti-spoofing check
+              if (poseStatusRef.current) {
                 setBlinkPrompt(false);
                 blinkPhaseRef.current = 'open';
+              } else {
+                if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
+                  setBlinkPrompt(true);
+                  const shapes = results.faceBlendshapes[0].categories;
+                  const leftBlink = shapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
+                  const rightBlink = shapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
+                  
+                  const isClosed = (leftBlink > 0.4 && rightBlink > 0.4);
+                  
+                  if (blinkPhaseRef.current === 'open' && isClosed) {
+                    blinkPhaseRef.current = 'closed';
+                  } else if (blinkPhaseRef.current === 'closed' && !isClosed) {
+                    blinkPhaseRef.current = 'open';
+                    setBlinkPrompt(false);
+                    
+                    // Lock capture immediately so we don't trigger multiple times
+                    capturingRef.current = true;
+                    
+                    // Wait 250ms for the eyes to fully open before taking the snapshot
+                    setTimeout(() => {
+                      capturingRef.current = false; 
+                      captureFrame(); 
+                    }, 250);
+                  }
+                } else {
+                  setBlinkPrompt(false);
+                  blinkPhaseRef.current = 'open';
+                }
               }
             }
           }
@@ -464,13 +501,42 @@ export default function GateCameraScanner({
           <img src={preview} alt="Captured frame" className="gate-cam-scanner__preview" />
         )}
 
-        {/* Face Alignment Overlay */}
+        {/* HUD Face Alignment Overlay */}
         {active && !preview && !pendingQr && detectedType !== 'qr' && (
-          <div className="gate-cam-scanner__face-overlay" aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 5 }}>
-            <svg width="200" height="280" viewBox="0 0 200 280" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ opacity: blinkPrompt ? 0.8 : 0.3, transition: 'opacity 0.3s, stroke 0.3s' }}>
-              <ellipse cx="100" cy="140" rx="90" ry="130" stroke={blinkPrompt ? "var(--primary)" : "white"} strokeWidth="4" strokeDasharray="10 10"/>
-              <ellipse cx="65" cy="120" rx="15" ry="8" stroke={blinkPrompt ? "var(--primary)" : "white"} strokeWidth="2" />
-              <ellipse cx="135" cy="120" rx="15" ry="8" stroke={blinkPrompt ? "var(--primary)" : "white"} strokeWidth="2" />
+          <div className="gate-cam-scanner__face-overlay" aria-hidden="true" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
+            <svg 
+              width="100%" 
+              height="100%" 
+              viewBox="0 0 300 400" 
+              fill="none" 
+              preserveAspectRatio="xMidYMid slice"
+              xmlns="http://www.w3.org/2000/svg"
+              style={{ transition: 'all 0.3s ease-in-out' }}
+            >
+              <g stroke={poseWarning ? "#ef4444" : blinkPrompt ? "#3b82f6" : "#4ade80"}>
+                {/* Corner Brackets */}
+                <path d="M 20,80 L 20,20 L 80,20" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M 280,80 L 280,20 L 220,20" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M 20,320 L 20,380 L 80,380" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M 280,320 L 280,380 L 220,380" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
+                {/* Vertical Center Line */}
+                <line x1="150" y1="20" x2="150" y2="380" strokeWidth="2" strokeDasharray="6 6" opacity="0.5" />
+                
+                {/* Horizontal Eye Level Line */}
+                <line x1="70" y1="130" x2="230" y2="130" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
+                <circle cx="120" cy="130" r="4" fill={poseWarning ? "#ef4444" : blinkPrompt ? "#3b82f6" : "#4ade80"} stroke="none" />
+                <circle cx="180" cy="130" r="4" fill={poseWarning ? "#ef4444" : blinkPrompt ? "#3b82f6" : "#4ade80"} stroke="none" />
+                
+                {/* Head Oval */}
+                <ellipse cx="150" cy="150" rx="70" ry="90" strokeWidth="4" strokeDasharray="12 12" fill="none" />
+                
+                {/* Shoulders Arc */}
+                <path d="M 40,380 C 40,280 85,250 150,250 C 215,250 260,280 260,380" strokeWidth="4" strokeDasharray="12 12" fill="none" />
+                
+                {/* Smile curve */}
+                <path d="M 130,190 C 140,200 160,200 170,190" strokeWidth="3" strokeLinecap="round" fill="none" />
+              </g>
             </svg>
           </div>
         )}
@@ -558,17 +624,17 @@ export default function GateCameraScanner({
       {/* ── Hint row ── */}
       {active && !preview && !processing && !pendingQr && (
         <>
-          {spoofDetected ? (
+          {poseWarning ? (
             <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: 'bold', color: 'var(--color-danger, #ef4444)' }}>
-              Screen / Mobile Device Detected! Please remove device to capture.
+              Please stand further back! Align your head and shoulders inside the outline.
             </p>
           ) : (
             <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: blinkPrompt ? 'bold' : 'normal', color: blinkPrompt ? 'var(--primary)' : 'inherit' }}>
               {blinkPrompt
                 ? 'Please blink your eyes to capture...'
                 : qrSupported
-                  ? 'Show QR code, or face the camera and blink to capture'
-                  : 'Face the camera and blink to capture'}
+                  ? 'Show QR code, or align head and shoulders to capture'
+                  : 'Align head and shoulders to capture'}
             </p>
           )}
         </>

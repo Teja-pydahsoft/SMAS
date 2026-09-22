@@ -572,13 +572,7 @@ function EntryExitContent({
 
       {accessPointValid && (
         <div className="entry-exit-context" aria-live="polite">
-          <div className="entry-exit-context__item">
-            <div className="entry-exit-context__label">Logged in as</div>
-            <div className="entry-exit-context__title">{operatorLabel}</div>
-            {operatorUsername && (
-              <div className="entry-exit-context__meta">{operatorUsername}</div>
-            )}
-          </div>
+
           <div className="entry-exit-context__item">
             <div className="entry-exit-context__label">Division</div>
             <div className="entry-exit-context__title">

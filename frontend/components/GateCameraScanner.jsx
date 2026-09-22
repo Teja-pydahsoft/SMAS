@@ -509,9 +509,9 @@ export default function GateCameraScanner({
               height="100%" 
               viewBox="0 0 300 400" 
               fill="none" 
-              preserveAspectRatio="xMidYMid slice"
+              preserveAspectRatio="xMidYMid meet"
               xmlns="http://www.w3.org/2000/svg"
-              style={{ transition: 'all 0.3s ease-in-out' }}
+              style={{ transition: 'all 0.3s ease-in-out', maxHeight: '100%', maxWidth: '100%' }}
             >
               <g stroke={poseWarning ? "#ef4444" : blinkPrompt ? "#3b82f6" : "#4ade80"}>
                 {/* Corner Brackets */}

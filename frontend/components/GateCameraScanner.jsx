@@ -524,18 +524,18 @@ export default function GateCameraScanner({
                 <line x1="150" y1="20" x2="150" y2="380" strokeWidth="2" strokeDasharray="6 6" opacity="0.5" />
                 
                 {/* Horizontal Eye Level Line */}
-                <line x1="70" y1="130" x2="230" y2="130" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
-                <circle cx="120" cy="130" r="4" fill={poseWarning ? "#ef4444" : blinkPrompt ? "#3b82f6" : "#4ade80"} stroke="none" />
-                <circle cx="180" cy="130" r="4" fill={poseWarning ? "#ef4444" : blinkPrompt ? "#3b82f6" : "#4ade80"} stroke="none" />
+                <line x1="70" y1="140" x2="230" y2="140" strokeWidth="2" strokeDasharray="6 6" opacity="0.6" />
+                <circle cx="125" cy="140" r="4" fill={poseWarning ? "#ef4444" : blinkPrompt ? "#3b82f6" : "#4ade80"} stroke="none" />
+                <circle cx="175" cy="140" r="4" fill={poseWarning ? "#ef4444" : blinkPrompt ? "#3b82f6" : "#4ade80"} stroke="none" />
                 
-                {/* Head Oval */}
-                <ellipse cx="150" cy="150" rx="70" ry="90" strokeWidth="4" strokeDasharray="12 12" fill="none" />
+                {/* Head Oval (Lowered to reduce gap) */}
+                <ellipse cx="150" cy="155" rx="55" ry="75" strokeWidth="4" strokeDasharray="12 12" fill="none" />
                 
                 {/* Shoulders Arc */}
-                <path d="M 40,380 C 40,280 85,250 150,250 C 215,250 260,280 260,380" strokeWidth="4" strokeDasharray="12 12" fill="none" />
+                <path d="M 40,380 C 40,290 90,250 150,250 C 210,250 260,290 260,380" strokeWidth="4" strokeDasharray="12 12" fill="none" />
                 
                 {/* Smile curve */}
-                <path d="M 130,190 C 140,200 160,200 170,190" strokeWidth="3" strokeLinecap="round" fill="none" />
+                <path d="M 135,195 C 145,205 155,205 165,195" strokeWidth="3" strokeLinecap="round" fill="none" />
               </g>
             </svg>
           </div>

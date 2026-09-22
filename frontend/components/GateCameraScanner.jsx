@@ -27,6 +27,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 function extractPassCode(rawValue) {
   try {
@@ -89,8 +90,38 @@ export default function GateCameraScanner({
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
   const [flipping, setFlipping] = useState(false);
   const [pendingQr, setPendingQr] = useState(null); // {passCode, raw} when QR detected but not confirmed
+  const [blinkPrompt, setBlinkPrompt] = useState(false); // To show 'Please blink' UI
 
   const capturingRef = useRef(false);
+  const faceLandmarkerRef = useRef(null);
+  const lastVideoTimeRef = useRef(-1);
+  const blinkPhaseRef = useRef('open'); // 'open' -> 'closed' -> 'open'
+
+  // ── Init FaceLandmarker ───────────────────────────────────────────────────
+  useEffect(() => {
+    let isMounted = true;
+    async function initFaceLandmarker() {
+      try {
+        const filesetResolver = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+        const landmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            delegate: "GPU"
+          },
+          outputFaceBlendshapes: true,
+          runningMode: "VIDEO",
+          numFaces: 1
+        });
+        if (isMounted) faceLandmarkerRef.current = landmarker;
+      } catch (err) {
+        console.error("Failed to initialize FaceLandmarker", err);
+      }
+    }
+    initFaceLandmarker();
+    return () => { isMounted = false; };
+  }, []);
 
   // ── Detect number of cameras ──────────────────────────────────────────────
   useEffect(() => {
@@ -141,34 +172,96 @@ export default function GateCameraScanner({
     stopStream();
     setActive(false);
     setPendingQr(null);
+    setBlinkPrompt(false);
   }, [stopStream]);
 
   useEffect(() => () => stopStream(), [stopStream]);
 
-  // ── QR scan loop ──────────────────────────────────────────────────────────
-  const qrScanLoop = useCallback(async () => {
+  // ── Main Scan Loop (QR + Blink) ───────────────────────────────────────────
+  const scanLoop = useCallback(async () => {
     const video = videoRef.current;
     const detector = detectorRef.current;
+    const landmarker = faceLandmarkerRef.current;
 
-    // Only scan if no QR is pending confirmation and not processing
-    if (video && detector && !pendingQr && !processing && video.readyState >= 2) {
-      try {
-        const barcodes = await detector.detect(video);
-        if (barcodes.length > 0) {
-          const passCode = extractPassCode(barcodes[0].rawValue);
-          if (passCode) {
-            // Show confirmation button — do NOT fire onQrDetect yet
-            setPendingQr({ passCode, raw: barcodes[0].rawValue });
-            setDetectedType('qr');
+    // Only scan if video is ready and not currently processing
+    if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0 && !processing) {
+      
+      // 1. QR Code Detection
+      if (detector && !pendingQr && qrSupported) {
+        try {
+          const barcodes = await detector.detect(video);
+          if (barcodes.length > 0) {
+            const passCode = extractPassCode(barcodes[0].rawValue);
+            if (passCode) {
+              setPendingQr({ passCode, raw: barcodes[0].rawValue });
+              setDetectedType('qr');
+            }
           }
+        } catch {
+          // frame not ready — ignore
         }
-      } catch {
-        // frame not ready — ignore
+      }
+
+      // 2. Face Blink Detection
+      if (landmarker && !pendingQr && !preview && !capturingRef.current) {
+        try {
+          // Use performance.now() but ensure strictly monotonic increasing timestamps for MediaPipe
+          let nowMs = performance.now();
+          if (!landmarker.lastTimestamp) landmarker.lastTimestamp = -1;
+          
+          if (lastVideoTimeRef.current !== video.currentTime && nowMs > landmarker.lastTimestamp) {
+            lastVideoTimeRef.current = video.currentTime;
+            landmarker.lastTimestamp = nowMs;
+            
+            // MediaPipe's WASM backend prints 'INFO:' logs to the console on first frame.
+            // Next.js intercepts these and shows them as errors/warnings in the dev overlay.
+            // We temporarily suppress console output during the call to prevent this.
+            const _log = console.log, _info = console.info, _warn = console.warn, _error = console.error;
+            console.log = console.info = console.warn = console.error = () => {};
+            
+            let results;
+            try {
+              results = landmarker.detectForVideo(video, nowMs);
+            } finally {
+              console.log = _log; console.info = _info; console.warn = _warn; console.error = _error;
+            }
+
+            if (results.faceBlendshapes && results.faceBlendshapes.length > 0) {
+              setBlinkPrompt(true);
+              const shapes = results.faceBlendshapes[0].categories;
+              const leftBlink = shapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
+              const rightBlink = shapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
+              
+              const isClosed = (leftBlink > 0.4 && rightBlink > 0.4);
+              
+              if (blinkPhaseRef.current === 'open' && isClosed) {
+                blinkPhaseRef.current = 'closed';
+              } else if (blinkPhaseRef.current === 'closed' && !isClosed) {
+                blinkPhaseRef.current = 'open';
+                setBlinkPrompt(false);
+                
+                // Lock capture immediately so we don't trigger multiple times
+                capturingRef.current = true;
+                
+                // Wait 250ms for the eyes to fully open before taking the snapshot
+                setTimeout(() => {
+                  capturingRef.current = false; 
+                  captureFrame(); 
+                }, 250);
+              }
+            } else {
+              setBlinkPrompt(false);
+              blinkPhaseRef.current = 'open';
+            }
+          }
+        } catch (e) {
+          console.warn('FaceLandmarker error:', e);
+        }
       }
     }
 
-    rafRef.current = requestAnimationFrame(qrScanLoop);
-  }, [pendingQr, processing]);
+    rafRef.current = requestAnimationFrame(scanLoop);
+  }, [pendingQr, processing, preview, qrSupported]); // captureFrame is defined below, so we rely on refs
 
   // ── Start camera with a given facingMode ─────────────────────────────────
   const startCamera = useCallback(
@@ -189,26 +282,24 @@ export default function GateCameraScanner({
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
         setActive(true);
-        if (detectorRef.current) {
-          rafRef.current = requestAnimationFrame(qrScanLoop);
-        }
+        rafRef.current = requestAnimationFrame(scanLoop);
       } catch {
         setError('Camera access denied or unavailable');
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [facingMode, qrScanLoop]
+    [facingMode, scanLoop]
   );
 
-  // Restart QR loop when processing finishes
+  // Restart loop when processing finishes
   useEffect(() => {
-    if (!active || !detectorRef.current) return;
+    if (!active) return;
     if (!processing && !pendingQr) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(qrScanLoop);
+      rafRef.current = requestAnimationFrame(scanLoop);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [processing, pendingQr]);
+  }, [processing, pendingQr, active, scanLoop]);
 
   useEffect(() => {
     if (autoStart) startCamera();
@@ -239,9 +330,9 @@ export default function GateCameraScanner({
   function cancelQrScan() {
     setPendingQr(null);
     setDetectedType(null);
-    // Resume QR scan loop
-    if (detectorRef.current && active && !processing) {
-      rafRef.current = requestAnimationFrame(qrScanLoop);
+    // Resume scan loop
+    if (active && !processing) {
+      rafRef.current = requestAnimationFrame(scanLoop);
     }
   }
 
@@ -300,11 +391,12 @@ export default function GateCameraScanner({
 
   function retake() {
     capturingRef.current = false;
+    blinkPhaseRef.current = 'open';
     setPreview(null);
     setDetectedType(null);
     onFaceCapture?.(null);
-    if (detectorRef.current && active) {
-      rafRef.current = requestAnimationFrame(qrScanLoop);
+    if (active) {
+      rafRef.current = requestAnimationFrame(scanLoop);
     }
   }
 
@@ -339,6 +431,17 @@ export default function GateCameraScanner({
         {/* Frozen preview after face capture */}
         {preview && (
           <img src={preview} alt="Captured frame" className="gate-cam-scanner__preview" />
+        )}
+
+        {/* Face Alignment Overlay */}
+        {active && !preview && !pendingQr && detectedType !== 'qr' && (
+          <div className="gate-cam-scanner__face-overlay" aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 5 }}>
+            <svg width="200" height="280" viewBox="0 0 200 280" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ opacity: blinkPrompt ? 0.8 : 0.3, transition: 'opacity 0.3s, stroke 0.3s' }}>
+              <ellipse cx="100" cy="140" rx="90" ry="130" stroke={blinkPrompt ? "var(--primary)" : "white"} strokeWidth="4" strokeDasharray="10 10"/>
+              <ellipse cx="65" cy="120" rx="15" ry="8" stroke={blinkPrompt ? "var(--primary)" : "white"} strokeWidth="2" />
+              <ellipse cx="135" cy="120" rx="15" ry="8" stroke={blinkPrompt ? "var(--primary)" : "white"} strokeWidth="2" />
+            </svg>
+          </div>
         )}
 
         {/* QR targeting frame (only when no QR is pending confirmation) */}
@@ -423,21 +526,19 @@ export default function GateCameraScanner({
 
       {/* ── Hint row ── */}
       {active && !preview && !processing && !pendingQr && (
-        <p className="gate-cam-scanner__hint field-hint">
-          {qrSupported
-            ? 'Show QR code to the camera, or press Capture for face scan'
-            : 'Press Capture for face recognition'}
+        <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: blinkPrompt ? 'bold' : 'normal', color: blinkPrompt ? 'var(--primary)' : 'inherit' }}>
+          {blinkPrompt
+            ? 'Please blink your eyes to capture...'
+            : qrSupported
+              ? 'Show QR code, or face the camera and blink to capture'
+              : 'Face the camera and blink to capture'}
         </p>
       )}
 
       {/* ── Action row ── */}
       <div className="camera-actions">
-        {showCapture && (
-          <button type="button" className="btn-primary" onClick={captureFrame}>
-            {captureLabel}
-          </button>
-        )}
-
+        {/* Manual capture button removed to enforce liveness blink flow */}
+        
         {showProcessing && (
           <button type="button" className="btn-primary" disabled>
             Processing...

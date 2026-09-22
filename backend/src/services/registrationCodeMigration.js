@@ -21,7 +21,7 @@ export async function migrateLegacyRegistrationCodes() {
       { registrationCode: null },
       { registrationCode: '' },
     ],
-  }).select('_id registrationCode payFrequency gender formData formId roleId');
+  }).select('_id registrationCode payFrequency gender formData formId roleId').populate('roleId', 'name slug');
 
   if (candidates.length === 0) {
     return { upgraded: 0, skipped: 0, skippedDetails: [] };
@@ -32,7 +32,12 @@ export async function migrateLegacyRegistrationCodes() {
   const skippedDetails = [];
 
   for (const reg of candidates) {
-    if (reg.registrationCode && !isLegacySamsCode(reg.registrationCode) && !shouldAssignRegistrationCode(reg)) {
+    if (reg.registrationCode && !isLegacySamsCode(reg.registrationCode) && !shouldAssignRegistrationCode(reg, reg.roleId)) {
+      continue;
+    }
+
+    if (reg.roleId && !shouldAssignRegistrationCode(reg, reg.roleId)) {
+      skipped += 1;
       continue;
     }
 

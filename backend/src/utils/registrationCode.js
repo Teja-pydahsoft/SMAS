@@ -164,11 +164,18 @@ export async function generateRegistrationCode(registration, { maxAttempts = 8 }
   throw new Error('Could not allocate a unique registration code. Please try again.');
 }
 
+export function roleUsesRegistrationCode(role) {
+  const name = String(role?.name || '').toLowerCase().trim();
+  const slug = String(role?.slug || '').toLowerCase().trim();
+  return name !== 'visitor' && slug !== 'visitor';
+}
+
 /**
  * True when this registration should receive (or replace a legacy SAMS- code with)
  * a sequential role/labour code.
  */
-export function shouldAssignRegistrationCode(registration) {
+export function shouldAssignRegistrationCode(registration, role) {
+  if (role && !roleUsesRegistrationCode(role)) return false;
   if (!registration?.registrationCode) return true;
   return isLegacySamsCode(registration.registrationCode);
 }

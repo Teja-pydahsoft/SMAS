@@ -25,7 +25,7 @@ import {
   deleteStoredObject,
   deleteStoredMedia,
 } from '../services/objectStorage.js';
-import { generateRegistrationCode, shouldAssignRegistrationCode, syncPassRegistrationCode, isLegacySamsCode, canBuildRegistrationCodePrefix } from '../utils/registrationCode.js';
+import { generateRegistrationCode, shouldAssignRegistrationCode, roleUsesRegistrationCode, syncPassRegistrationCode, isLegacySamsCode, canBuildRegistrationCodePrefix } from '../utils/registrationCode.js';
 import { getShiftDurationHours } from '../utils/shiftAttendance.js';
 import mongoose from 'mongoose';
 import RateMaster from '../models/RateMaster.js';
@@ -763,7 +763,7 @@ router.post(
       status: REGISTRATION_STATUS.IN_PROGRESS,
     });
 
-    if (shouldAssignRegistrationCode(registration)) {
+    if (shouldAssignRegistrationCode(registration, role)) {
       try {
         registration.registrationCode = await generateRegistrationCode(registration);
         await registration.save();
@@ -850,7 +850,7 @@ router.put(
     }
     // pending_verification / review: keep current stage, form data updated only
 
-    if (shouldAssignRegistrationCode(registration)) {
+    if (shouldAssignRegistrationCode(registration, role)) {
       try {
         registration.registrationCode = await generateRegistrationCode(registration);
       } catch (err) {
@@ -1073,6 +1073,9 @@ router.post(
     const registration = await Registration.findById(req.params.id);
     if (!registration) return res.status(404).json({ error: 'Registration not found' });
 
+    const role = await Role.findById(registration.roleId);
+    if (!role) return res.status(404).json({ error: 'Role not found' });
+
     if (
       registration.currentStage !== REGISTRATION_STAGES.REVIEW &&
       registration.status !== REGISTRATION_STATUS.REJECTED
@@ -1081,7 +1084,10 @@ router.post(
     }
 
     if (approved) {
-      if (shouldAssignRegistrationCode(registration) || isLegacySamsCode(registration.registrationCode)) {
+      if (
+        roleUsesRegistrationCode(role) &&
+        (shouldAssignRegistrationCode(registration, role) || isLegacySamsCode(registration.registrationCode))
+      ) {
         const canBuild = await canBuildRegistrationCodePrefix(registration);
         if (!canBuild) {
           return res.status(400).json({

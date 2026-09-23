@@ -74,6 +74,7 @@ export default function GateCameraScanner({
   captureLabel = 'Capture for face scan',
   processing = false,
   autoStart = false,
+  eyeBlinkEnabled = true,
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -219,17 +220,15 @@ export default function GateCameraScanner({
         }
       }
 
-      // 2. Face Blink & Pose Distance Detection
-      if (landmarker && poseLandmarker && !pendingQr && !preview && !capturingRef.current) {
+      // 2. Face Alignment & Blink Detection
+      if (landmarker && !pendingQr && !preview && !capturingRef.current) {
         try {
           // Use performance.now() but ensure strictly monotonic increasing timestamps for MediaPipe
           let nowMs = performance.now();
           if (!landmarker.lastTimestamp) landmarker.lastTimestamp = -1;
-          if (!poseLandmarker.lastTimestamp) poseLandmarker.lastTimestamp = -1;
           
           if (lastVideoTimeRef.current !== video.currentTime) {
             const timeSinceLastFace = nowMs - lastFaceDetectTimeRef.current;
-            const timeSinceLastObj = nowMs - lastObjDetectTimeRef.current;
             
             // Throttle FaceLandmarker to ~20fps (50ms) to reduce mobile lag
             if (timeSinceLastFace > 50) {
@@ -244,51 +243,39 @@ export default function GateCameraScanner({
                 results = landmarker.detectForVideo(video, nowMs);
                 lastFaceDetectTimeRef.current = nowMs;
 
-                // Throttle PoseLandmarker to ~3fps (300ms) as it is very heavy
-                if (timeSinceLastObj > 300) {
-                  poseLandmarker.lastTimestamp = nowMs;
-                  const poseResults = poseLandmarker.detectForVideo(video, nowMs);
-                  lastObjDetectTimeRef.current = nowMs;
-                  
-                  let hasPoseWarning = true; // Assume bad pose unless proven otherwise
+                let hasAlignmentWarning = true; // Assume bad pose / not centered unless proven otherwise
 
-                  if (poseResults.landmarks && poseResults.landmarks.length > 0) {
-                    const landmarks = poseResults.landmarks[0];
-                    const leftShoulder = landmarks[11];
-                    const rightShoulder = landmarks[12];
-                    
-                    // Check if both shoulders are within the frame and have high visibility
-                    const isLeftShoulderValid = leftShoulder && leftShoulder.visibility > 0.5 && leftShoulder.x >= 0 && leftShoulder.x <= 1 && leftShoulder.y >= 0 && leftShoulder.y <= 1;
-                    const isRightShoulderValid = rightShoulder && rightShoulder.visibility > 0.5 && rightShoulder.x >= 0 && rightShoulder.x <= 1 && rightShoulder.y >= 0 && rightShoulder.y <= 1;
-                    
-                    if (isLeftShoulderValid && isRightShoulderValid) {
-                      hasPoseWarning = false; // Shoulders are clearly visible!
+                if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
+                  const faceMarks = results.faceLandmarks[0];
+                  const leftPoint = faceMarks[234];
+                  const rightPoint = faceMarks[454];
+                  const topPoint = faceMarks[10];
+                  const bottomPoint = faceMarks[152];
+
+                  if (leftPoint && rightPoint && topPoint && bottomPoint) {
+                    const faceCenterX = (leftPoint.x + rightPoint.x) / 2;
+                    const faceCenterY = (topPoint.y + bottomPoint.y) / 2;
+                    const faceWidth = Math.abs(rightPoint.x - leftPoint.x);
+
+                    // Target frame oval is centered at X = 0.50, Y = 0.39
+                    const isXCentered = faceCenterX >= 0.32 && faceCenterX <= 0.68;
+                    const isYCentered = faceCenterY >= 0.18 && faceCenterY <= 0.60;
+                    const isSizeValid = faceWidth >= 0.12 && faceWidth <= 0.42;
+
+                    if (isXCentered && isYCentered && isSizeValid) {
+                      hasAlignmentWarning = false; // Face is inside the outline frame!
                     }
                   }
-
-                  // Also check Face distance (bounding box size)
-                  if (!hasPoseWarning && results.faceLandmarks && results.faceLandmarks.length > 0) {
-                    const faceMarks = results.faceLandmarks[0];
-                    const leftPoint = faceMarks[234];
-                    const rightPoint = faceMarks[454];
-                    if (leftPoint && rightPoint) {
-                      const faceWidth = Math.abs(rightPoint.x - leftPoint.x);
-                      // Require face to be a reasonable size relative to screen width (not a huge phone screen held closely)
-                      if (faceWidth > 0.40 || faceWidth < 0.10) {
-                        hasPoseWarning = true;
-                      }
-                    }
-                  }
-
-                  poseStatusRef.current = hasPoseWarning;
-                  setPoseWarning(hasPoseWarning);
                 }
+
+                poseStatusRef.current = hasAlignmentWarning;
+                setPoseWarning(hasAlignmentWarning);
               } finally {
                 console.log = _log; console.info = _info; console.warn = _warn; console.error = _error;
               }
 
               // Use the synchronous ref for anti-spoofing check
-              if (poseStatusRef.current) {
+              if (poseStatusRef.current || !eyeBlinkEnabled) {
                 setBlinkPrompt(false);
                 blinkPhaseRef.current = 'open';
               } else {
@@ -409,6 +396,7 @@ export default function GateCameraScanner({
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || processing || preview || capturingRef.current) return;
+    if (poseStatusRef.current) return; // Block capture if person is not aligned inside frame
     capturingRef.current = true;
 
     if (video.videoWidth === 0 || video.videoHeight === 0) {
@@ -416,8 +404,17 @@ export default function GateCameraScanner({
       return;
     }
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // Downscale output image to max 640px dimension for 10x faster HTTP upload & instant AI face matching
+    const maxDim = 640;
+    let width = video.videoWidth;
+    let height = video.videoHeight;
+    if (width > maxDim) {
+      height = Math.round((height * maxDim) / width);
+      width = maxDim;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d');
 
     // Mirror the canvas draw for front camera so the saved image isn't flipped
@@ -427,7 +424,7 @@ export default function GateCameraScanner({
     }
     
     try {
-      ctx.drawImage(video, 0, 0);
+      ctx.drawImage(video, 0, 0, width, height);
     } catch (err) {
       capturingRef.current = false;
       return;
@@ -453,7 +450,7 @@ export default function GateCameraScanner({
         }
       },
       'image/jpeg',
-      0.92
+      0.85
     );
   }
 
@@ -626,15 +623,19 @@ export default function GateCameraScanner({
         <>
           {poseWarning ? (
             <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: 'bold', color: 'var(--color-danger, #ef4444)' }}>
-              Please stand further back! Align your head and shoulders inside the outline.
+              Please position your face inside the center outline frame.
             </p>
           ) : (
             <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: blinkPrompt ? 'bold' : 'normal', color: blinkPrompt ? 'var(--primary)' : 'inherit' }}>
               {blinkPrompt
                 ? 'Please blink your eyes to capture...'
                 : qrSupported
-                  ? 'Show QR code, or align head and shoulders to capture'
-                  : 'Align head and shoulders to capture'}
+                  ? eyeBlinkEnabled
+                    ? 'Show QR code, or align face inside frame to capture'
+                    : 'Face aligned — press Capture to scan'
+                  : eyeBlinkEnabled
+                    ? 'Align face inside frame to capture'
+                    : 'Face aligned — press Capture to scan'}
             </p>
           )}
         </>
@@ -642,7 +643,16 @@ export default function GateCameraScanner({
 
       {/* ── Action row ── */}
       <div className="camera-actions">
-        {/* Manual capture button removed to enforce liveness blink flow */}
+        {showCapture && !eyeBlinkEnabled && (
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={captureFrame}
+            disabled={processing || poseWarning}
+          >
+            {captureLabel}
+          </button>
+        )}
         
         {showProcessing && (
           <button type="button" className="btn-primary" disabled>

@@ -24,6 +24,9 @@ const systemSettingSchema = new mongoose.Schema(
       ocrEnabled: { type: Boolean, default: true },
       qrEnabled: { type: Boolean, default: false },
     },
+    gateSettings: {
+      eyeBlinkVerificationEnabled: { type: Boolean, default: true },
+    },
   },
   { timestamps: true }
 );

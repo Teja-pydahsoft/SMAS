@@ -8,6 +8,7 @@ import Division from '../models/Division.js';
 import Department from '../models/Department.js';
 import Pass from '../models/Pass.js';
 import ActivitySighting from '../models/ActivitySighting.js';
+import SystemSetting from '../models/SystemSetting.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { REGISTRATION_STATUS, GATE_EVENT_TYPES, GATE_TYPES, SCAN_TYPES, PASS_TYPES } from '../constants/index.js';
 import {
@@ -1911,6 +1912,51 @@ router.post(
       vehicle: vehicle ? { _id: vehicle._id, typeId: vehicle.typeId, categoryId: vehicle.categoryId } : null,
       logId: activityLog._id
     });
+  })
+);
+
+// GET /api/gate/settings/public
+router.get(
+  '/settings/public',
+  asyncHandler(async (req, res) => {
+    let settings = await SystemSetting.findOne({ singleton: 'singleton' });
+    if (!settings) {
+      settings = await SystemSetting.create({ singleton: 'singleton' });
+    }
+    const eyeBlinkVerificationEnabled = settings.gateSettings?.eyeBlinkVerificationEnabled ?? true;
+    res.json({ eyeBlinkVerificationEnabled });
+  })
+);
+
+// GET /api/gate/settings
+router.get(
+  '/settings',
+  asyncHandler(async (req, res) => {
+    let settings = await SystemSetting.findOne({ singleton: 'singleton' });
+    if (!settings) {
+      settings = await SystemSetting.create({ singleton: 'singleton' });
+    }
+    if (!settings.gateSettings) {
+      settings.gateSettings = { eyeBlinkVerificationEnabled: true };
+      await settings.save();
+    }
+    res.json(settings.gateSettings);
+  })
+);
+
+// PUT /api/gate/settings
+router.put(
+  '/settings',
+  asyncHandler(async (req, res) => {
+    const { eyeBlinkVerificationEnabled } = req.body;
+    let settings = await SystemSetting.findOne({ singleton: 'singleton' });
+    if (!settings) settings = new SystemSetting({ singleton: 'singleton' });
+
+    settings.gateSettings = {
+      eyeBlinkVerificationEnabled: eyeBlinkVerificationEnabled !== undefined ? Boolean(eyeBlinkVerificationEnabled) : true,
+    };
+    await settings.save();
+    res.json(settings.gateSettings);
   })
 );
 

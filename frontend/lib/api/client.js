@@ -457,6 +457,10 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify({ remark }),
       }),
+    settings: () => request('/gate/settings'),
+    updateSettings: (data) =>
+      request('/gate/settings', { method: 'PUT', body: JSON.stringify(data) }),
+    publicSettings: () => requestOnce('/gate/settings/public', {}, { timeoutMs: 15_000 }),
   },
 
   reports: {

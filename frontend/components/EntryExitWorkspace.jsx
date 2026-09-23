@@ -124,6 +124,7 @@ function EntryExitContent({
    */
   const [autoGateEntryPending, setAutoGateEntryPending] = useState(null);
   const [autoGateEntryLoading, setAutoGateEntryLoading] = useState(false);
+  const [eyeBlinkEnabled, setEyeBlinkEnabled] = useState(true);
 
   const divisions = useMemo(() => accessScope?.divisions || [], [accessScope]);
 
@@ -184,9 +185,16 @@ function EntryExitContent({
   }, [lockedMode, scanType, urlDivisionId, urlGateId, urlDepartmentId, eventType]);
 
   useEffect(() => {
-    api.auth
-      .accessScope()
-      .then((scope) => setAccessScope(scope))
+    Promise.all([
+      api.auth.accessScope(),
+      api.gate.publicSettings().catch(() => ({ eyeBlinkVerificationEnabled: true })),
+    ])
+      .then(([scope, gateSettings]) => {
+        setAccessScope(scope);
+        if (gateSettings && typeof gateSettings.eyeBlinkVerificationEnabled === 'boolean') {
+          setEyeBlinkEnabled(gateSettings.eyeBlinkVerificationEnabled);
+        }
+      })
       .catch((e) => setError(e.message))
       .finally(() => setSetupLoading(false));
   }, []);
@@ -643,6 +651,7 @@ function EntryExitContent({
               onQrDetect={handleQrDetect}
               captureLabel={captureLabel(eventType, scanType)}
               processing={loading}
+              eyeBlinkEnabled={eyeBlinkEnabled}
             />
 
             {canWrite && !canScan && (

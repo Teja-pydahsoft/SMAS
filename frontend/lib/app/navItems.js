@@ -104,6 +104,7 @@ export const APP_NAV_ITEMS = [
       { path: '/system/geo-login-activity', label: 'Geo Login Activity', module: 'geo_login_activity' },
       { path: '/system/devices/overview', label: 'Device Maintenance', module: 'devices' },
       { path: '/system/geo-locations', label: 'Geo Locations', module: 'locations' },
+      { path: '/system/settings', label: 'Gate & System Settings', module: 'system_users' },
     ],
   },
 ];

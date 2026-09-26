@@ -9,7 +9,7 @@ import {
 
 const LABOUR_TYPE_VALUE = /^(daily|weekly|monthly|custom(?:\s+days)?)\s+(male|female)$/i;
 
-/** Fixed registration-code prefixes for roles that do not use Labour Type. */
+/** Fixed registration-code prefixes mapping for specific slug overrides. */
 export const ROLE_CODE_PREFIXES = {
   jattu: 'JA',
 };
@@ -17,6 +17,23 @@ export const ROLE_CODE_PREFIXES = {
 /** Old random format e.g. SAMS-MR0LT9JX-CVNY — must not be issued going forward. */
 export function isLegacySamsCode(code) {
   return typeof code === 'string' && /^SAMS-/i.test(code.trim());
+}
+
+/** Check if a role is a Labour / Laborer role. */
+export function isLabourRole(role) {
+  if (!role) return false;
+  const name = String(role.name || '').toLowerCase().trim();
+  const slug = String(role.slug || '').toLowerCase().trim();
+  return (
+    name === 'labour' ||
+    name === 'labor' ||
+    name === 'labourer' ||
+    name === 'laborer' ||
+    slug === 'labour' ||
+    slug === 'labor' ||
+    slug === 'labourer' ||
+    slug === 'laborer'
+  );
 }
 
 function isLabourTypeField(field) {
@@ -94,16 +111,25 @@ async function loadRole(registration) {
 }
 
 /**
- * Role-specific fixed prefixes (e.g. JATTU → JA0001).
+ * Role-specific registration code prefixes.
+ * - Labour roles return null (they rely on Labour Type codes e.g. DM0001).
+ * - Remaining roles use the starting 3 letters of the role name (e.g. Supervisor → SUP0001).
  */
 export function roleRegistrationCodePrefix(role) {
+  if (!role) return null;
+  if (isLabourRole(role)) return null;
+
   const slug = String(role?.slug || '').toLowerCase().trim();
   if (slug && ROLE_CODE_PREFIXES[slug]) return ROLE_CODE_PREFIXES[slug];
 
   const name = String(role?.name || '').toLowerCase().trim();
-  if (name === 'jattu' || name.includes('jattu')) return ROLE_CODE_PREFIXES.jattu;
+  if (name === 'jattu' || name.includes('jattu')) return ROLE_CODE_PREFIXES.jattu || 'JA';
 
-  return null;
+  const nameOrSlug = String(role?.name || role?.slug || '').trim();
+  const clean = nameOrSlug.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  if (!clean) return 'ROL';
+  if (clean.length < 3) return clean.padEnd(3, 'X');
+  return clean.slice(0, 3);
 }
 
 async function resolveRegistrationCodePrefix(registration) {
@@ -111,17 +137,26 @@ async function resolveRegistrationCodePrefix(registration) {
   const rolePrefix = roleRegistrationCodePrefix(role);
   if (rolePrefix) return rolePrefix;
 
+  // For Labour role:
   const fields = await loadFormFields(registration);
   const labourType = extractLabourType(registration, fields);
-  return (
+  const labourPrefix =
     buildRegistrationCodePrefix(labourType) ||
-    buildRegistrationCodePrefix(registration.payFrequency, registration.gender)
-  );
+    buildRegistrationCodePrefix(registration.payFrequency, registration.gender);
+
+  if (labourPrefix) return labourPrefix;
+
+  // Fallback for Labour role if Labour Type is not specified:
+  if (isLabourRole(role)) {
+    return 'LAB';
+  }
+
+  return null;
 }
 
 async function nextSequentialCode(prefix) {
   const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Case-insensitive match so ja0001 and JA0001 share one series.
+  // Case-insensitive match so sup0001 and SUP0001 share one series.
   const existing = await Registration.find({
     registrationCode: new RegExp(`^${escaped}\\d{4,}$`, 'i'),
   })
@@ -141,16 +176,14 @@ async function nextSequentialCode(prefix) {
 
 /**
  * Assigns registration codes:
- * - JATTU → JA0001, JA0002, …
- * - Labour → DM0001 / DF0001 / WM0001 / WF0001 from Labour Type
+ * - Labour → DM0001 / DF0001 / WM0001 / WF0001 from Labour Type (fallback LAB0001)
+ * - Remaining roles → 3-letter prefix + 4 digits (e.g. Supervisor → SUP0001, Engineer → ENG0001)
  */
 export async function generateRegistrationCode(registration, { maxAttempts = 8 } = {}) {
   const prefix = await resolveRegistrationCodePrefix(registration);
 
   if (!prefix) {
-    throw new Error(
-      'A valid Labour Type (e.g. Daily Male) is required to generate a registration code (e.g. DM0001)'
-    );
+    throw new Error('A valid registration code prefix could not be determined for this role.');
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

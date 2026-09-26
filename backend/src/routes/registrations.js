@@ -1092,7 +1092,7 @@ router.post(
         if (!canBuild) {
           return res.status(400).json({
             error:
-              'A registration code prefix could not be determined. For Labour, set Labour Type (e.g. Daily Male → DM0001). For JATTU, codes use JA0001 automatically.',
+              'A registration code prefix could not be determined. For Labour, set Labour Type (e.g. Daily Male → DM0001). Remaining roles use a 3-letter prefix based on role name.',
           });
         }
         try {

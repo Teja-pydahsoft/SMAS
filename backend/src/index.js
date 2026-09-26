@@ -241,7 +241,7 @@ async function runBackgroundBootstrap() {
     }
     if (codeMigration.skipped > 0) {
       console.warn(
-        `Skipped ${codeMigration.skipped} registration(s) — set Labour Type (e.g. Daily Male), then restart to upgrade`
+        `Skipped ${codeMigration.skipped} registration(s) — could not generate registration code`
       );
     }
   } catch (err) {

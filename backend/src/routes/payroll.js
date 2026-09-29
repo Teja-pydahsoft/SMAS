@@ -151,6 +151,66 @@ router.get('/rate-master/combinations', authenticate, requirePermission('payroll
       }
     }
 
+    // Also include combinations from all previous Rate Masters so no batch/combination is lost
+    const previousRMs = await RateMaster.find().lean();
+    for (const rm of previousRMs) {
+      for (const rule of rm.rules || []) {
+        if (rule.batchName && rule.labourType && rule.workCategory) {
+          const key = `${rule.batchName}|${rule.labourType}|${rule.workCategory}`;
+          if (!comboCounts.has(key)) {
+            comboCounts.set(key, {
+              batchName: rule.batchName,
+              labourType: rule.labourType,
+              workCategory: rule.workCategory,
+              labourCount: 0
+            });
+          }
+        }
+      }
+    }
+
+    // Also include combinations from RegistrationForm field options (e.g. Narendrapatnam)
+    const batchField = (fields || []).find((f) => f.fieldId === batchFieldId);
+    const labourTypeField = (fields || []).find((f) => f.fieldId === labourTypeFieldId);
+    const workCategoryField = (fields || []).find((f) => f.fieldId === workCategoryFieldId);
+
+    const batchOptions = batchField?.options || [];
+    const labourTypeOptions = labourTypeField?.options || [];
+    const workCategoryOptions = workCategoryField?.options || [];
+
+    if (batchOptions.length > 0) {
+      const defaultTypes = labourTypeOptions.length > 0 ? labourTypeOptions : ['Weekly Male', 'Weekly Female', 'Monthly Male', 'Monthly Female'];
+      const defaultCats = workCategoryOptions.length > 0 ? workCategoryOptions : ['Helper'];
+
+      for (const batchOpt of batchOptions) {
+        const bName = String(batchOpt || '').trim();
+        if (!bName) continue;
+
+        let hasBatch = false;
+        for (const combo of comboCounts.values()) {
+          if (combo.batchName === bName) {
+            hasBatch = true;
+            break;
+          }
+        }
+        if (!hasBatch) {
+          for (const lType of defaultTypes) {
+            for (const wCat of defaultCats) {
+              const key = `${bName}|${lType}|${wCat}`;
+              if (!comboCounts.has(key)) {
+                comboCounts.set(key, {
+                  batchName: bName,
+                  labourType: lType,
+                  workCategory: wCat,
+                  labourCount: 0
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
     const formattedCombinations = [];
     for (const combo of comboCounts.values()) {
       const mostRecentRM = await RateMaster.findOne({
@@ -172,6 +232,14 @@ router.get('/rate-master/combinations', authenticate, requirePermission('payroll
           currentRate = matchedRule.amount;
           currentHours = matchedRule.hours;
         }
+      }
+
+      // Default rate: if 0, default to 1 rupee
+      if (!currentRate || currentRate <= 0) {
+        currentRate = 1;
+      }
+      if (!currentHours || currentHours <= 0) {
+        currentHours = 8;
       }
 
       formattedCombinations.push({
@@ -199,8 +267,8 @@ router.get('/rate-master/combinations', authenticate, requirePermission('payroll
     }
     for (const labourer of applicableLabourers) {
       const combo = rateByKey.get(`${labourer.batchName}|${labourer.labourType}|${labourer.workCategory}`);
-      labourer.currentRate = combo?.currentRate || labourer.payAmount || 0;
-      labourer.currentHours = combo?.currentHours || labourer.workingHours || 0;
+      labourer.currentRate = combo?.currentRate || labourer.payAmount || 1;
+      labourer.currentHours = combo?.currentHours || labourer.workingHours || 8;
     }
     applicableLabourers.sort((a, b) => {
       const nameCmp = String(a.name || '').localeCompare(String(b.name || ''));
@@ -238,10 +306,10 @@ router.post('/rate-master/preview', authenticate, requirePermission('payroll_rat
 
     for (const rule of rules) {
       if (rule.amount == null || rule.amount <= 0) {
-        return res.status(400).json({ error: `Invalid rate amount (${rule.amount}) for combination: ${rule.batchName} - ${rule.labourType} - ${rule.workCategory}. Amount must be greater than 0.` });
+        rule.amount = 1; // Default to 1 rupee if 0
       }
       if (rule.hours == null || rule.hours <= 0) {
-        return res.status(400).json({ error: `Invalid working hours (${rule.hours}) for combination: ${rule.batchName} - ${rule.labourType} - ${rule.workCategory}. Hours must be greater than 0.` });
+        rule.hours = 8; // Default to 8 hours if 0
       }
     }
 
@@ -300,6 +368,9 @@ router.post('/rate-master/:id/apply', authenticate, requirePermission('payroll_r
       // Check unique combinations
       const combos = new Set();
       for (const rule of rm.rules) {
+        if (rule.amount == null || rule.amount <= 0) rule.amount = 1;
+        if (rule.hours == null || rule.hours <= 0) rule.hours = 8;
+
         const key = `${rule.batchName}|${rule.labourType}|${rule.workCategory}`;
         if (combos.has(key)) {
           throw new Error(`Duplicate rule detected: ${key}`);
@@ -384,10 +455,10 @@ router.post('/rate-master', authenticate, requirePermission('payroll_rate_master
     const combos = new Set();
     for (const rule of rules) {
       if (rule.amount == null || rule.amount <= 0) {
-        return res.status(400).json({ error: `Invalid rate amount (${rule.amount}) for combination: ${rule.batchName} - ${rule.labourType} - ${rule.workCategory}. Amount must be greater than 0.` });
+        rule.amount = 1;
       }
       if (rule.hours == null || rule.hours <= 0) {
-        return res.status(400).json({ error: `Invalid working hours (${rule.hours}) for combination: ${rule.batchName} - ${rule.labourType} - ${rule.workCategory}. Hours must be greater than 0.` });
+        rule.hours = 8;
       }
 
       const key = `${rule.batchName}|${rule.labourType}|${rule.workCategory}`;
@@ -427,10 +498,10 @@ router.put('/rate-master/:id', authenticate, requirePermission('payroll_rate_mas
     const combos = new Set();
     for (const rule of rules) {
       if (rule.amount == null || rule.amount <= 0) {
-        return res.status(400).json({ error: `Invalid rate amount (${rule.amount}) for combination: ${rule.batchName} - ${rule.labourType} - ${rule.workCategory}. Amount must be greater than 0.` });
+        rule.amount = 1;
       }
       if (rule.hours == null || rule.hours <= 0) {
-        return res.status(400).json({ error: `Invalid working hours (${rule.hours}) for combination: ${rule.batchName} - ${rule.labourType} - ${rule.workCategory}. Hours must be greater than 0.` });
+        rule.hours = 8;
       }
 
       const key = `${rule.batchName}|${rule.labourType}|${rule.workCategory}`;
@@ -457,8 +528,8 @@ router.put('/rate-master/:id', authenticate, requirePermission('payroll_rate_mas
 // GET /api/payroll/rate-master/:id/view
 router.get('/rate-master/:id/view', authenticate, requirePermission('payroll_rate_master', 'read'), async (req, res) => {
   try {
-    const rm = await RateMaster.findById(req.params.id);
-    if (!rm) return res.status(404).json({ error: 'Rate Master not found' });
+    const rmDoc = await RateMaster.findById(req.params.id).lean();
+    if (!rmDoc) return res.status(404).json({ error: 'Rate Master not found' });
 
     let batchFieldId = 'Batch Name';
     let workCategoryFieldId = 'Work Category';
@@ -471,6 +542,57 @@ router.get('/rate-master/:id/view', authenticate, requirePermission('payroll_rat
     } catch (e) {
       // ignore, fallback to default keys
     }
+
+    // Build map of rules for this rate master
+    const rulesMap = new Map();
+    (rmDoc.rules || []).forEach(r => {
+      const key = `${r.batchName}|${r.labourType}|${r.workCategory}`;
+      rulesMap.set(key, {
+        batchName: r.batchName,
+        labourType: r.labourType,
+        workCategory: r.workCategory,
+        hours: (r.hours && r.hours > 0) ? r.hours : 8,
+        amount: (r.amount && r.amount > 0) ? r.amount : 1,
+        remarks: r.remarks || ''
+      });
+    });
+
+    // Merge previous applied/created rate master rules for missing combinations so all combinations (e.g. Narendrapatnam) are listed
+    const allRateMasters = await RateMaster.find({
+      $or: [
+        { status: 'Applied' },
+        { createdAt: { $lte: rmDoc.createdAt } }
+      ]
+    }).sort({ appliedAt: -1, createdAt: -1 }).lean();
+
+    for (const prevRm of allRateMasters) {
+      for (const r of prevRm.rules || []) {
+        if (!r.batchName || !r.labourType || !r.workCategory) continue;
+        const key = `${r.batchName}|${r.labourType}|${r.workCategory}`;
+        if (!rulesMap.has(key)) {
+          rulesMap.set(key, {
+            batchName: r.batchName,
+            labourType: r.labourType,
+            workCategory: r.workCategory,
+            hours: (r.hours && r.hours > 0) ? r.hours : 8,
+            amount: (r.amount && r.amount > 0) ? r.amount : 1,
+            remarks: '-'
+          });
+        }
+      }
+    }
+
+    const mergedRules = Array.from(rulesMap.values());
+    mergedRules.sort((a, b) => {
+      if (a.batchName !== b.batchName) return a.batchName.localeCompare(b.batchName);
+      if (a.labourType !== b.labourType) return a.labourType.localeCompare(b.labourType);
+      return a.workCategory.localeCompare(b.workCategory);
+    });
+
+    const rm = {
+      ...rmDoc,
+      rules: mergedRules
+    };
 
     const auditLogs = await RateMasterAuditLog.find({ rateMasterId: rm._id }).populate({
       path: 'registrationId',
@@ -496,9 +618,9 @@ router.get('/rate-master/:id/view', authenticate, requirePermission('payroll_rat
         workCategory: reg.formData?.[workCategoryFieldId] || 'Unknown',
         labourType,
         oldRate: log.oldPayAmount || 0,
-        newRate: log.newPayAmount || 0,
+        newRate: log.newPayAmount || 1,
         oldHours: log.oldHours || 0,
-        newHours: log.newHours || 0
+        newHours: log.newHours || 8
       });
 
       return acc;

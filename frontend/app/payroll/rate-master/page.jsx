@@ -36,10 +36,10 @@ function mapCombinationRules(combinations) {
     batchName: c.batchName,
     labourType: c.labourType,
     workCategory: c.workCategory,
-    amount: c.currentRate || 0,
-    hours: c.currentHours || 8,
+    amount: c.currentRate && Number(c.currentRate) > 0 ? Number(c.currentRate) : 1,
+    hours: c.currentHours && Number(c.currentHours) > 0 ? Number(c.currentHours) : 8,
     remarks: '',
-    configured: false,
+    configured: true,
     labourCount: c.labourCount || 0,
   }));
 }
@@ -135,15 +135,23 @@ export default function RateMasterPage() {
     setRules(newRules);
   };
 
+  const prepareRulesForSave = () => {
+    return rules.map(r => ({
+      ...r,
+      amount: (!r.amount || Number(r.amount) <= 0) ? 1 : Number(r.amount),
+      hours: (!r.hours || Number(r.hours) <= 0) ? 8 : Number(r.hours)
+    }));
+  };
+
   const handlePreview = async (e) => {
     e.preventDefault();
     if (!docNo || !effectiveDate) {
       setError('Doc No and Effective Date are required.');
       return;
     }
-    const configuredRules = rules.filter(r => r.configured && r.amount > 0 && r.hours > 0);
+    const configuredRules = prepareRulesForSave();
     if (configuredRules.length === 0) {
-      setError('Please configure at least one rule with an amount and hours greater than 0.');
+      setError('Please configure at least one rule.');
       return;
     }
     
@@ -172,9 +180,9 @@ export default function RateMasterPage() {
       setError('Doc No and Effective Date are required.');
       return;
     }
-    const configuredRules = rules.filter(r => r.configured && r.amount > 0 && r.hours > 0);
+    const configuredRules = prepareRulesForSave();
     if (configuredRules.length === 0) {
-      setError('Please configure at least one rule with an amount and hours greater than 0.');
+      setError('Please configure at least one rule.');
       return;
     }
     

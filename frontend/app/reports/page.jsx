@@ -3893,6 +3893,7 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange, isAct
   const [filterStatus, setFilterStatus] = useState('all');
   const [divisionFilter, setDivisionFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [selectionFilters, setSelectionFilters] = useState({});
   const [divisions, setDivisions] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
@@ -4187,6 +4188,10 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange, isAct
 
   const allPeople = data?.people || [];
   const divisionOnlyPeople = data?.divisionOnlyPeople || [];
+  const selectionColumns = useMemo(
+    () => collectSelectionColumns([...allPeople, ...divisionOnlyPeople]),
+    [allPeople, divisionOnlyPeople]
+  );
   const selectedDivision = divisions.find((d) => d._id === divisionFilter);
   const selectedDivisionName = selectedDivision?.name || '';
   const selectedDepartment = departments.find((d) => d._id === departmentFilter)
@@ -4206,7 +4211,11 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange, isAct
       || (filterStatus === 'inside' && p.currentlyIn)
       || (filterStatus === 'exited' && p.hadExit && !p.currentlyIn)
       || (filterStatus === 'entered' && p.hadEntry);
-    return matchSearch && matchStatus;
+    const matchSelections = selectionColumns.every((label) => {
+      const wanted = selectionFilters[label];
+      return selectionFilterMatches(selectionValueFor(p, label), wanted);
+    });
+    return matchSearch && matchStatus && matchSelections;
   };
 
   const sortPeople = useCallback((list) => [...list].sort((a, b) => {
@@ -4609,6 +4618,39 @@ function DepartmentActivityTab({ onViewPerson, selectedDate, onDateChange, isAct
               <option value="exited">Exited</option>
             </select>
           </div>
+          {selectionColumns.map((label) => {
+            const options = selectionValueOptions([...allPeople, ...divisionOnlyPeople], label);
+            const val = selectionFilters[label] || 'all';
+
+            if (options.length > 10) {
+              return (
+                <div key={`sel-filter-${label}`} className="rc-filters-bar__cell">
+                  <SearchableSelect
+                    options={options}
+                    value={val}
+                    onChange={(newVal) => setSelectionFilters((prev) => ({ ...prev, [label]: newVal }))}
+                    placeholder={`All · ${label}`}
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <div key={`sel-filter-${label}`} className="rc-filters-bar__cell">
+                <select
+                  className="rc-select"
+                  value={val}
+                  onChange={(e) => setSelectionFilters((prev) => ({ ...prev, [label]: e.target.value }))}
+                  aria-label={`Filter by ${label}`}
+                >
+                  <option value="all">All · {label}</option>
+                  {options.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
         </div>
         <div className="rc-filters-bar__right">
           <span className="rc-filter-pill">

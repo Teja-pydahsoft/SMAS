@@ -15,6 +15,7 @@ export default function ActiveActivityAlert({
   onForceCheckout,
   forceCheckoutLoading = false,
   hideDepartmentActivity = false,
+  onOpenWaitModal,
 }) {
   const deptName =
     activeDepartment?.departmentName ||
@@ -68,29 +69,26 @@ export default function ActiveActivityAlert({
     <div className="active-activity-alert" role="status">
       <p className="active-activity-alert__title">{title}</p>
       {detail && <p className="active-activity-alert__detail">{detail}</p>}
-      <ul className="active-activity-alert__status">
-        <li>
-          Division:{' '}
-          <strong>{inside ? 'Inside' : 'Outside'}</strong>
-          {divisionName ? ` (${divisionName})` : ''}
-        </li>
-        {!hideDepartmentActivity && (
-          <li>
-            Active department:{' '}
-            <strong className={deptName ? 'text-danger' : undefined}>
-              {deptName || 'None'}
-            </strong>
-          </li>
-        )}
-        {!hideDepartmentActivity &&
-          scanType === 'department' &&
-          deptName &&
-          reason === 'active_in_other_department' && (
-          <li className="active-activity-alert__hint">
-            Go to <strong>{deptName}</strong> and scan check-out, then return here.
-          </li>
-        )}
-      </ul>
+      {!hideDepartmentActivity &&
+        scanType === 'department' &&
+        deptName &&
+        reason === 'active_in_other_department' && (
+        <p className="active-activity-alert__hint">
+          Go to <strong>{deptName}</strong> and scan check-out, then return here.
+        </p>
+      )}
+      {reason === 'too_soon_after_entry' && typeof onOpenWaitModal === 'function' && (
+        <div style={{ marginTop: '10px' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onOpenWaitModal}
+            style={{ fontSize: '0.8rem', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            ⏳ View Waiting Cooldown Timer
+          </button>
+        </div>
+      )}
       {showForce && (
         <div className="active-activity-alert__force">
           <p className="active-activity-alert__hint">

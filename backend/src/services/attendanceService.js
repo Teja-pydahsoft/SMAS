@@ -1099,4 +1099,61 @@ export async function loadDivisionAndDepartment(divisionId, departmentId) {
   return { division, department };
 }
 
+/**
+ * Fetch all granted gate & department logs for a registration in the current session / day window.
+ * Returns formatted log entries with photoUrl, timestamps, location names, and scannedBy metadata.
+ */
+export async function getTodayLogsForRegistration(registrationId, divisionId = null, sessionPass = null) {
+  if (!registrationId) return [];
+  const pass = sessionPass || (divisionId ? await getActiveDayPass(registrationId, divisionId) : null);
+  const workDate = pass?.validDate || todayDateString();
+  const dayStart = startOfDay(workDate);
+  const todayEnd = endOfDay(todayDateString());
+  const sessionEnd = resolvePassSessionEnd(pass) || todayEnd;
+  const endOfDayDate = sessionEnd.getTime() > todayEnd.getTime() ? sessionEnd : todayEnd;
+
+  const query = grantedGateLogFilter({
+    registrationId,
+    createdAt: { $gte: dayStart, $lte: endOfDayDate },
+  });
+  if (divisionId) {
+    query.divisionId = divisionId;
+  }
+
+  const logs = await GateLog.find(query)
+    .populate('divisionId', 'name slug')
+    .populate('departmentId', 'name slug')
+    .populate('gateRefId', 'name gateType slug')
+    .populate('scannedBy', 'displayName username')
+    .sort({ createdAt: 1 });
+
+  return logs.map((log) => {
+    const scannedByName =
+      (typeof log.scannedByName === 'string' && log.scannedByName.trim()) ||
+      log.scannedBy?.displayName ||
+      '';
+    const scannedByUsername =
+      (typeof log.scannedByUsername === 'string' && log.scannedByUsername.trim()) ||
+      log.scannedBy?.username ||
+      '';
+
+    return {
+      id: log._id.toString(),
+      scanType: log.scanType,
+      eventType: log.eventType,
+      at: log.createdAt?.toISOString?.() || log.createdAt,
+      divisionId: log.divisionId?._id?.toString() || log.divisionId?.toString() || null,
+      divisionName: log.divisionId?.name || null,
+      gateName: log.gateRefId?.name || null,
+      departmentId: log.departmentId?._id?.toString() || log.departmentId?.toString() || null,
+      departmentName: log.departmentId?.name || null,
+      matchScore: log.matchScore,
+      photoUrl: photoUrlFromPath(log.photoPath),
+      remark: typeof log.remark === 'string' && log.remark.trim() ? log.remark.trim() : '',
+      scannedByName: scannedByName || null,
+      scannedByUsername: scannedByUsername || null,
+    };
+  });
+}
+
 export { SCAN_TYPES };

@@ -198,6 +198,383 @@
 
 .gate-matched-person__active-dept { color: var(--color-danger-hover); }
 
+/* ── Event Header Highlight Banner ── */
+.scan-event-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.scan-event-header--success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.scan-event-header--denied {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.scan-event-badge-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scan-name-highlight {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.scan-action-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.event-highlight--div-in {
+  background: #059669;
+  color: #ffffff;
+}
+
+.event-highlight--div-out {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.event-highlight--dept-in {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.event-highlight--dept-out {
+  background: #d97706;
+  color: #ffffff;
+}
+
+.scan-event-status {
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.scan-event-status--granted {
+  color: #15803d;
+}
+
+.scan-event-status--denied {
+  color: #b91c1c;
+}
+
+/* ── Today's Activity Logs List Styling ── */
+.gate-today-logs-list {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+}
+
+.gate-today-logs-list__title {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 10px;
+}
+
+.gate-today-logs-list__items {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gate-today-log-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  gap: 12px;
+}
+
+.gate-today-log-item--latest {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: 0 1px 4px rgba(59, 130, 246, 0.12);
+}
+
+.gate-today-log-item__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gate-today-log-item__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.name-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.name-badge--div {
+  background: #0f766e;
+}
+
+.name-badge--dept {
+  background: #1d4ed8;
+}
+
+.name-badge__icon {
+  font-size: 1rem;
+}
+
+.action-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.725rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.action-tag--entry {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+
+.action-tag--exit {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.gate-today-log-item__time {
+  font-size: 0.775rem;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.badge--dept-active {
+  background: #dbeafe !important;
+  color: #1d4ed8 !important;
+  border: 1px solid #93c5fd !important;
+  font-weight: 700;
+}
+
+.badge--div-inside {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+  border: 1px solid #86efac !important;
+  font-weight: 700;
+}
+
+.badge--div-outside {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fca5a5 !important;
+  font-weight: 700;
+}
+
+/* ── Labour Session Badges Grid ── */
+.gate-matched-person__session-badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  margin-bottom: 14px;
+}
+
+.gate-session-badge {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: var(--surface-primary, #ffffff);
+}
+
+.gate-session-badge__icon {
+  font-size: 1.1rem;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.gate-session-badge__content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gate-session-badge__label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #64748b);
+}
+
+.gate-session-badge__val {
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gate-session-badge__sub {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #475569);
+}
+
+.gate-session-badge--inside {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.gate-session-badge--inside .gate-session-badge__val {
+  color: #15803d;
+}
+
+.gate-session-badge--inside .gate-session-badge__icon {
+  color: #16a34a;
+  filter: drop-shadow(0 0 4px rgba(22, 163, 74, 0.4));
+}
+
+.gate-session-badge--outside {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.gate-session-badge--outside .gate-session-badge__val {
+  color: #475569;
+}
+
+.gate-session-badge--dept-active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.gate-session-badge--dept-active .gate-session-badge__val {
+  color: #1d4ed8;
+}
+
+.gate-session-badge--dept-none {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.gate-session-badge--dept-none .gate-session-badge__val {
+  color: #64748b;
+}
+
+.gate-session-badge--shift {
+  background: #fefce8;
+  border-color: #fde047;
+}
+
+.gate-session-badge--shift .gate-session-badge__val {
+  color: #854d0e;
+}
+
+/* ── Gate Today Timeline ── */
+.gate-today-timeline {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+}
+
+.gate-today-timeline__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.gate-today-timeline__title {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #64748b);
+}
+
+/* ── Log Item Thumbnails ── */
+.gate-today-log-item__thumb {
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 2px solid #e2e8f0;
+  flex-shrink: 0;
+  background: #f1f5f9;
+}
+
+.gate-today-log-item__thumb--entry {
+  border-color: #22c55e;
+}
+
+.gate-today-log-item__thumb--exit {
+  border-color: #ef4444;
+}
+
+.gate-today-log-item__thumb--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: var(--text-muted, #64748b);
+}
+
+.gate-today-log-item {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.gate-today-log-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
+  border-color: #94a3b8;
+}
+
 .gate-matched-person__details {
   margin-top: 12px;
   padding-top: 10px;
@@ -2200,3 +2577,287 @@
   margin-top: 12px;
   flex-wrap: wrap;
 }
+
+/* ── Checkout Waiting Cooldown Modal ── */
+.checkout-wait-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+}
+
+.checkout-wait-modal {
+  background: #ffffff;
+  border-radius: 16px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border: 1px solid #e2e8f0;
+  position: relative;
+  overflow: hidden;
+  animation: waitModalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes waitModalPop {
+  0% { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.checkout-wait-modal__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #64748b;
+  transition: all 0.15s ease;
+  z-index: 10;
+}
+
+.checkout-wait-modal__close:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.checkout-wait-modal__header {
+  padding: 24px 24px 16px;
+  text-align: center;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.checkout-wait-modal__status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 0.725rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+
+.checkout-wait-modal__status-badge--waiting {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.checkout-wait-modal__status-badge--ready {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+
+.checkout-wait-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  animation: pulseWait 1.5s infinite;
+}
+
+@keyframes pulseWait {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.checkout-wait-modal__title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+}
+
+.checkout-wait-modal__subtitle {
+  font-size: 0.825rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.checkout-wait-person-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-radius: 10px;
+  margin: 16px 24px 0;
+  border: 1px solid #e2e8f0;
+}
+
+.checkout-wait-person-photo {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 2px solid #cbd5e1;
+  background: #e2e8f0;
+  flex-shrink: 0;
+}
+
+.checkout-wait-person-photo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  color: #94a3b8;
+}
+
+.checkout-wait-person-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.checkout-wait-person-name {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.checkout-wait-person-meta {
+  font-size: 0.775rem;
+  color: #64748b;
+}
+
+.checkout-wait-station-tag {
+  font-size: 0.725rem;
+  font-weight: 700;
+  color: #2563eb;
+  margin-top: 2px;
+}
+
+.checkout-wait-timer-container {
+  padding: 20px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.checkout-wait-timer-ring {
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  border: 4px solid #f59e0b;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #fffbeb;
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.2);
+  transition: all 0.3s ease;
+}
+
+.checkout-wait-timer-ring--ready {
+  border-color: #16a34a;
+  background: #f0fdf4;
+  box-shadow: 0 0 24px rgba(22, 163, 74, 0.25);
+}
+
+.checkout-wait-timer-value {
+  font-size: 2.2rem;
+  font-weight: 900;
+  font-family: monospace;
+  letter-spacing: -0.02em;
+  color: #1e293b;
+  line-height: 1;
+}
+
+.checkout-wait-timer-sub {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.checkout-wait-progress-wrap {
+  width: 100%;
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.checkout-wait-progress-bar {
+  height: 100%;
+  background: #f59e0b;
+  border-radius: 999px;
+  transition: width 1s linear;
+}
+
+.checkout-wait-progress-bar--ready {
+  background: #16a34a;
+}
+
+.checkout-wait-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  padding: 0 24px 16px;
+}
+
+.checkout-wait-meta-cell {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.checkout-wait-meta-label {
+  font-size: 0.625rem;
+  font-weight: 800;
+  color: #64748b;
+  display: block;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+}
+
+.checkout-wait-meta-val {
+  font-size: 0.775rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.checkout-wait-modal__actions {
+  padding: 16px 24px 24px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: center;
+}
+
+.checkout-wait-modal__actions button {
+  width: 100%;
+  padding: 12px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.checkout-wait-btn--ready {
+  background: #16a34a !important;
+  border-color: #15803d !important;
+  color: #ffffff !important;
+}
+

@@ -42,6 +42,7 @@ import {
   todayDateString,
   forceCheckoutActiveDepartment,
   findLatestGateEntryAnyDivision,
+  getTodayLogsForRegistration,
 } from '../services/attendanceService.js';
 import { startOfDayIst, endOfDayIst } from '../utils/istTime.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
@@ -348,6 +349,8 @@ function buildScanDenialResponse({
   suggestedEventType = null,
   resolvedEventType = null,
   personInside = null,
+  todayLogs = [],
+  checkoutWaitRemainingMs = null,
 }) {
   return {
     matched: true,
@@ -369,6 +372,8 @@ function buildScanDenialResponse({
     suggestedEventType,
     resolvedEventType,
     personInside,
+    todayLogs,
+    checkoutWaitRemainingMs,
     // Gate exit blocked by open department — UI may offer force dept out + gate out.
     canForceCheckout: reason === GATE_DENIAL_REASONS.DEPARTMENT_STILL_ACTIVE,
   };
@@ -480,7 +485,17 @@ async function createAutoGateEntryLog({
 async function respondScanDenial(res, options) {
   const { log, reason, error, ...rest } = options;
   const savedLog = await markGateLogDenied(log, reason, error);
-  return res.status(400).json(buildScanDenialResponse({ ...rest, reason, error, log: savedLog }));
+  const regId = options.registration?._id || options.registration?.id || savedLog?.registrationId;
+  const divId = options.activeDivision?._id || options.activeDivision?.id || savedLog?.divisionId;
+  let todayLogs = options.todayLogs || [];
+  if (todayLogs.length === 0 && regId) {
+    try {
+      todayLogs = await getTodayLogsForRegistration(regId, divId, options.dayPass);
+    } catch {
+      // safe fallback
+    }
+  }
+  return res.status(400).json(buildScanDenialResponse({ ...rest, reason, error, log: savedLog, todayLogs }));
 }
 
 async function identifyFromPhoto(file, registrationId) {
@@ -826,6 +841,7 @@ router.post(
             activeDepartment: gateCheck.activeDepartment,
             activeDivision: gateCheck.activeDivision,
             requiredSteps: gateCheck.requiredSteps,
+            checkoutWaitRemainingMs: gateCheck.checkoutWaitRemainingMs,
           });
       }
 
@@ -914,6 +930,7 @@ router.post(
             sessionState: deptCheck.sessionState || sessionState,
             dayPass: denialDayPass,
             requiredSteps: deptCheck.requiredSteps,
+            checkoutWaitRemainingMs: deptCheck.checkoutWaitRemainingMs,
           });
       }
 
@@ -1008,6 +1025,12 @@ router.post(
       }
     }
 
+    const todayLogs = await getTodayLogsForRegistration(
+      matchedRegistration._id,
+      divisionId,
+      activePass || dayPass
+    );
+
     res.json({
       matched: true,
       denied: false,
@@ -1018,6 +1041,7 @@ router.post(
       dayPass,
       sessionState,
       hasGateEntry,
+      todayLogs,
       activeDepartment: sessionState?.currentDepartmentId
         ? {
             departmentId: sessionState.currentDepartmentId,
@@ -1042,10 +1066,12 @@ router.get(
 
     const pass = await getActiveDayPass(req.params.registrationId, divisionId);
     const sessionState = getPassSessionState(pass);
+    const todayLogs = await getTodayLogsForRegistration(req.params.registrationId, divisionId, pass);
 
     res.json({
       hasDayPass: Boolean(pass),
       sessionState,
+      todayLogs,
     });
   })
 );
@@ -1341,6 +1367,7 @@ router.post(
             activeDepartment: gateCheck.activeDepartment,
             activeDivision: gateCheck.activeDivision,
             requiredSteps: gateCheck.requiredSteps,
+            checkoutWaitRemainingMs: gateCheck.checkoutWaitRemainingMs,
           });
       }
 
@@ -1443,6 +1470,7 @@ router.post(
             sessionState: deptCheck.sessionState || sessionState,
             dayPass: denialDayPass,
             requiredSteps: deptCheck.requiredSteps,
+            checkoutWaitRemainingMs: deptCheck.checkoutWaitRemainingMs,
           });
       }
 
@@ -1534,6 +1562,12 @@ router.post(
 
     const photoUrl = null;
 
+    const todayLogs = await getTodayLogsForRegistration(
+      matchedRegistration._id,
+      divisionId,
+      activePass || dayPass
+    );
+
     res.json({
       matched: true,
       denied: false,
@@ -1544,6 +1578,7 @@ router.post(
       dayPass,
       sessionState,
       hasGateEntry,
+      todayLogs,
       activeDepartment: sessionState?.currentDepartmentId
         ? {
             departmentId: sessionState.currentDepartmentId,

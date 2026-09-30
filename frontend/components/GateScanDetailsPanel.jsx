@@ -1,9 +1,11 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import PassCard from '@/components/PassCard';
 import GateMatchedPerson, { formatVisitTime } from '@/components/GateMatchedPerson';
 import GateSecurityReview from '@/components/GateSecurityReview';
 import ActiveActivityAlert from '@/components/ActiveActivityAlert';
+import CheckoutWaitingModal from '@/components/CheckoutWaitingModal';
 import { RequiredStepsList } from '@/components/AccessRulesPanel';
 
 function isJattuRegistration(registration) {
@@ -13,40 +15,28 @@ function isJattuRegistration(registration) {
 }
 
 function SessionStatus({ sessionState, hideDepartmentActivity = false }) {
-  if (!sessionState || hideDepartmentActivity) return null;
+  // Deprecated: Session status and department activity are now fully rendered inside GateMatchedPerson
+  return null;
+}
 
-  const visits = [...(sessionState.departmentVisits || [])].sort((a, b) => {
-    const aTime = new Date(a.exitAt || a.entryAt || 0).getTime();
-    const bTime = new Date(b.exitAt || b.entryAt || 0).getTime();
-    return bTime - aTime;
-  });
-
-  return (
-    <div className="gate-session-status">
-      {(sessionState.currentDepartmentName || visits.length > 0) && (
-        <p>
-          Current department:{' '}
-          <strong>{sessionState.currentDepartmentName || 'None'}</strong>
-        </p>
-      )}
-      {visits.length > 0 && (
-        <div className="gate-visit-list">
-          <p className="field-hint">Today&apos;s department visits</p>
-          <ul>
-            {visits.map((visit, idx) => (
-              <li key={`${visit.departmentId}-${visit.entryAt || visit.exitAt}-${idx}`}>
-                {visit.departmentName} — in {formatVisitTime(visit.entryAt)}
-                {visit.exitAt
-                  ? ` → out ${formatVisitTime(visit.exitAt)}`
-                  : ' (active)'}
-                {visit.remark ? ` · ${visit.remark}` : ''}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
+function getScanHighlightInfo(scanType, eventType, divisionName, departmentName, gateName) {
+  const isEntry = eventType === 'entry';
+  if (scanType === 'department') {
+    const targetName = departmentName || 'Department';
+    return {
+      name: targetName,
+      action: isEntry ? 'Dept Check-in' : 'Dept Check-out',
+      icon: '🏬',
+      colorClass: isEntry ? 'event-highlight--dept-in' : 'event-highlight--dept-out',
+    };
+  }
+  const targetName = divisionName || gateName || 'Division Gate';
+  return {
+    name: targetName,
+    action: isEntry ? 'Gate Entry' : 'Gate Exit',
+    icon: '🏢',
+    colorClass: isEntry ? 'event-highlight--div-in' : 'event-highlight--div-out',
+  };
 }
 
 export default function GateScanDetailsPanel({
@@ -85,6 +75,26 @@ export default function GateScanDetailsPanel({
       : gateName || 'Gate';
   const stationKind = scanType === 'department' ? 'Department' : 'Division gate';
 
+  const [showWaitModal, setShowWaitModal] = useState(false);
+
+  useEffect(() => {
+    const isTooSoon = result?.reason === 'too_soon_after_entry' ||
+      (typeof result?.error === 'string' && result.error.toLowerCase().includes('wait at least'));
+    if (showDenied && isTooSoon) {
+      setShowWaitModal(true);
+    } else {
+      setShowWaitModal(false);
+    }
+  }, [result, showDenied]);
+
+  const eventInfo = getScanHighlightInfo(
+    scanType,
+    result?.resolvedEventType || effectiveEventType,
+    divisionName,
+    departmentName,
+    gateName
+  );
+
   return (
     <div className="gate-layout__details">
       <div className="gate-details-panel">
@@ -117,15 +127,20 @@ export default function GateScanDetailsPanel({
 
         {showSuccess && (
           <div className="gate-result gate-result--success">
-            <p className="gate-details-panel__status-title gate-details-panel__status-title--success">
-              {scanType === 'department'
-                ? (result.resolvedEventType || effectiveEventType) === 'entry'
-                  ? 'Department Check-in — Access Granted'
-                  : 'Department Check-out — Access Granted'
-                : (result.resolvedEventType || effectiveEventType) === 'entry'
-                  ? 'Gate Entry — Access Granted'
-                  : 'Gate Exit — Access Granted'}
-            </p>
+            <div className="scan-event-header scan-event-header--success">
+              <div className="scan-event-badge-group">
+                <span className={`scan-name-highlight ${eventInfo.colorClass}`}>
+                  <span className="scan-name-icon">{eventInfo.icon}</span>
+                  <strong>{eventInfo.name}</strong>
+                </span>
+                <span className={`scan-action-tag ${eventInfo.colorClass}`}>
+                  {eventInfo.action}
+                </span>
+              </div>
+              <span className="scan-event-status scan-event-status--granted">
+                ACCESS GRANTED
+              </span>
+            </div>
             {result.autoResolved && (
               <p className="field-hint">
                 {scanType === 'department'
@@ -167,6 +182,7 @@ export default function GateScanDetailsPanel({
                 activeDivision={result.activeDivision}
                 hasGateEntry={result.hasGateEntry ?? activeSession?.divisionInside}
                 hideDepartmentActivity={hideDepartmentActivity}
+                result={result}
               />
             )}
             <SessionStatus sessionState={activeSession} hideDepartmentActivity={hideDepartmentActivity} />
@@ -175,15 +191,20 @@ export default function GateScanDetailsPanel({
 
         {showDenied && (
           <div className="gate-result gate-result--denied">
-            <p className="gate-details-panel__status-title gate-details-panel__status-title--denied">
-              {scanType === 'department'
-                ? (result.resolvedEventType || effectiveEventType) === 'entry'
-                  ? 'Department Check-in — Access Denied'
-                  : 'Department Check-out — Access Denied'
-                : (result.resolvedEventType || effectiveEventType) === 'entry'
-                  ? 'Gate Entry — Access Denied'
-                  : 'Gate Exit — Access Denied'}
-            </p>
+            <div className="scan-event-header scan-event-header--denied">
+              <div className="scan-event-badge-group">
+                <span className={`scan-name-highlight ${eventInfo.colorClass}`}>
+                  <span className="scan-name-icon">{eventInfo.icon}</span>
+                  <strong>{eventInfo.name}</strong>
+                </span>
+                <span className={`scan-action-tag ${eventInfo.colorClass}`}>
+                  {eventInfo.action}
+                </span>
+              </div>
+              <span className="scan-event-status scan-event-status--denied">
+                ACCESS DENIED
+              </span>
+            </div>
 
             <ActiveActivityAlert
               reason={result?.reason}
@@ -196,6 +217,7 @@ export default function GateScanDetailsPanel({
               onForceCheckout={onForceCheckout}
               forceCheckoutLoading={forceCheckoutLoading}
               hideDepartmentActivity={hideDepartmentActivity}
+              onOpenWaitModal={() => setShowWaitModal(true)}
             />
 
             <GateMatchedPerson
@@ -206,6 +228,7 @@ export default function GateScanDetailsPanel({
               activeDivision={result.activeDivision}
               hasGateEntry={result.hasGateEntry ?? activeSession?.divisionInside}
               hideDepartmentActivity={hideDepartmentActivity}
+              result={result}
             />
             <SessionStatus sessionState={activeSession} hideDepartmentActivity={hideDepartmentActivity} />
             <RequiredStepsList steps={result.requiredSteps} />
@@ -236,6 +259,17 @@ export default function GateScanDetailsPanel({
           </div>
         )}
       </div>
+
+      {/* Live Countdown Cooldown Waiting Popup */}
+      <CheckoutWaitingModal
+        isOpen={showWaitModal}
+        onClose={() => setShowWaitModal(false)}
+        result={result}
+        sessionState={activeSession}
+        registration={result?.registration}
+        scanType={scanType}
+        stationName={scanType === 'department' ? (departmentName || activeDepartment?.departmentName) : (gateName || divisionName)}
+      />
     </div>
   );
 }

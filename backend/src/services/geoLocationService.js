@@ -223,6 +223,72 @@ export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req
 
   const getDuration = () => Date.now() - startTime;
 
+  // ── Workstation Permissions Check (Given Access vs Denied Systems) ───────────
+  const clientIp = deviceInfo?.ipAddress || extractIp(req);
+  const cleanIp = (clientIp || '').replace(/^::ffff:/i, '').trim();
+  const clientFp = deviceInfo?.deviceFingerprint;
+  const workstationConditions = [];
+  if (clientFp && /^[0-9a-f]{64}$/i.test(clientFp)) {
+    workstationConditions.push({ fingerprint: clientFp.toLowerCase() });
+  }
+  if (cleanIp) {
+    workstationConditions.push({ registeredIp: cleanIp });
+    workstationConditions.push({
+      fingerprint: crypto.createHash('sha256').update(`desktop_workstation:${cleanIp}`).digest('hex'),
+    });
+  }
+  if (clientIp && clientIp !== cleanIp) {
+    workstationConditions.push({ registeredIp: clientIp });
+    workstationConditions.push({
+      fingerprint: crypto.createHash('sha256').update(`desktop_workstation:${clientIp}`).digest('hex'),
+    });
+  }
+
+  if (workstationConditions.length > 0) {
+    // 1. Check if the workstation has been explicitly denied / blocked by an administrator
+    const isBlocked = await Device.findOne({
+      status: DEVICE_STATUSES.BLOCKED,
+      $or: workstationConditions,
+    }).lean();
+
+    if (isBlocked) {
+      await writeGeoAuditLog({
+        ...baseLog,
+        decision: GEO_AUDIT_RESULTS.DENIED,
+        reason: 'system_access_denied_by_admin',
+        geoVerificationDurationMs: getDuration(),
+      });
+      return {
+        ok: false,
+        result: GEO_AUDIT_RESULTS.DENIED,
+        message: 'This device/system has been denied access by an administrator.',
+      };
+    }
+
+    // 2. Check if the workstation has been explicitly Granted Access (approved) by an administrator
+    const isApprovedWorkstation = await Device.findOne({
+      status: DEVICE_STATUSES.APPROVED,
+      $or: workstationConditions,
+    }).lean();
+
+    if (isApprovedWorkstation) {
+      await writeGeoAuditLog({
+        ...baseLog,
+        decision: isContinuous ? GEO_AUDIT_RESULTS.VERIFIED : GEO_AUDIT_RESULTS.ALLOWED,
+        reason: 'workstation_access_granted_by_admin',
+        matchedLocationName: isApprovedWorkstation.deviceName || 'Authorized Workstation',
+        insideRadius: true,
+        geoVerificationDurationMs: getDuration(),
+      });
+      return {
+        ok: true,
+        result: isContinuous ? GEO_AUDIT_RESULTS.VERIFIED : GEO_AUDIT_RESULTS.ALLOWED,
+        locationName: isApprovedWorkstation.deviceName || 'Authorized Workstation',
+        distance: 0,
+      };
+    }
+  }
+
   // ── Handle reported client-side geolocation failure (e.g. browser permission denied or timeout) ──
   if (failureReason) {
     await writeGeoAuditLog({
@@ -247,38 +313,6 @@ export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req
       geoVerificationDurationMs: getDuration(),
     });
     return { ok: true, result: GEO_AUDIT_RESULTS.BYPASSED };
-  }
-
-  // ── Admin-Denied / Blocked Device Check ─────────────────────────────────────
-  const clientIp = deviceInfo?.ipAddress || extractIp(req);
-  const clientFp = deviceInfo?.deviceFingerprint;
-  const blockedConditions = [];
-  if (clientFp && /^[0-9a-f]{64}$/i.test(clientFp)) {
-    blockedConditions.push({ fingerprint: clientFp.toLowerCase() });
-  }
-  if (clientIp) {
-    blockedConditions.push({ registeredIp: clientIp });
-  }
-  if (blockedConditions.length > 0) {
-    const isBlocked = await Device.findOne({
-      organizationId: orgId,
-      status: DEVICE_STATUSES.BLOCKED,
-      $or: blockedConditions,
-    }).lean();
-
-    if (isBlocked) {
-      await writeGeoAuditLog({
-        ...baseLog,
-        decision: GEO_AUDIT_RESULTS.DENIED,
-        reason: 'system_access_denied_by_admin',
-        geoVerificationDurationMs: getDuration(),
-      });
-      return {
-        ok: false,
-        result: GEO_AUDIT_RESULTS.DENIED,
-        message: 'This device/system has been denied access by an administrator.',
-      };
-    }
   }
 
   // ── Validate coordinates ─────────────────────────────────────────────────────

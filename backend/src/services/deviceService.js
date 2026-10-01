@@ -25,11 +25,12 @@ import {
 
 /** Extract the best-effort IP from an Express request. */
 export function extractIp(req) {
-  return (
+  const raw = (
     (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
     req.socket?.remoteAddress ||
     ''
   );
+  return raw.replace(/^::ffff:/i, '').trim();
 }
 
 /** Build a compact actor snapshot from req.user (may be null for public routes). */

@@ -128,7 +128,7 @@ router.post(
 router.post(
   '/verify-location',
   asyncHandler(async (req, res) => {
-    const { username, latitude, longitude, accuracy, timestamp, error: clientError, reason } = req.body;
+    const { username, latitude, longitude, accuracy, timestamp, error: clientError, reason, fingerprint } = req.body;
     if (!username?.trim()) {
       return res.status(400).json({ error: 'Username is required' });
     }
@@ -154,15 +154,31 @@ router.post(
         longitude: null,
         accuracy: null,
         req,
+        deviceFingerprint: fingerprint || null,
         failureReason: clientError || reason || 'location_permission_denied',
       });
+      if (result.ok) {
+        return res.json({
+          ok: true,
+          result: result.result,
+          locationName: result.locationName ?? null,
+          distance: result.distance ?? null,
+        });
+      }
       return res.status(403).json({
         error: result.message || 'Access denied. Location verification failed or permission was denied.',
         result: result.result,
       });
     }
 
-    const result = await verifyGeoAccess({ user, latitude, longitude, accuracy, req });
+    const result = await verifyGeoAccess({
+      user,
+      latitude,
+      longitude,
+      accuracy,
+      req,
+      deviceFingerprint: fingerprint || null,
+    });
 
     if (!result.ok) {
       return res.status(403).json({

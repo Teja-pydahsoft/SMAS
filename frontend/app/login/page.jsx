@@ -757,6 +757,7 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
 
       if (geoLocationEnabled && !result.isSuperAdmin) {
         setStep('geo-verify');
+        let geoAllowed = false;
         try {
           const pos = await new Promise((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -765,28 +766,42 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
               maximumAge: 0,
             });
           });
-          await api.auth.verifyLocation(
+          const verifyRes = await api.auth.verifyLocation(
             trimmed,
             pos.coords.latitude,
             pos.coords.longitude,
             pos.coords.accuracy,
-            pos.timestamp
+            pos.timestamp,
+            null,
+            deviceFingerprint || null
           );
+          if (verifyRes?.ok) {
+            geoAllowed = true;
+          }
         } catch (err) {
-          // Report client-side geolocation failure (e.g. browser permission denied or timeout) to backend so it gets audited
+          // If browser GPS fails, times out, or permission is denied (common on desktop workstations),
+          // check if this workstation has been Granted Access by an admin
           try {
-            await api.auth.verifyLocation(
+            const fallbackRes = await api.auth.verifyLocation(
               trimmed,
               null,
               null,
               null,
               null,
-              err?.message || 'Geolocation permission denied by browser'
+              err?.message || 'Geolocation permission denied by browser',
+              deviceFingerprint || null
             );
-          } catch {
-            // ignore secondary error
+            if (fallbackRes?.ok) {
+              geoAllowed = true;
+            }
+          } catch (fallbackErr) {
+            setError(fallbackErr?.message || err?.message || 'Access denied. You are outside the permitted organization location.');
+            return;
           }
-          setError(err?.message || 'Access denied. You are outside the permitted organization location.');
+        }
+
+        if (!geoAllowed) {
+          setError('Access denied. You are outside the permitted organization location.');
           return;
         }
       }

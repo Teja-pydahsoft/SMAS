@@ -270,8 +270,8 @@ export const api = {
       request('/auth/precheck', { method: 'POST', body: JSON.stringify({ username }) }),
     login: (username, password, fingerprint = null) =>
       request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password, ...(fingerprint ? { fingerprint } : {}) }) }),
-    verifyLocation: (username, latitude, longitude, accuracy, timestamp, error = null) =>
-      requestOnce('/auth/verify-location', { method: 'POST', body: JSON.stringify({ username, latitude, longitude, accuracy, timestamp, error }) }),
+    verifyLocation: (username, latitude, longitude, accuracy, timestamp, error = null, fingerprint = null) =>
+      requestOnce('/auth/verify-location', { method: 'POST', body: JSON.stringify({ username, latitude, longitude, accuracy, timestamp, error, fingerprint }) }),
     verifyPassword: (password) =>
       request('/auth/verify-password', { method: 'POST', body: JSON.stringify({ password }) }),
     changePassword: (password, confirmPassword) =>

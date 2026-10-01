@@ -722,6 +722,23 @@ router.post(
     payFrequency = inferred.payFrequency;
     gender = inferred.gender;
 
+    // Auto-prefill Pay Category with first option if not provided
+    const payCategoryField = (form.fields || []).find(
+      (f) => String(f.label || '').toLowerCase().trim() === 'pay category'
+    );
+    if (
+      payCategoryField &&
+      payCategoryField.options?.length > 0 &&
+      (formData?.[payCategoryField.fieldId] === undefined ||
+        formData?.[payCategoryField.fieldId] === null ||
+        formData?.[payCategoryField.fieldId] === '')
+    ) {
+      formData = {
+        ...(formData || {}),
+        [payCategoryField.fieldId]: payCategoryField.options[0],
+      };
+    }
+
     const rateRule = await resolveRateMasterRule(role, form, formData, payFrequency, gender);
     const rateHours = rateRule?.hours > 0 ? rateRule.hours : null;
     payAmount = resolveStoredPayAmount(role, payAmount, rateRule?.amount);
@@ -794,6 +811,23 @@ router.put(
     if (uniqueMatches.length > 0) {
       const match = uniqueMatches[0];
       return res.status(400).json({ error: `A registration already exists with this ${match.matchedFieldLabel || 'Unique Field'}.` });
+    }
+
+    // Auto-prefill Pay Category with first option if not provided
+    const payCategoryField = (form.fields || []).find(
+      (f) => String(f.label || '').toLowerCase().trim() === 'pay category'
+    );
+    if (
+      payCategoryField &&
+      payCategoryField.options?.length > 0 &&
+      (req.body.formData?.[payCategoryField.fieldId] === undefined ||
+        req.body.formData?.[payCategoryField.fieldId] === null ||
+        req.body.formData?.[payCategoryField.fieldId] === '')
+    ) {
+      req.body.formData = {
+        ...(req.body.formData || {}),
+        [payCategoryField.fieldId]: payCategoryField.options[0],
+      };
     }
 
     const inferred = inferPayFieldsFromForm(

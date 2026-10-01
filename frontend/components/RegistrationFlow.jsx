@@ -212,12 +212,32 @@ export default function RegistrationFlow({
     return () => { cancelled = true; };
   }, [stage, registration?._id, registration?.status, registration?.photoPath]);
 
+  function prefillDefaultFormFields(fields = [], currentData = {}) {
+    const updated = { ...(currentData || {}) };
+    for (const field of fields || []) {
+      if (field.type === 'select' && field.options?.length > 0) {
+        const label = String(field.label || '').toLowerCase().trim();
+        if (label === 'pay category') {
+          if (
+            updated[field.fieldId] === undefined ||
+            updated[field.fieldId] === null ||
+            updated[field.fieldId] === ''
+          ) {
+            updated[field.fieldId] = field.options[0];
+          }
+        }
+      }
+    }
+    return updated;
+  }
+
   async function loadNew(id) {
     try {
       const r = await api.roles.get(id);
       setRole(r);
       const f = await api.forms.getByRole(id);
       setForm(f);
+      setFormData(prefillDefaultFormFields(f?.fields, {}));
     } catch (e) {
       setError(e.message);
       setRole(null);
@@ -231,7 +251,6 @@ export default function RegistrationFlow({
     try {
       const reg = await api.registrations.get(id);
       setRegistration(reg);
-      setFormData(reg.formData || {});
       setPayFrequencySelection(
         serializePayFrequencySelection(reg.payFrequency, reg.customPayDays)
       );
@@ -245,6 +264,7 @@ export default function RegistrationFlow({
       setRole(r);
       const f = await api.forms.getByRole(roleRef);
       setForm(f);
+      setFormData(prefillDefaultFormFields(f?.fields, reg.formData || {}));
     } catch (e) {
       setError(e.message);
     } finally {

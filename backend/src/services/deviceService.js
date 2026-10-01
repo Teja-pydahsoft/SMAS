@@ -7,10 +7,12 @@
  * stays thin and testable.
  */
 
+import crypto from 'crypto';
 import mongoose from 'mongoose';
 import Device from '../models/Device.js';
 import DeviceAuditLog from '../models/DeviceAuditLog.js';
 import DeviceSetting from '../models/DeviceSetting.js';
+import GeoLoginAuditLog from '../models/GeoLoginAuditLog.js';
 import SystemUser from '../models/SystemUser.js';
 import {
   DEVICE_STATUSES,
@@ -523,18 +525,201 @@ export async function validateDevice({ fingerprint, req }) {
 
 // ─── Admin device operations (authenticated) ──────────────────────────────────
 
-/** Paginated + filtered list of devices for the admin table. */
+/**
+ * Helper to determine if an audit log came from a desktop or laptop system.
+ * Strictly excludes mobile phones (Android, iPhone, etc.) and tablets.
+ */
+export function isDesktopSystem(log) {
+  if (!log) return false;
+  const src = (log.loginSource || '').toLowerCase();
+  const os = (log.operatingSystem || '').toLowerCase();
+  const ua = (log.userAgent || '').toLowerCase();
+
+  // Exclude explicit mobile or tablet sources
+  if (src === 'mobile' || src === 'tablet') return false;
+
+  // Exclude mobile operating systems
+  if (os.includes('android') || os.includes('ios') || os.includes('iphone') || os.includes('ipad')) return false;
+
+  // Exclude mobile user agent tokens
+  if (/android|iphone|ipad|ipod|mobile|blackberry|iemobile|opera mini|silk|fennec|tablet/i.test(ua)) return false;
+
+  // Must be a desktop OS (Windows, macOS, or desktop Linux)
+  if (os.includes('windows') || os.includes('mac') || (os.includes('linux') && !ua.includes('android'))) {
+    return true;
+  }
+
+  return src === 'desktop';
+}
+
+/**
+ * Synchronize desktop workstations identified from GeoLoginAuditLog into Device collection.
+ * 1. Strictly filters out all mobile and tablet devices (Android, iPhone, iPads).
+ * 2. Uniquely aggregates workstations by IP address, since physical desktop and laptop
+ *    workstations in office/campus facilities consistently connect from the same IP.
+ * 3. Collapses multiple browser sessions/logins into a single unique workstation record.
+ * 4. Preserves admin grant/deny status for existing workstations.
+ */
+export async function syncGeoAuditSystemsToDevices(organizationId = 'default') {
+  try {
+    // 1. Clean up any existing mobile/tablet records from the Device collection
+    await Device.deleteMany({
+      organizationId,
+      $or: [
+        { operatingSystem: { $in: [/android/i, /ios/i] } },
+        { deviceName: { $regex: /android|iphone|ipad|mobile/i } },
+        { computerName: { $regex: /android|iphone|ipad|mobile/i } },
+        { adminNote: { $regex: /mobile/i } },
+      ],
+    });
+
+    // 2. Fetch all geo audit logs for this organization
+    const auditLogs = await GeoLoginAuditLog.find({ organizationId }).lean();
+    if (!auditLogs || auditLogs.length === 0) return 0;
+
+    // 3. Filter strictly for desktop and laptop workstations
+    const desktopLogs = auditLogs.filter(isDesktopSystem);
+    if (desktopLogs.length === 0) return 0;
+
+    // 4. Group by unique desktop IP address
+    const ipMap = new Map();
+    for (const a of desktopLogs) {
+      const ip = (a.ipAddress || '0.0.0.0').trim();
+      if (!ipMap.has(ip)) {
+        ipMap.set(ip, {
+          ip,
+          osCounts: {},
+          browsers: new Set(),
+          users: new Set(),
+          loginCount: 0,
+          allowedCount: 0,
+          deniedCount: 0,
+          earliestDate: a.createdAt || a.loginTimestamp || new Date(),
+          latestDate: a.createdAt || a.loginTimestamp || new Date(),
+          latestDecision: a.decision,
+        });
+      }
+      const item = ipMap.get(ip);
+      item.loginCount++;
+      if (a.decision === 'allowed' || a.decision === 'granted') item.allowedCount++;
+      if (a.decision === 'denied') item.deniedCount++;
+      if (a.userUsername) item.users.add(a.userUsername);
+      else if (a.userDisplayName) item.users.add(a.userDisplayName);
+
+      if (a.operatingSystem) {
+        item.osCounts[a.operatingSystem] = (item.osCounts[a.operatingSystem] || 0) + 1;
+      }
+      if (a.browser) {
+        item.browsers.add(a.browser);
+      }
+
+      const d = new Date(a.createdAt || a.loginTimestamp || 0);
+      if (d < new Date(item.earliestDate)) item.earliestDate = d;
+      if (d > new Date(item.latestDate)) {
+        item.latestDate = d;
+        item.latestDecision = a.decision;
+      }
+    }
+
+    // 5. Clean up any legacy duplicate device records with non-matching fingerprints for these desktop IPs
+    const allWorkstationFps = [];
+    const bulkOps = [];
+
+    for (const item of ipMap.values()) {
+      const ip = item.ip;
+      // Deterministic SHA-256 fingerprint for this workstation IP
+      const fp = crypto.createHash('sha256').update(`desktop_workstation:${ip}`).digest('hex');
+      allWorkstationFps.push(fp);
+
+      // Determine dominant OS
+      let dominantOs = 'Windows';
+      let maxCount = -1;
+      for (const [osName, count] of Object.entries(item.osCounts)) {
+        if (count > maxCount) {
+          maxCount = count;
+          dominantOs = osName;
+        }
+      }
+
+      const browsersStr = Array.from(item.browsers).join(', ') || 'Desktop Browser';
+      const usersStr = Array.from(item.users).slice(0, 10).join(', ');
+      const isApproved = item.latestDecision === 'allowed' || item.latestDecision === 'granted';
+      const isDenied = item.latestDecision === 'denied';
+      const defaultStatus = isApproved ? 'approved' : isDenied ? 'blocked' : 'pending';
+
+      bulkOps.push({
+        updateOne: {
+          filter: { fingerprint: fp },
+          update: {
+            $setOnInsert: {
+              organizationId,
+              fingerprint: fp,
+              registeredAt: new Date(item.earliestDate),
+              status: defaultStatus,
+            },
+            $set: {
+              deviceName: `${dominantOs} Workstation (${ip})`,
+              computerName: `${ip} (${browsersStr})`,
+              operatingSystem: dominantOs,
+              registeredIp: ip,
+              lastLoginAt: new Date(item.latestDate),
+              loginCount: item.loginCount,
+              adminNote: usersStr ? `Active users: ${usersStr}` : 'General Workstation',
+            },
+          },
+          upsert: true,
+        },
+      });
+    }
+
+    if (bulkOps.length > 0) {
+      await Device.bulkWrite(bulkOps);
+    }
+
+    // Remove any leftover duplicate records for these IPs that have old legacy fingerprints
+    await Device.deleteMany({
+      organizationId,
+      fingerprint: { $nin: allWorkstationFps },
+    });
+
+    return bulkOps.length;
+  } catch (err) {
+    console.warn('[syncGeoAuditSystemsToDevices] failed:', err.message);
+    return 0;
+  }
+}
+
+/** Paginated + filtered list of devices for the admin table (Desktop/Laptop workstations only). */
 export async function listDevices({
   organizationId = 'default',
   status,
   search,
   page = 1,
   limit = 25,
-  sortBy = 'createdAt',
+  sortBy = 'lastLoginAt',
   sortDir = 'desc',
 } = {}) {
-  const filter = { organizationId };
-  if (status) filter.status = status;
+  // Auto-sync geo audit systems if Device collection is empty or only has stale data
+  const currentCount = await Device.countDocuments({
+    organizationId,
+    operatingSystem: { $nin: [/android/i, /ios/i] },
+  });
+  if (currentCount === 0) {
+    await syncGeoAuditSystemsToDevices(organizationId);
+  }
+
+  // Filter strictly for desktop systems
+  const filter = {
+    organizationId,
+    operatingSystem: { $nin: [/android/i, /ios/i] },
+  };
+
+  if (status === 'denied') {
+    filter.status = { $in: ['blocked', 'rejected'] };
+  } else if (status) {
+    filter.status = status;
+  }
+
   if (search) {
     const q = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     filter.$or = [
@@ -542,15 +727,17 @@ export async function listDevices({
       { computerName: { $regex: q, $options: 'i' } },
       { operatingSystem: { $regex: q, $options: 'i' } },
       { fingerprint: { $regex: q, $options: 'i' } },
+      { registeredIp: { $regex: q, $options: 'i' } },
+      { adminNote: { $regex: q, $options: 'i' } },
     ];
   }
 
   const safePage = Math.max(1, parseInt(page, 10) || 1);
-  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 25));
+  const safeLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 25));
   const skip = (safePage - 1) * safeLimit;
 
-  const allowedSort = ['createdAt', 'registeredAt', 'lastLoginAt', 'deviceName', 'computerName', 'status'];
-  const sortField = allowedSort.includes(sortBy) ? sortBy : 'createdAt';
+  const allowedSort = ['createdAt', 'registeredAt', 'lastLoginAt', 'deviceName', 'computerName', 'status', 'loginCount'];
+  const sortField = allowedSort.includes(sortBy) ? sortBy : 'lastLoginAt';
   const sortOrder = sortDir === 'asc' ? 1 : -1;
 
   const [devices, total] = await Promise.all([
@@ -579,23 +766,28 @@ export async function getDeviceStats(organizationId = 'default') {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
+  const desktopMatch = {
+    organizationId,
+    operatingSystem: { $nin: [/android/i, /ios/i] },
+  };
+
   const [statusCounts, todayLogins, newRequests, registrationTrend, dailyLoginTrend] =
     await Promise.all([
       // Status breakdown
       Device.aggregate([
-        { $match: { organizationId } },
+        { $match: desktopMatch },
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
 
       // Logins today
       Device.countDocuments({
-        organizationId,
+        ...desktopMatch,
         lastLoginAt: { $gte: today, $lt: tomorrow },
       }),
 
       // New registrations today (pending)
       Device.countDocuments({
-        organizationId,
+        ...desktopMatch,
         status: DEVICE_STATUSES.PENDING,
         createdAt: { $gte: today, $lt: tomorrow },
       }),
@@ -604,7 +796,7 @@ export async function getDeviceStats(organizationId = 'default') {
       Device.aggregate([
         {
           $match: {
-            organizationId,
+            ...desktopMatch,
             createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
           },
         },
@@ -653,6 +845,7 @@ export async function getDeviceStats(organizationId = 'default') {
 
   return {
     total,
+    byStatus,
     pending: byStatus.pending,
     approved: byStatus.approved,
     rejected: byStatus.rejected,
@@ -849,6 +1042,14 @@ export function serializeDevice(device) {
   const d = typeof device.toObject === 'function' ? device.toObject() : { ...device };
   const approvedBy = d.approvedBy && typeof d.approvedBy === 'object' ? d.approvedBy : null;
 
+  let activeUsers = [];
+  if (d.adminNote && /active users:\s*/i.test(d.adminNote)) {
+    const raw = d.adminNote.replace(/^.*active users:\s*/i, '').trim();
+    activeUsers = raw.split(',').map((u) => u.trim()).filter(Boolean);
+  } else if (d.adminNote && !/denied|blocked|rejected/i.test(d.adminNote)) {
+    activeUsers = d.adminNote.split(',').map((u) => u.trim()).filter(Boolean);
+  }
+
   return {
     id: d._id?.toString(),
     _id: d._id,
@@ -868,6 +1069,7 @@ export function serializeDevice(device) {
     lastLoginAt: d.lastLoginAt || null,
     loginCount: d.loginCount || 0,
     adminNote: d.adminNote || '',
+    activeUsers,
     registeredIp: d.registeredIp || '',
     registeredAt: d.registeredAt || d.createdAt || null,
     createdAt: d.createdAt || null,

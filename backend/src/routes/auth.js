@@ -128,12 +128,9 @@ router.post(
 router.post(
   '/verify-location',
   asyncHandler(async (req, res) => {
-    const { username, latitude, longitude, accuracy, timestamp } = req.body;
+    const { username, latitude, longitude, accuracy, timestamp, error: clientError, reason } = req.body;
     if (!username?.trim()) {
       return res.status(400).json({ error: 'Username is required' });
-    }
-    if (latitude === undefined || longitude === undefined) {
-      return res.status(400).json({ error: 'Latitude and longitude are required' });
     }
 
     const user = await SystemUser.findOne({ username: username.toLowerCase().trim() })
@@ -142,13 +139,30 @@ router.post(
       .lean();
 
     if (!user || !user.isActive) {
-      // We simulate access denied to avoid user enumeration if they somehow bypass the UI
+      // Simulate access denied
       return res.status(403).json({ error: 'Access denied. You are outside the permitted organization location.' });
     }
 
-    // Dynamic import to avoid circular dependencies if any, though auth.js can import from geoLocationService
+    // Dynamic import to avoid circular dependencies
     const { verifyGeoAccess } = await import('../services/geoLocationService.js');
-    const result = await verifyGeoAccess({ user, latitude, longitude, req });
+
+    // Handle client-reported geolocation failure (e.g. browser permission denied or timeout)
+    if (clientError || reason || latitude === undefined || latitude === null || longitude === undefined || longitude === null) {
+      const result = await verifyGeoAccess({
+        user,
+        latitude: null,
+        longitude: null,
+        accuracy: null,
+        req,
+        failureReason: clientError || reason || 'location_permission_denied',
+      });
+      return res.status(403).json({
+        error: result.message || 'Access denied. Location verification failed or permission was denied.',
+        result: result.result,
+      });
+    }
+
+    const result = await verifyGeoAccess({ user, latitude, longitude, accuracy, req });
 
     if (!result.ok) {
       return res.status(403).json({

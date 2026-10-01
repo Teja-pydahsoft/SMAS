@@ -270,8 +270,8 @@ export const api = {
       request('/auth/precheck', { method: 'POST', body: JSON.stringify({ username }) }),
     login: (username, password, fingerprint = null) =>
       request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password, ...(fingerprint ? { fingerprint } : {}) }) }),
-    verifyLocation: (username, latitude, longitude, accuracy, timestamp) =>
-      requestOnce('/auth/verify-location', { method: 'POST', body: JSON.stringify({ username, latitude, longitude, accuracy, timestamp }) }),
+    verifyLocation: (username, latitude, longitude, accuracy, timestamp, error = null) =>
+      requestOnce('/auth/verify-location', { method: 'POST', body: JSON.stringify({ username, latitude, longitude, accuracy, timestamp, error }) }),
     verifyPassword: (password) =>
       request('/auth/verify-password', { method: 'POST', body: JSON.stringify({ password }) }),
     changePassword: (password, confirmPassword) =>
@@ -613,6 +613,7 @@ export const api = {
     auditLogs:    (params = {}) => request(`/devices/audit-logs${toQuery(params)}`),
     settings:     ()       => request('/devices/settings'),
     updateSettings: (data) => request('/devices/settings', { method: 'PUT', body: JSON.stringify(data) }),
+    syncGeo:        ()       => request('/devices/sync-geo', { method: 'POST' }),
   },
 
   geoLocations: {

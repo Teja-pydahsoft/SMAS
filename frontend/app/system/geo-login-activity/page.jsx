@@ -9,6 +9,8 @@ import { api } from '@/lib/api/client';
 const LiveDetailsPanel = dynamic(() => import('./LiveDetailsPanel'), { ssr: false });
 const AuditTimelineMap = dynamic(() => import('./AuditTimelineMap'), { ssr: false });
 const UserActivityView = dynamic(() => import('./UserActivityView'), { ssr: false });
+const SettingsTab = dynamic(() => import('../geo-locations/SettingsTab'), { ssr: false });
+import { useAuth } from '@/components/AuthProvider';
 
 const Icons = {
   shieldAlert: (
@@ -50,18 +52,30 @@ function getInitials(name) {
 }
 
 export default function GeoLoginActivityPage() {
+  const { can } = useAuth();
+  const canWrite = can('locations', 'write') || can('geo_login_activity', 'write') || can('devices', 'write');
+
   const [logs, setLogs] = useState([]);
   const [roles, setRoles] = useState([]);
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [viewMode, setViewMode] = useState('table'); // 'table' or 'map'
+  const [viewMode, setViewMode] = useState('table'); // 'table', 'map', 'users', or 'settings'
   const [selectedLog, setSelectedLog] = useState(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedDecision, setSelectedDecision] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'settings' || params.get('view') === 'settings') {
+        setViewMode('settings');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     fetchRoles();
@@ -205,63 +219,68 @@ export default function GeoLoginActivityPage() {
             <button className={`view-btn ${viewMode === 'table' ? 'active' : ''}`} onClick={() => setViewMode('table')}>Table</button>
             <button className={`view-btn ${viewMode === 'map' ? 'active' : ''}`} onClick={() => setViewMode('map')}>Map</button>
             <button className={`view-btn ${viewMode === 'users' ? 'active' : ''}`} onClick={() => setViewMode('users')}>Users</button>
+            <button className={`view-btn ${viewMode === 'settings' ? 'active' : ''}`} onClick={() => setViewMode('settings')}>Settings</button>
           </div>
           
-          <div className="soc-search">
-            <input 
-              type="text" 
-              placeholder="Search users, IPs, locations..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && fetchLogs()}
-            />
-          </div>
+          {viewMode !== 'settings' && (
+            <>
+              <div className="soc-search">
+                <input 
+                  type="text" 
+                  placeholder="Search users, IPs, locations..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && fetchLogs()}
+                />
+              </div>
 
-          <select 
-            className="soc-select" 
-            value={selectedDecision} 
-            onChange={(e) => setSelectedDecision(e.target.value)}
-          >
-            <option value="">All Decisions</option>
-            <option value="granted">Granted</option>
-            <option value="allowed">Allowed</option>
-            <option value="verified">Verified</option>
-            <option value="denied">Denied</option>
-            <option value="bypassed">Bypassed</option>
-          </select>
-          
-          <select 
-            className="soc-select" 
-            value={selectedRole}
-            onChange={(e) => setSelectedRole(e.target.value)}
-          >
-            <option value="">All Roles</option>
-            {roles.map(r => (
-              <option key={r._id} value={r.name}>{r.name}</option>
-            ))}
-          </select>
-          
-          <select 
-            className="soc-select" 
-            value={selectedLocation} 
-            onChange={(e) => setSelectedLocation(e.target.value)}
-          >
-            <option value="">All Locations</option>
-            {locations.map(loc => (
-              <option key={loc._id} value={loc.name}>{loc.name}</option>
-            ))}
-          </select>
-          
-          <button 
-            className={`soc-btn ${showAdvancedFilters ? 'active' : ''}`} 
-            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-          >
-            Advanced <span className="icon-xs">{Icons.chevronDown}</span>
-          </button>
+              <select 
+                className="soc-select" 
+                value={selectedDecision} 
+                onChange={(e) => setSelectedDecision(e.target.value)}
+              >
+                <option value="">All Decisions</option>
+                <option value="granted">Granted</option>
+                <option value="allowed">Allowed</option>
+                <option value="verified">Verified</option>
+                <option value="denied">Denied</option>
+                <option value="bypassed">Bypassed</option>
+              </select>
+              
+              <select 
+                className="soc-select" 
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+              >
+                <option value="">All Roles</option>
+                {roles.map(r => (
+                  <option key={r._id} value={r.name}>{r.name}</option>
+                ))}
+              </select>
+              
+              <select 
+                className="soc-select" 
+                value={selectedLocation} 
+                onChange={(e) => setSelectedLocation(e.target.value)}
+              >
+                <option value="">All Locations</option>
+                {locations.map(loc => (
+                  <option key={loc._id} value={loc.name}>{loc.name}</option>
+                ))}
+              </select>
+              
+              <button 
+                className={`soc-btn ${showAdvancedFilters ? 'active' : ''}`} 
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              >
+                Advanced <span className="icon-xs">{Icons.chevronDown}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {showAdvancedFilters && (
+      {showAdvancedFilters && viewMode !== 'settings' && (
         <div className="advanced-filters">
           <select className="soc-select"><option>Browser</option></select>
           <select className="soc-select"><option>Operating System</option></select>
@@ -275,10 +294,14 @@ export default function GeoLoginActivityPage() {
       <div className="soc-content-area">
         {error ? (
           <div className="error-state">{error}</div>
-        ) : loading ? (
+        ) : loading && viewMode !== 'settings' ? (
           <div className="loading-state">
             <div className="spinner"></div>
             <span>Loading audit events...</span>
+          </div>
+        ) : viewMode === 'settings' ? (
+          <div className="soc-settings-scroll-area">
+            <SettingsTab canWrite={canWrite} />
           </div>
         ) : viewMode === 'users' ? (
           <UserActivityView groupedUsers={groupedUsers} locations={locations} />
@@ -375,7 +398,7 @@ export default function GeoLoginActivityPage() {
               </div>
             </div>
             <div className="split-right">
-              <LiveDetailsPanel log={selectedLog} />
+              <LiveDetailsPanel log={selectedLog} onOpenSettings={() => setViewMode('settings')} />
             </div>
           </div>
         ) : (
@@ -389,6 +412,12 @@ export default function GeoLoginActivityPage() {
       </div>
 
       <style jsx>{`
+        .soc-settings-scroll-area {
+          overflow-y: auto;
+          height: 100%;
+          padding: 8px 4px 40px;
+        }
+
         .soc-container {
           display: flex;
           flex-direction: column;

@@ -27,7 +27,7 @@ const Icons = {
   ),
 };
 
-export default function LiveDetailsPanel({ log }) {
+export default function LiveDetailsPanel({ log, onOpenSettings }) {
   if (!log) {
     return (
       <div className="soc-panel-empty">
@@ -135,6 +135,17 @@ export default function LiveDetailsPanel({ log }) {
               <span className="soc-value font-mono text-xs">{log.deviceFingerprint || '-'}</span>
             </div>
           </div>
+          {onOpenSettings && (
+            <div style={{ marginTop: '10px' }}>
+              <button
+                type="button"
+                className="btn-panel-settings"
+                onClick={onOpenSettings}
+              >
+                ⚙️ Manage System Permissions in Settings
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="soc-section">
@@ -257,6 +268,26 @@ export default function LiveDetailsPanel({ log }) {
           border-bottom: 1px solid #f1f5f9;
         }
         .soc-section.no-border { border-bottom: none; }
+        .btn-panel-settings {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+          border-radius: 6px;
+          font-size: 11px;
+          font-weight: 600;
+          color: #2563eb;
+          cursor: pointer;
+          width: 100%;
+          justify-content: center;
+          transition: all 0.15s ease;
+        }
+        .btn-panel-settings:hover {
+          background: #dbeafe;
+          border-color: #93c5fd;
+        }
         .section-title {
           margin: 0 0 12px 0;
           font-size: 11px;

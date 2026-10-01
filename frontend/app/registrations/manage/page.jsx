@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api/client';
@@ -14,6 +14,94 @@ import RegistrationReportModal from '@/components/RegistrationReportModal';
 import { downloadRegistrationsExcel } from '@/lib/registrationExport';
 
 const PAGE_SIZE = 25;
+
+/**
+ * Preferred fields for Labour in desired order.
+ * Displayed if and only if they exist in the DB form.
+ */
+const PREFERRED_LABOUR_LABELS = [
+  'aadhar number',
+  'aadhar',
+  'labour type',
+  'labor type',
+  'batch',
+  'batch name',
+  'work category',
+  'place/village',
+  'place / village',
+  'place',
+  'village',
+  'pay category',
+];
+
+/** Bank payout fields reserved for details modal to keep table clean */
+const BANKING_PAYOUT_LABELS = [
+  'bank account name',
+  'bank name',
+  'bank account no',
+  'bank account number',
+  'ifsc',
+  'ifsc code',
+  'branch',
+  'branch name',
+  'beneficiary name',
+  'beneficiary',
+];
+
+function getRoleDisplayFields(fields = [], roleName = '') {
+  if (!fields || !fields.length) return [];
+
+  // Exclude primary name field, media, and long textarea
+  const candidates = fields.filter((f) => {
+    const label = String(f.label || '').toLowerCase().trim();
+    if (f.type === 'media' || f.type === 'textarea') return false;
+    if (label === 'name' || label === 'full name') return false;
+    return true;
+  });
+
+  const isLabour = String(roleName || '').toLowerCase().includes('labour');
+
+  if (isLabour) {
+    // 1. Pick preferred labour fields that exist in the database form
+    const matched = [];
+    const matchedFieldIds = new Set();
+
+    for (const pref of PREFERRED_LABOUR_LABELS) {
+      const field = candidates.find((f) => {
+        if (matchedFieldIds.has(f.fieldId)) return false;
+        const l = String(f.label || '').toLowerCase().trim();
+        return l === pref || l.replace(/\s+/g, '') === pref.replace(/\s+/g, '');
+      });
+      if (field) {
+        matched.push(field);
+        matchedFieldIds.add(field.fieldId);
+      }
+    }
+
+    // 2. Include any other client-defined fields that are not banking fields
+    const otherClientFields = candidates.filter((f) => {
+      if (matchedFieldIds.has(f.fieldId)) return false;
+      const l = String(f.label || '').toLowerCase().trim();
+      return !BANKING_PAYOUT_LABELS.some((b) => l.includes(b));
+    });
+
+    // If preferred fields exist in this client's DB form, show them + any additional custom fields
+    if (matched.length > 0) {
+      return [...matched, ...otherClientFields];
+    }
+
+    // If none of the standard labour fields exist in DB form, show all dynamic non-bank fields defined by this client
+    return otherClientFields.length > 0 ? otherClientFields : candidates;
+  }
+
+  // Any other role: show dynamic non-bank fields defined in this role's DB form
+  const generalFields = candidates.filter((f) => {
+    const l = String(f.label || '').toLowerCase().trim();
+    return !BANKING_PAYOUT_LABELS.some((b) => l.includes(b));
+  });
+
+  return generalFields.length > 0 ? generalFields : candidates;
+}
 
 /** Session-level guard so Strict Mode remounts don't re-sync / re-fetch. */
 let registrationPassesSyncStarted = false;
@@ -174,6 +262,14 @@ function ManageRegistrationsContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [dynamicFilters, setDynamicFilters] = useState({});
   const [roleFormFields, setRoleFormFields] = useState([]);
+
+  const selectedRole = (roles || []).find((r) => String(r._id) === String(filterRoleId));
+  const isLabourRole = String(selectedRole?.name || '').toLowerCase().includes('labour');
+
+  const roleDisplayFields = useMemo(() => {
+    return filterRoleId ? getRoleDisplayFields(roleFormFields, selectedRole?.name) : [];
+  }, [filterRoleId, roleFormFields, selectedRole?.name]);
+
   const [editingRegistrationId, setEditingRegistrationId] = useState(preselectedEdit || null);
   const [reportRegistrationId, setReportRegistrationId] = useState(null);
   const [flowKey, setFlowKey] = useState(0);
@@ -513,10 +609,20 @@ function ManageRegistrationsContent() {
                   <tr>
                     <th>Photo</th>
                     <th>Name</th>
-                    <th>Role</th>
-                    <th>Contact</th>
+                    {filterRoleId ? (
+                      roleDisplayFields.length > 0 ? (
+                        roleDisplayFields.map((f) => (
+                          <th key={f.fieldId}>{f.label}</th>
+                        ))
+                      ) : null
+                    ) : (
+                      <>
+                        <th>Role</th>
+                        <th>Contact / Details</th>
+                      </>
+                    )}
                     <th>Status</th>
-                    <th>Code</th>
+                    <th>{isLabourRole ? 'Labour Code' : 'Code'}</th>
                     <th>Pass</th>
                     <th>Date</th>
                     <th>{canWrite ? 'Actions' : 'Details'}</th>
@@ -541,14 +647,65 @@ function ManageRegistrationsContent() {
                         </td>
                         <td className="name-cell">
                           {reg.displayName || '—'}
-                          {reg.formDetails?.length > 1 && (
+                          {!filterRoleId && reg.formDetails?.length > 1 && (
                             <div className="sub-text">
                               {reg.formDetails.slice(1, 3).map((d) => d.value).join(' · ')}
                             </div>
                           )}
                         </td>
-                        <td>{reg.roleId?.name || '—'}</td>
-                        <td>{reg.displayPhone || '—'}</td>
+                        {filterRoleId ? (
+                          roleDisplayFields.map((f) => {
+                            const val =
+                              reg.formData?.[f.fieldId] != null && String(reg.formData[f.fieldId]).trim() !== ''
+                                ? reg.formData[f.fieldId]
+                                : reg.formDetails?.find((d) => d.label === f.label)?.value;
+                            const isPayCat = String(f.label || '').toLowerCase().trim() === 'pay category';
+                            return (
+                              <td key={f.fieldId}>
+                                {isPayCat && val ? (
+                                  <span
+                                    className={`badge ${
+                                      String(val).toLowerCase() === 'contract' ? 'badge-warning' : 'badge-info'
+                                    }`}
+                                  >
+                                    {val}
+                                  </span>
+                                ) : val != null && String(val).trim() !== '' ? (
+                                  String(val)
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                            );
+                          })
+                        ) : (
+                          <>
+                            <td>{reg.roleId?.name || '—'}</td>
+                            <td>
+                              {reg.displayPhone ? (
+                                <span>{reg.displayPhone}</span>
+                              ) : reg.selections?.length > 0 ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxWidth: '240px' }}>
+                                  {reg.selections.slice(0, 3).map((s, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="badge badge-secondary"
+                                      style={{ fontSize: '11px', padding: '2px 6px', textTransform: 'none' }}
+                                    >
+                                      {s.value}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : reg.formDetails?.length > 1 ? (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                  {reg.formDetails.slice(1, 3).map((d) => d.value).join(' · ')}
+                                </span>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                          </>
+                        )}
                         <td>
                           <span className={`badge ${STATUS_BADGE[reg.status] || 'badge-info'}`}>
                             {reg.status.replace(/_/g, ' ')}

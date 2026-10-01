@@ -22,7 +22,7 @@
 
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { requirePermission } from '../middleware/auth.js';
+import { requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import {
   registerDevice,
   validateDevice,
@@ -37,6 +37,7 @@ import {
   listAuditLogs,
   getOrCreateSettings,
   updateSettings,
+  syncGeoAuditSystemsToDevices,
 } from '../services/deviceService.js';
 
 const router = Router();
@@ -179,12 +180,25 @@ router.put(
 );
 
 /**
+ * POST /api/devices/sync-geo
+ * Synchronize workstations and systems from Geo Login Activity into the Device collection.
+ */
+router.post(
+  '/sync-geo',
+  requireAnyPermission(['devices', 'locations', 'geo_login_activity'], 'write'),
+  asyncHandler(async (req, res) => {
+    const synced = await syncGeoAuditSystemsToDevices('default');
+    return res.json({ ok: true, synced });
+  })
+);
+
+/**
  * GET /api/devices/pending
  * Convenience shortcut — equivalent to GET /api/devices?status=pending.
  */
 router.get(
   '/pending',
-  requirePermission('devices', 'read'),
+  requireAnyPermission(['devices', 'locations', 'geo_login_activity'], 'read'),
   asyncHandler(async (req, res) => {
     const result = await listDevices({
       organizationId: 'default',
@@ -206,7 +220,7 @@ router.get(
  */
 router.get(
   '/',
-  requirePermission('devices', 'read'),
+  requireAnyPermission(['devices', 'locations', 'geo_login_activity'], 'read'),
   asyncHandler(async (req, res) => {
     const result = await listDevices({
       organizationId: 'default',
@@ -227,7 +241,7 @@ router.get(
  */
 router.get(
   '/:id',
-  requirePermission('devices', 'read'),
+  requireAnyPermission(['devices', 'locations', 'geo_login_activity'], 'read'),
   asyncHandler(async (req, res) => {
     const result = await getDeviceById(req.params.id, 'default');
     if (!result) return res.status(404).json({ error: 'Device not found' });
@@ -240,7 +254,7 @@ router.get(
  */
 router.put(
   '/:id/approve',
-  requirePermission('devices', 'write'),
+  requireAnyPermission(['devices', 'locations', 'geo_login_activity'], 'write'),
   asyncHandler(async (req, res) => {
     const result = await approveDevice(req.params.id, 'default', req);
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
@@ -254,7 +268,7 @@ router.put(
  */
 router.put(
   '/:id/reject',
-  requirePermission('devices', 'write'),
+  requireAnyPermission(['devices', 'locations', 'geo_login_activity'], 'write'),
   asyncHandler(async (req, res) => {
     const result = await rejectDevice(req.params.id, 'default', req, req.body.note || '');
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
@@ -268,7 +282,7 @@ router.put(
  */
 router.put(
   '/:id/block',
-  requirePermission('devices', 'write'),
+  requireAnyPermission(['devices', 'locations', 'geo_login_activity'], 'write'),
   asyncHandler(async (req, res) => {
     const result = await blockDevice(req.params.id, 'default', req, req.body.note || '');
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
@@ -281,7 +295,7 @@ router.put(
  */
 router.put(
   '/:id/unblock',
-  requirePermission('devices', 'write'),
+  requireAnyPermission(['devices', 'locations', 'geo_login_activity'], 'write'),
   asyncHandler(async (req, res) => {
     const result = await unblockDevice(req.params.id, 'default', req);
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });

@@ -19,12 +19,14 @@
  *  JWT → Dashboard
  */
 
+import crypto from 'crypto';
 import GeoLocation from '../models/GeoLocation.js';
 import GeoLocationSetting from '../models/GeoLocationSetting.js';
 import GeoLoginAuditLog from '../models/GeoLoginAuditLog.js';
+import Device from '../models/Device.js';
 import SystemUser from '../models/SystemUser.js';
-import { GEO_AUDIT_RESULTS } from '../constants/index.js';
-import { extractIp } from './deviceService.js';
+import { GEO_AUDIT_RESULTS, DEVICE_STATUSES } from '../constants/index.js';
+import { extractIp, isDesktopSystem } from './deviceService.js';
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,58 @@ export function haversineDistance(lat1, lng1, lat2, lng2) {
 async function writeGeoAuditLog(data) {
   try {
     await GeoLoginAuditLog.create(data);
+
+    // Immediately synchronize or touch the Device collection for desktop/laptop workstations
+    if (isDesktopSystem(data)) {
+      const ip = (data.ipAddress || '').trim();
+      if (ip && ip !== '0.0.0.0') {
+        const fp = crypto.createHash('sha256').update(`desktop_workstation:${ip}`).digest('hex');
+        const os = data.operatingSystem || 'Windows';
+        const browser = data.browser || 'Browser';
+        const user = (data.userUsername || data.userDisplayName || '').trim();
+        const isApproved = data.decision === 'allowed' || data.decision === 'granted' || data.decision === 'bypassed';
+        const isDenied = data.decision === 'denied';
+        const defaultStatus = isApproved ? DEVICE_STATUSES.APPROVED : isDenied ? DEVICE_STATUSES.BLOCKED : DEVICE_STATUSES.PENDING;
+
+        const existing = await Device.findOne({ fingerprint: fp });
+        if (!existing) {
+          await Device.create({
+            organizationId: data.organizationId || 'default',
+            fingerprint: fp,
+            deviceName: `${os} Workstation (${ip})`,
+            computerName: `${ip} (${browser})`,
+            operatingSystem: os,
+            registeredIp: ip,
+            registeredAt: new Date(),
+            lastLoginAt: new Date(),
+            loginCount: 1,
+            status: defaultStatus,
+            adminNote: user ? `Active users: ${user}` : 'General Workstation',
+          });
+        } else {
+          let usersList = [];
+          if (existing.adminNote && /active users:\s*/i.test(existing.adminNote)) {
+            usersList = existing.adminNote.replace(/^.*active users:\s*/i, '').split(',').map(u => u.trim()).filter(Boolean);
+          } else if (existing.adminNote && existing.adminNote !== 'General Workstation') {
+            usersList = existing.adminNote.split(',').map(u => u.trim()).filter(Boolean);
+          }
+          if (user && !usersList.includes(user)) {
+            usersList.push(user);
+          }
+
+          existing.lastLoginAt = new Date();
+          existing.loginCount = (existing.loginCount || 0) + 1;
+          if (usersList.length > 0) {
+            existing.adminNote = `Active users: ${usersList.join(', ')}`;
+          }
+
+          if (isDenied && existing.status !== DEVICE_STATUSES.APPROVED) {
+            existing.status = DEVICE_STATUSES.BLOCKED;
+          }
+          await existing.save();
+        }
+      }
+    }
   } catch (err) {
     console.warn('[GeoLoginAuditLog] write failed:', err.message);
   }
@@ -98,11 +152,11 @@ function parseDevice(req, providedFingerprint) {
   let os = 'Unknown';
   const uaLower = ua.toLowerCase();
 
-  // Basic OS
-  if (uaLower.includes('windows')) os = 'Windows';
-  else if (uaLower.includes('mac os') || uaLower.includes('macos')) os = 'macOS';
-  else if (uaLower.includes('android')) os = 'Android';
-  else if (uaLower.includes('iphone') || uaLower.includes('ipad')) os = 'iOS';
+  // Correct OS detection order: detect mobile devices first so iPhone "like Mac OS X" is iOS, not macOS
+  if (uaLower.includes('android')) os = 'Android';
+  else if (uaLower.includes('iphone') || uaLower.includes('ipad') || uaLower.includes('ipod')) os = 'iOS';
+  else if (uaLower.includes('windows')) os = 'Windows';
+  else if (uaLower.includes('mac os') || uaLower.includes('macos') || uaLower.includes('macintosh')) os = 'macOS';
   else if (uaLower.includes('linux')) os = 'Linux';
 
   // Basic Browser
@@ -112,9 +166,9 @@ function parseDevice(req, providedFingerprint) {
   else if (uaLower.includes('safari/') && !uaLower.includes('chrome/')) browser = 'Safari';
 
   let loginSource = 'unknown';
-  if (/mobile|android|iphone|ipad|ipod/.test(uaLower)) {
+  if (/mobile|android|iphone|ipad|ipod|blackberry|iemobile|opera mini/.test(uaLower)) {
     loginSource = uaLower.includes('ipad') || (uaLower.includes('android') && !uaLower.includes('mobile')) ? 'tablet' : 'mobile';
-  } else if (os !== 'Unknown' && os !== 'Android' && os !== 'iOS') {
+  } else if (os === 'Windows' || os === 'macOS' || (os === 'Linux' && !uaLower.includes('android'))) {
     loginSource = 'desktop';
   }
 
@@ -144,7 +198,7 @@ function parseDevice(req, providedFingerprint) {
  *
  * @returns {{ ok: boolean, result: string, locationName?: string, distance?: number, message?: string }}
  */
-export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req, deviceFingerprint, isContinuous }) {
+export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req, deviceFingerprint, isContinuous, failureReason }) {
   const startTime = Date.now();
   const orgId = 'default';
 
@@ -169,6 +223,21 @@ export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req
 
   const getDuration = () => Date.now() - startTime;
 
+  // ── Handle reported client-side geolocation failure (e.g. browser permission denied or timeout) ──
+  if (failureReason) {
+    await writeGeoAuditLog({
+      ...baseLog,
+      decision: GEO_AUDIT_RESULTS.DENIED,
+      reason: failureReason,
+      geoVerificationDurationMs: getDuration(),
+    });
+    return {
+      ok: false,
+      result: GEO_AUDIT_RESULTS.DENIED,
+      message: 'Access denied. Location verification failed or permission was denied.',
+    };
+  }
+
   // ── Super Admin bypass ───────────────────────────────────────────────────────
   if (user?.isSuperAdmin && settings.superAdminBypass) {
     await writeGeoAuditLog({
@@ -178,6 +247,38 @@ export async function verifyGeoAccess({ user, latitude, longitude, accuracy, req
       geoVerificationDurationMs: getDuration(),
     });
     return { ok: true, result: GEO_AUDIT_RESULTS.BYPASSED };
+  }
+
+  // ── Admin-Denied / Blocked Device Check ─────────────────────────────────────
+  const clientIp = deviceInfo?.ipAddress || extractIp(req);
+  const clientFp = deviceInfo?.deviceFingerprint;
+  const blockedConditions = [];
+  if (clientFp && /^[0-9a-f]{64}$/i.test(clientFp)) {
+    blockedConditions.push({ fingerprint: clientFp.toLowerCase() });
+  }
+  if (clientIp) {
+    blockedConditions.push({ registeredIp: clientIp });
+  }
+  if (blockedConditions.length > 0) {
+    const isBlocked = await Device.findOne({
+      organizationId: orgId,
+      status: DEVICE_STATUSES.BLOCKED,
+      $or: blockedConditions,
+    }).lean();
+
+    if (isBlocked) {
+      await writeGeoAuditLog({
+        ...baseLog,
+        decision: GEO_AUDIT_RESULTS.DENIED,
+        reason: 'system_access_denied_by_admin',
+        geoVerificationDurationMs: getDuration(),
+      });
+      return {
+        ok: false,
+        result: GEO_AUDIT_RESULTS.DENIED,
+        message: 'This device/system has been denied access by an administrator.',
+      };
+    }
   }
 
   // ── Validate coordinates ─────────────────────────────────────────────────────

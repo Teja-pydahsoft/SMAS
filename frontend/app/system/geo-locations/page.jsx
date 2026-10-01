@@ -6,6 +6,7 @@ import { useAuth } from '@/components/AuthProvider';
 import LocationsTab from './LocationsTab';
 import UserAssignmentsTab from './UserAssignmentsTab';
 import SettingsTab from './SettingsTab';
+import GeoDeviceAccessManager from '@/components/devices/GeoDeviceAccessManager';
 
 function GeoLocationsPageInner() {
   const router = useRouter();
@@ -30,7 +31,7 @@ function GeoLocationsPageInner() {
       <div className="reports-section-header">
         <div>
           <h2 className="section-title">Geo Location Access</h2>
-          <p className="section-desc">Manage permitted login locations, user assignments, and security settings.</p>
+          <p className="section-desc">Manage permitted login locations, user assignments, device hardware access, and security settings.</p>
         </div>
       </div>
 
@@ -48,6 +49,12 @@ function GeoLocationsPageInner() {
           User Assignments
         </button>
         <button
+          className={`page-tab ${currentTab === 'devices' ? 'page-tab--active' : ''}`}
+          onClick={() => setTab('devices')}
+        >
+          Device Access
+        </button>
+        <button
           className={`page-tab ${currentTab === 'settings' ? 'page-tab--active' : ''}`}
           onClick={() => setTab('settings')}
         >
@@ -58,7 +65,8 @@ function GeoLocationsPageInner() {
       <div className="tab-content" style={{ marginTop: '1.5rem' }}>
         {currentTab === 'locations' && <LocationsTab canWrite={canWrite} />}
         {currentTab === 'assignments' && <UserAssignmentsTab canWrite={canWrite} />}
-        {currentTab === 'settings' && <SettingsTab canWrite={canWrite} />}
+        {currentTab === 'devices' && <GeoDeviceAccessManager canWrite={canWrite} />}
+        {currentTab === 'settings' && <SettingsTab canWrite={canWrite} onSwitchTab={setTab} />}
       </div>
     </div>
   );

@@ -773,7 +773,20 @@ function LoginForm({ deviceFingerprint = '', bootstrapMode = false, geoLocationE
             pos.timestamp
           );
         } catch (err) {
-          setError(err.message || 'Access denied. You are outside the permitted organization location.');
+          // Report client-side geolocation failure (e.g. browser permission denied or timeout) to backend so it gets audited
+          try {
+            await api.auth.verifyLocation(
+              trimmed,
+              null,
+              null,
+              null,
+              null,
+              err?.message || 'Geolocation permission denied by browser'
+            );
+          } catch {
+            // ignore secondary error
+          }
+          setError(err?.message || 'Access denied. You are outside the permitted organization location.');
           return;
         }
       }

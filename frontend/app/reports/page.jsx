@@ -102,7 +102,7 @@ function ConfirmActionDialog({
   );
 }
 
-/** Print helper — Daily / History download professional PDFs; others use browser print */
+/** Print helper — Daily / History print professional PDFs directly; others use browser print */
 function printReportCenterFallback() {
   document.body.classList.add('report-printing');
   let pageStyle = document.getElementById('report-print-page-style');
@@ -1431,8 +1431,9 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
     if (!data) return;
     setExporting('pdf');
     try {
-      const { downloadPersonReportPdf } = await import('@/lib/reportExport');
-      await downloadPersonReportPdf(data, exportOptions);
+      const { printPersonReportPdf, downloadPersonReportPdf } = await import('@/lib/reportExport');
+      const fn = printPersonReportPdf || downloadPersonReportPdf;
+      await fn(data, exportOptions);
     } finally {
       setExporting('');
     }
@@ -1872,9 +1873,15 @@ function PersonDetailDialog({ registrationId, dateFrom, dateTo, divisionId, onCl
                 className="btn-secondary rc-download-btn"
                 onClick={handleExportPdf}
                 disabled={Boolean(exporting)}
+                title="Print attendance report PDF"
+                aria-label="Print"
               >
-                <DownloadIcon />
-                <span>{exporting === 'pdf' ? 'Exporting…' : 'Download PDF'}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <polyline points="6 9 6 2 18 2 18 9" />
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                  <rect x="6" y="14" width="12" height="8" />
+                </svg>
+                <span>{exporting === 'pdf' ? 'Preparing…' : 'Print'}</span>
               </button>
               {canManagePayroll && hasDateRange && (
                 <button
@@ -2461,14 +2468,15 @@ function TodayActivityTab({
     }
     setPrinting(true);
     try {
-      const { downloadDailyAttendancePdf } = await import('@/lib/pdfReportCenter');
-      await downloadDailyAttendancePdf(filtered, {
+      const { printDailyAttendancePdf, downloadDailyAttendancePdf } = await import('@/lib/pdfReportCenter');
+      const fn = printDailyAttendancePdf || downloadDailyAttendancePdf;
+      await fn(filtered, {
         date: parseDateForPdf(activityDate),
         divisionName: selectedDivision?.name,
       });
     } catch (e) {
       console.error(e);
-      setError(e.message || 'Failed to generate PDF');
+      setError(e.message || 'Failed to print PDF');
     } finally {
       setPrinting(false);
     }
@@ -5879,11 +5887,12 @@ function AttendanceHistoryTab({ onViewPerson, onPrintReady, isActive = true }) {
     }
     setPrinting(true);
     try {
-      const { downloadAttendanceHistoryPdf } = await import('@/lib/pdfReportCenter');
-      await downloadAttendanceHistoryPdf(employees, { dateFrom, dateTo });
+      const { printAttendanceHistoryPdf, downloadAttendanceHistoryPdf } = await import('@/lib/pdfReportCenter');
+      const fn = printAttendanceHistoryPdf || downloadAttendanceHistoryPdf;
+      await fn(employees, { dateFrom, dateTo });
     } catch (e) {
       console.error(e);
-      setError(e.message || 'Failed to generate PDF');
+      setError(e.message || 'Failed to print PDF');
     } finally {
       setPrinting(false);
     }
@@ -6863,7 +6872,7 @@ function ReportsContent() {
             className="btn-secondary btn-sm hide-on-mobile"
             onClick={handleHeaderPrint}
             disabled={printing}
-            title={tab === 'today' || tab === 'division' || tab === 'history' ? 'Download professional PDF report' : 'Print current report'}
+            title={tab === 'today' || tab === 'division' || tab === 'history' ? 'Print professional PDF report' : 'Print current report'}
             aria-label="Print"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -7036,8 +7045,9 @@ function BulkPaySlipsDialog({ dateFrom, dateTo, onClose }) {
         const details = await api.payroll.getPaySlipDetails(slipId(slip));
         detailsList.push(details);
       }
-      const { downloadPaySlipsPdf } = await import('@/lib/pdfPaySlips');
-      await downloadPaySlipsPdf(detailsList, { dateFrom, dateTo });
+      const { printPaySlipsPdf, downloadPaySlipsPdf } = await import('@/lib/pdfPaySlips');
+      const fn = printPaySlipsPdf || downloadPaySlipsPdf;
+      await fn(detailsList, { dateFrom, dateTo });
     } catch (e) {
       setError(e.message || 'Failed to print pay slips.');
     } finally {

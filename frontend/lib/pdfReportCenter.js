@@ -1,4 +1,5 @@
 import { formatPayFrequency } from '@/lib/payFrequency';
+import { printPdfDocument } from '@/lib/pdfPrint';
 
 const BRAND = [30, 64, 175];
 const IST_TIMEZONE = 'Asia/Kolkata';
@@ -275,8 +276,14 @@ export async function downloadDailyAttendancePdf(people = [], options = {}) {
   });
 
   const reportName = divisionName ? `SAMS_${safeFilePart(divisionName)}_Attendance` : 'SAMS_Day_Report';
-  doc.save(`${reportName}_${safeFilePart(reportDateStr || reportDate.toISOString().slice(0, 10))}.pdf`);
+  if (options.download) {
+    doc.save(`${reportName}_${safeFilePart(reportDateStr || reportDate.toISOString().slice(0, 10))}.pdf`);
+  } else {
+    printPdfDocument(doc);
+  }
 }
+
+export const printDailyAttendancePdf = downloadDailyAttendancePdf;
 
 /**
  * Attendance History — professional PDF abstract table
@@ -433,5 +440,11 @@ export async function downloadAttendanceHistoryPdf(employees = [], options = {})
 
   const fromPart = dateFrom || 'range';
   const toPart = dateTo || 'end';
-  doc.save(`SAMS_Attendance_History_${safeFilePart(fromPart)}_${safeFilePart(toPart)}.pdf`);
+  if (options.download) {
+    doc.save(`SAMS_Attendance_History_${safeFilePart(fromPart)}_${safeFilePart(toPart)}.pdf`);
+  } else {
+    printPdfDocument(doc);
+  }
 }
+
+export const printAttendanceHistoryPdf = downloadAttendanceHistoryPdf;

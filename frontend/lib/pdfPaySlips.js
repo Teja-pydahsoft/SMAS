@@ -1,3 +1,5 @@
+import { printPdfDocument } from '@/lib/pdfPrint';
+
 const IST_TIMEZONE = 'Asia/Kolkata';
 const SLIPS_PER_PAGE = 5;
 
@@ -171,5 +173,12 @@ export async function downloadPaySlipsPdf(detailsList = [], options = {}) {
   const filename = to
     ? `pay-slips-${from}-to-${to}.pdf`
     : `pay-slips-${from}.pdf`;
-  doc.save(filename);
+
+  if (options.download) {
+    doc.save(filename);
+  } else {
+    printPdfDocument(doc);
+  }
 }
+
+export const printPaySlipsPdf = downloadPaySlipsPdf;

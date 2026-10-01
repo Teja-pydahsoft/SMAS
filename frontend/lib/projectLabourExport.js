@@ -1,4 +1,5 @@
 import { formatDate, formatDateTime, todayDateStringIst } from '@/lib/formatDate';
+import { printPdfDocument } from '@/lib/pdfPrint';
 
 function cell(value) {
   if (value == null || value === '') return '';
@@ -320,5 +321,11 @@ export async function downloadLabourAssignmentPdf(report, { generatedBy } = {}) 
   }
 
   const name = `SAMS_Project_Labour_${safeName(labour.registrationCode || labour.labourName)}_${stamp}.pdf`;
-  doc.save(name);
+  if (options.download) {
+    doc.save(name);
+  } else {
+    printPdfDocument(doc);
+  }
 }
+
+export const printLabourAssignmentPdf = downloadLabourAssignmentPdf;

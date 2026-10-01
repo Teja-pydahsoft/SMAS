@@ -1,4 +1,5 @@
 import { formatPayFrequency } from '@/lib/payFrequency';
+import { printPdfDocument } from '@/lib/pdfPrint';
 
 /**
  * Individual PDF report — single A4 sheet:
@@ -860,5 +861,11 @@ export async function downloadPersonReportPdf(reportData, options = {}) {
     });
   }
 
-  doc.save(`${payload.fileBaseName}.pdf`);
+  if (options.download) {
+    doc.save(`${payload.fileBaseName}.pdf`);
+  } else {
+    printPdfDocument(doc);
+  }
 }
+
+export const printPersonReportPdf = downloadPersonReportPdf;

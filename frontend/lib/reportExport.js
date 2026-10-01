@@ -928,4 +928,4 @@ export async function downloadPersonReportExcel(reportData, options = {}) {
   );
 }
 
-export { downloadPersonReportPdf } from './pdfPersonReport.js';
+export { downloadPersonReportPdf, printPersonReportPdf } from './pdfPersonReport.js';

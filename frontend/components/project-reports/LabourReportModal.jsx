@@ -6,6 +6,7 @@ import { formatDate, formatDateTime } from '@/lib/formatDate';
 import { resolvePhotoUrl } from '@/lib/photoUrl';
 import {
   downloadLabourAssignmentExcel,
+  printLabourAssignmentPdf,
   downloadLabourAssignmentPdf,
 } from '@/lib/projectLabourExport';
 
@@ -117,7 +118,8 @@ export default function LabourReportModal({
       if (format === 'excel') {
         await downloadLabourAssignmentExcel(payload, { generatedBy });
       } else {
-        await downloadLabourAssignmentPdf(payload, { generatedBy });
+        const fn = printLabourAssignmentPdf || downloadLabourAssignmentPdf;
+        await fn(payload, { generatedBy });
       }
     } catch (e) {
       setError(e.message || 'Export failed');
@@ -169,8 +171,9 @@ export default function LabourReportModal({
               className="btn-secondary"
               disabled={exporting}
               onClick={() => handleExport('pdf')}
+              title="Print labour report PDF"
             >
-              Download PDF
+              Print PDF
             </button>
             <button type="button" className="btn-primary" onClick={onClose}>
               Close

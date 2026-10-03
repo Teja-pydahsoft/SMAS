@@ -467,6 +467,8 @@ function EntryExitContent({
             divisionName: res.divisionName || '',
             borrowedGateEntry: res.borrowedGateEntry || null,
             registration: res.registration || null,
+            isContractorGateOptional: Boolean(res.isContractorGateOptional),
+            contractorNotice: res.contractorNotice || '',
           });
           return; // hold loading=true until operator responds
         }
@@ -513,6 +515,8 @@ function EntryExitContent({
             divisionName: res.divisionName || '',
             borrowedGateEntry: res.borrowedGateEntry || null,
             registration: res.registration || null,
+            isContractorGateOptional: Boolean(res.isContractorGateOptional),
+            contractorNotice: res.contractorNotice || '',
           });
           return; // hold loading=true until operator responds
         }
@@ -845,6 +849,8 @@ function EntryExitContent({
           registration={autoGateEntryPending.registration}
           divisionName={autoGateEntryPending.divisionName}
           borrowedGateEntry={autoGateEntryPending.borrowedGateEntry}
+          isContractorGateOptional={autoGateEntryPending.isContractorGateOptional}
+          contractorNotice={autoGateEntryPending.contractorNotice}
           loading={autoGateEntryLoading}
           onConfirm={async () => {
             setAutoGateEntryLoading(true);

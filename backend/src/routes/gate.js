@@ -460,6 +460,7 @@ async function createAutoGateEntryLog({
   operator,
   deptLogId,
   deptLogCreatedAt,
+  isContractorGateOptional = false,
 }) {
   const entryPhotoPath = borrowedGateEntry?.photoPath || photoPath || undefined;
   const now = deptLogCreatedAt ? new Date(new Date(deptLogCreatedAt).getTime() - 1000) : new Date();
@@ -481,6 +482,7 @@ async function createAutoGateEntryLog({
     metadata: {
       autoGateEntry: true,
       gateEntryOptional: true,
+      isContractorGateOptional: Boolean(isContractorGateOptional),
       triggeringDeptLogId: deptLogId ? String(deptLogId) : null,
       borrowedFromLogId: borrowedGateEntry?.logId ? String(borrowedGateEntry.logId) : null,
       borrowedFromDivisionId: borrowedGateEntry?.divisionId ? String(borrowedGateEntry.divisionId) : null,
@@ -964,11 +966,15 @@ router.post(
       // optional gate entry and the person has no gate entry today.
       let autoGateLog = null;
       if (deptCheck.needsAutoGateEntry) {
-        if (!autoCreateGateEntry && !deptCheck.isDirectAutoGateEntry) {
-          // First pass: tell the UI to show the confirmation popup.
+        if (!autoCreateGateEntry) {
+          // First pass: tell the UI to show the confirmation popup with clear contractor notification.
           await markGateLogDenied(log, 'no_gate_entry_optional_pending', 'Awaiting operator confirmation for auto gate entry');
           return res.status(202).json({
             needsAutoGateEntry: true,
+            isContractorGateOptional: Boolean(deptCheck.isContractorGateOptional),
+            contractorNotice: deptCheck.isContractorGateOptional
+              ? 'This contractor has no gate entries, so we are directly marking the department entry for the contractor.'
+              : null,
             divisionName: divisionDoc?.name || '',
             borrowedGateEntry: deptCheck.borrowedGateEntry,
             registration: populated,
@@ -976,7 +982,7 @@ router.post(
             qrScan: true,
           });
         }
-        // Second pass or contractor labour direct entry: synthesise the gate-entry log.
+        // Second pass: synthesise the gate-entry log.
         autoGateLog = await createAutoGateEntryLog({
           registrationId: matchedRegistration._id,
           roleId: matchedRegistration.roleId,
@@ -987,6 +993,7 @@ router.post(
           operator: operatorFields(req.user),
           deptLogId: log._id,
           deptLogCreatedAt: log.createdAt,
+          isContractorGateOptional: Boolean(deptCheck.isContractorGateOptional),
         });
         // Refresh the active pass so updateDayPassAfterDepartmentScan uses
         // the newly created gate entry context.
@@ -1516,18 +1523,22 @@ router.post(
 
       // ── Optional gate entry ─────────────────────────────────────────────
       if (deptCheck.needsAutoGateEntry) {
-        if (!autoCreateGateEntry && !deptCheck.isDirectAutoGateEntry) {
-          // First pass: tell the UI to show the confirmation popup.
+        if (!autoCreateGateEntry) {
+          // First pass: tell the UI to show the confirmation popup with clear contractor notification.
           await markGateLogDenied(log, 'no_gate_entry_optional_pending', 'Awaiting operator confirmation for auto gate entry');
           return res.status(202).json({
             needsAutoGateEntry: true,
+            isContractorGateOptional: Boolean(deptCheck.isContractorGateOptional),
+            contractorNotice: deptCheck.isContractorGateOptional
+              ? 'This contractor has no gate entries, so we are directly marking the department entry for the contractor.'
+              : null,
             divisionName: divisionDoc?.name || '',
             borrowedGateEntry: deptCheck.borrowedGateEntry,
             registration: populated,
             matchScore,
           });
         }
-        // Second pass or contractor labour direct entry: synthesise the gate-entry log.
+        // Second pass: synthesise the gate-entry log.
         autoGateLog = await createAutoGateEntryLog({
           registrationId: matchedRegistration._id,
           roleId: matchedRegistration.roleId,
@@ -1538,6 +1549,7 @@ router.post(
           operator: operatorFields(req.user),
           deptLogId: log._id,
           deptLogCreatedAt: log.createdAt,
+          isContractorGateOptional: Boolean(deptCheck.isContractorGateOptional),
         });
         const { registration, role, display } = await loadRegistrationContext(matchedRegistration._id);
         await createOrRefreshDayPass({

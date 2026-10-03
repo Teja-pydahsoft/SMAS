@@ -875,7 +875,7 @@ export async function validateDepartmentScan(pass, department, eventType, regist
         ok: true,
         hasGateEntry: false,
         needsAutoGateEntry: true,
-        isDirectAutoGateEntry: isContractorGateOptional,
+        isContractorGateOptional: Boolean(isContractorGateOptional),
         borrowedGateEntry,
         activeDepartment: null,
       };

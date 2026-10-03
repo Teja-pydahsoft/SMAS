@@ -1,4 +1,9 @@
-import { MIN_ATTENDANCE_HOURS, SCAN_TYPES } from '../constants/index.js';
+import {
+  MIN_ATTENDANCE_HOURS,
+  SCAN_TYPES,
+  FULL_DAY_RATIO,
+  HALF_DAY_RATIO,
+} from '../constants/index.js';
 
 function isGateScanLog(log) {
   if (!log) return false;
@@ -242,7 +247,7 @@ export function getShiftDurationHours(shiftOrStart, endTime) {
   return durationFromStartEnd(shiftOrStart, endTime);
 }
 
-function roundHours(hours) {
+export function roundHours(hours) {
   return Math.round(Number(hours) * 100) / 100;
 }
 
@@ -261,8 +266,8 @@ export function computeHourlyPayFactor(activityHours, shiftTotalHours) {
  * Resolve attendance against shift thresholds using sum of gate in→out segments.
  *
  * Pay rules:
- * - Full-day threshold met → full day pay (1)
- * - Half-day threshold met → half day pay (0.5) as HD
+ * - Full-day threshold met (>= 75% of working hours or explicit fullDayMinHours) → full day pay (1) as P
+ * - Half-day threshold met (>= 50% of working hours or explicit halfDayMinHours) → half day pay (0.5) as HD
  * - Below half-day but on site → hourly proration vs totalHours
  *
  * Double / 1.5 shift only apply when extra hours are continuous. A long
@@ -283,10 +288,16 @@ export function resolveShiftDayStatus(activityHours, shift, options = {}) {
       ? null
       : Number(shift.fullDayMinHours);
 
-  // Fallbacks if thresholds are missing but total duration is known
+  // Fallbacks if thresholds are missing or equal/exceed total hours.
+  // Full-day threshold is 75% of working/shift hours (grace allows full day if >= 75% worked).
+  // Half-day threshold is 50% of working/shift hours.
   if (shiftTotalHours > 0) {
-    if (full === null || Number.isNaN(full)) full = shiftTotalHours;
-    if (half === null || Number.isNaN(half)) half = roundHours(shiftTotalHours / 2);
+    if (full === null || Number.isNaN(full) || full >= shiftTotalHours) {
+      full = roundHours(shiftTotalHours * FULL_DAY_RATIO);
+    }
+    if (half === null || Number.isNaN(half)) {
+      half = roundHours(shiftTotalHours * HALF_DAY_RATIO);
+    }
   }
 
   const hasHalf = half !== null && !Number.isNaN(half);

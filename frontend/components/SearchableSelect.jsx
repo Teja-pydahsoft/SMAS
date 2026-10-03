@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 export default function SearchableSelect({
   options = [],
@@ -12,7 +12,10 @@ export default function SearchableSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [openUpward, setOpenUpward] = useState(false);
+  const [menuStyle, setMenuStyle] = useState({});
   const containerRef = useRef(null);
+  const btnRef = useRef(null);
 
   useEffect(() => {
     function handleClick(e) {
@@ -23,6 +26,38 @@ export default function SearchableSelect({
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
+
+  const computeMenuPosition = useCallback(() => {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const menuH = 280; // max-height of menu
+    const shouldOpenUp = spaceBelow < menuH && spaceAbove > spaceBelow;
+
+    setOpenUpward(shouldOpenUp);
+
+    // On small screens use fixed positioning to escape overflow clipping
+    if (window.innerWidth <= 768) {
+      setMenuStyle({
+        position: 'fixed',
+        left: rect.left,
+        width: rect.width,
+        minWidth: Math.max(rect.width, 200),
+        ...(shouldOpenUp
+          ? { bottom: window.innerHeight - rect.top + 4, top: 'auto' }
+          : { top: rect.bottom + 4, bottom: 'auto' }),
+      });
+    } else {
+      setMenuStyle({});
+    }
+  }, []);
+
+  const handleToggle = () => {
+    if (disabled) return;
+    if (!open) computeMenuPosition();
+    setOpen((v) => !v);
+  };
 
   const getOptVal = (opt) => {
     if (opt == null) return '';
@@ -104,12 +139,13 @@ export default function SearchableSelect({
     <div
       ref={containerRef}
       className="rc-searchable-select-wrap"
-      style={{ position: 'relative', minWidth: '160px' }}
+      style={{ position: 'relative', minWidth: '0' }}
     >
       <button
+        ref={btnRef}
         type="button"
         className={className || 'rc-select'}
-        onClick={() => !disabled && setOpen(!open)}
+        onClick={handleToggle}
         disabled={disabled}
         style={{
           width: '100%',
@@ -134,7 +170,7 @@ export default function SearchableSelect({
           strokeLinejoin="round"
           style={{
             flexShrink: 0,
-            marginLeft: '8px',
+            marginLeft: '6px',
             transform: open ? 'rotate(180deg)' : 'none',
             transition: 'transform 0.15s ease',
           }}
@@ -147,18 +183,23 @@ export default function SearchableSelect({
         <div
           className="rc-searchable-select-menu"
           style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            minWidth: '200px',
-            marginTop: '4px',
+            ...(Object.keys(menuStyle).length > 0
+              ? menuStyle
+              : {
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  minWidth: '200px',
+                  ...(openUpward
+                    ? { bottom: '100%', top: 'auto', marginBottom: '4px' }
+                    : { top: '100%', bottom: 'auto', marginTop: '4px' }),
+                }),
             backgroundColor: '#fff',
             border: '1px solid #d1d5db',
             borderRadius: '6px',
-            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
-            zIndex: 9999,
-            maxHeight: '280px',
+            boxShadow: '0 4px 16px -2px rgba(0,0,0,0.14), 0 2px 6px -1px rgba(0,0,0,0.08)',
+            zIndex: 99999,
+            maxHeight: '260px',
             display: 'flex',
             flexDirection: 'column',
           }}

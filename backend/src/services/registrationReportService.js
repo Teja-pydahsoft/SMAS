@@ -18,6 +18,8 @@ import {
   SHIFT_OVERSTAY_GRACE_MS,
   SCAN_TYPES,
   GATE_EVENT_TYPES,
+  FULL_DAY_RATIO,
+  HALF_DAY_RATIO,
 } from '../constants/index.js';
 import { buildDisplayInfo, photoUrlFromPath } from '../utils/displayInfo.js';
 import {
@@ -36,6 +38,7 @@ import {
   computeDivisionBreaks,
   getShiftDurationHours,
   resolveShiftDayStatus,
+  roundHours,
 } from '../utils/shiftAttendance.js';
 import {
   todayDateStringIst,
@@ -572,6 +575,15 @@ function resolveDayAttendance({
       endTime: shift?.endTime || session?.shiftEndTime || null,
     });
     
+  const defaultFullDayMin =
+    typeof shiftTotalHours === 'number' && shiftTotalHours > 0
+      ? roundHours(shiftTotalHours * FULL_DAY_RATIO)
+      : null;
+  const defaultHalfDayMin =
+    typeof shiftTotalHours === 'number' && shiftTotalHours > 0
+      ? roundHours(shiftTotalHours * HALF_DAY_RATIO)
+      : null;
+
   const shiftMeta = {
     activityHours,
     breakHours: divisionBreaks.breakHours,
@@ -579,8 +591,12 @@ function resolveDayAttendance({
     shiftId: overrideWithWorkingHours ? null : (shift?._id?.toString?.() || shift?.id || session?.shiftId || null),
     shiftName: overrideWithWorkingHours ? null : (shift?.name || session?.shiftName || null),
     shiftTotalHours,
-    halfDayMinHours: overrideWithWorkingHours ? null : (shift?.halfDayMinHours ?? session?.halfDayMinHours ?? null),
-    fullDayMinHours: overrideWithWorkingHours ? null : (shift?.fullDayMinHours ?? session?.fullDayMinHours ?? null),
+    halfDayMinHours: overrideWithWorkingHours
+      ? defaultHalfDayMin
+      : (shift?.halfDayMinHours ?? session?.halfDayMinHours ?? defaultHalfDayMin),
+    fullDayMinHours: overrideWithWorkingHours
+      ? defaultFullDayMin
+      : (shift?.fullDayMinHours ?? session?.fullDayMinHours ?? defaultFullDayMin),
     noGateOut: Boolean(activityWindow.noGateOut || session?.noGateOut),
     closedAtLastActivity: Boolean(activityWindow.noGateOut || session?.noGateOut || session?.autoClosedAtLastActivity),
   };

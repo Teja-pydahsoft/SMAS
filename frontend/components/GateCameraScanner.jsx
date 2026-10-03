@@ -46,24 +46,26 @@ function extractPassCode(rawValue) {
   return null;
 }
 
-// Flip camera icon
+// Flip camera icon — two-arrow camera switch
 function FlipIcon() {
   return (
     <svg
-      width="22"
-      height="22"
+      width="20"
+      height="20"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="2.2"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
     >
-      <path d="M1 4v6h6" />
-      <path d="M23 20v-6h-6" />
-      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10" />
-      <path d="M3.51 15a9 9 0 0 0 14.85 3.36L23 14" />
+      {/* Camera body */}
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      {/* Rotation arrows */}
+      <path d="M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0" />
+      <polyline points="7.5 9.5 9 8 10.5 9.5" />
+      <polyline points="16.5 14.5 15 16 13.5 14.5" />
     </svg>
   );
 }
@@ -93,6 +95,7 @@ export default function GateCameraScanner({
   const [detectedType, setDetectedType] = useState(null); // 'qr' | 'face' | null
   const [facingMode, setFacingMode] = useState('user');   // 'user' | 'environment'
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [flipping, setFlipping] = useState(false);
   const [pendingQr, setPendingQr] = useState(null); // {passCode, raw} when QR detected but not confirmed
   const [blinkPrompt, setBlinkPrompt] = useState(false); // To show 'Please blink' UI
@@ -106,6 +109,8 @@ export default function GateCameraScanner({
   const lastObjDetectTimeRef = useRef(0);
   const poseStatusRef = useRef(false); // true if pose is BAD (warning)
   const blinkPhaseRef = useRef('open'); // 'open' -> 'closed' -> 'open'
+  // When true, startCamera uses facingMode only (ignores selectedDeviceId) — set by flipCamera.
+  const useFacingModeRef = useRef(false);
 
   // ── Init Vision Tasks ───────────────────────────────────────────────────
   useEffect(() => {
@@ -143,8 +148,15 @@ export default function GateCameraScanner({
     return () => { isMounted = false; };
   }, []);
 
-  // ── Detect number of cameras ──────────────────────────────────────────────
+  // ── Detect touch device + number of cameras ───────────────────────────────
   useEffect(() => {
+    // On mobile, enumerateDevices() before permission may only return 1 device
+    // even when front+rear exist. Use touch detection as a reliable fallback
+    // so the flip button always appears on phones/tablets.
+    if (typeof window !== 'undefined') {
+      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      setIsTouchDevice(isTouch);
+    }
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
     navigator.mediaDevices
       .enumerateDevices()
@@ -342,9 +354,14 @@ export default function GateCameraScanner({
       setPendingQr(null);
 
       try {
-        const videoConstraints = selectedDeviceId
-          ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } };
+        // useFacingModeRef is set by flipCamera to force facingMode-based selection.
+        // This bypasses selectedDeviceId (desktop dropdown) so the OS can switch
+        // front/rear cameras on mobile using the facingMode constraint.
+        const bypassDeviceId = useFacingModeRef.current;
+        const videoConstraints =
+          selectedDeviceId && !bypassDeviceId
+            ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+            : { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } };
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: videoConstraints,
@@ -353,8 +370,28 @@ export default function GateCameraScanner({
         if (videoRef.current) videoRef.current.srcObject = stream;
         setActive(true);
         rafRef.current = requestAnimationFrame(scanLoop);
+        // Re-enumerate after permission granted — device labels are now available.
+        navigator.mediaDevices?.enumerateDevices?.().then((devices) => {
+          const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+          if (videoInputs.length > 1) setHasMultipleCameras(true);
+        }).catch(() => {});
       } catch {
-        setError('Camera access denied or unavailable');
+        // Fallback: try without ideal wrapper
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
+          });
+          streamRef.current = stream;
+          if (videoRef.current) videoRef.current.srcObject = stream;
+          setActive(true);
+          rafRef.current = requestAnimationFrame(scanLoop);
+          navigator.mediaDevices?.enumerateDevices?.().then((devices) => {
+            const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+            if (videoInputs.length > 1) setHasMultipleCameras(true);
+          }).catch(() => {});
+        } catch {
+          setError('Camera access denied or unavailable');
+        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -393,7 +430,12 @@ export default function GateCameraScanner({
     stopStream();
     setFacingMode(nextFacing);
     setPendingQr(null); // clear any pending QR when flipping
+    // Force facingMode-based selection so the OS switches cameras on mobile,
+    // ignoring any selectedDeviceId (desktop dropdown) that would otherwise lock
+    // the stream to the same physical device.
+    useFacingModeRef.current = true;
     await startCamera(nextFacing);
+    useFacingModeRef.current = false;
     setFlipping(false);
   }, [flipping, active, facingMode, stopStream, startCamera]);
 
@@ -607,17 +649,20 @@ export default function GateCameraScanner({
           </div>
         )}
 
-        {/* Flip camera button — inside viewport, top-left */}
-        {active && !preview && !pendingQr && hasMultipleCameras && (
+        {/* Flip camera button — top-right, shown on mobile (touch) or when multiple cameras detected */}
+        {active && !preview && !pendingQr && (isTouchDevice || hasMultipleCameras) && (
           <button
             type="button"
             className="gate-cam-scanner__flip-btn"
             onClick={flipCamera}
             disabled={flipping || processing}
-            aria-label="Switch camera"
-            title="Switch camera"
+            aria-label={facingMode === 'user' ? 'Switch to rear camera' : 'Switch to front camera'}
+            title={facingMode === 'user' ? 'Switch to rear camera' : 'Switch to front camera'}
           >
             <FlipIcon />
+            <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.03em', lineHeight: 1 }}>
+              {flipping ? '…' : facingMode === 'user' ? 'REAR' : 'FRONT'}
+            </span>
           </button>
         )}
 

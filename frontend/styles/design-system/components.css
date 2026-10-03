@@ -1409,6 +1409,13 @@
   z-index: 25;
 }
 
+@media (max-width: 480px) {
+  .entry-exit-selector {
+    padding: 10px 12px;
+    margin-bottom: var(--space-2);
+  }
+}
+
 .entry-exit-selector__type {
   margin-bottom: 10px;
 }
@@ -2403,6 +2410,33 @@
   }
 }
 
+/* On very small screens, collapse to 2-row: [Division | Gate/Dept] then [Action full-width] */
+@media (max-width: 480px) {
+  .gate-select-grid,
+  .gate-select-grid--3col {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+  .gate-select-grid > div:nth-child(3),
+  .gate-select-grid--3col > div:nth-child(3) {
+    grid-column: span 2 !important;
+  }
+  .gate-select-grid label,
+  .gate-select-grid--3col label {
+    font-size: 0.72rem !important;
+  }
+  .gate-select-grid select,
+  .gate-select-grid input,
+  .gate-select-grid button,
+  .gate-select-grid--3col select,
+  .gate-select-grid--3col input,
+  .gate-select-grid--3col button {
+    font-size: 0.8rem !important;
+    height: 38px !important;
+    padding: 6px 8px !important;
+  }
+}
+
 .gate-select-grid--4col {
   grid-template-columns: repeat(4, 1fr);
 }
@@ -2686,26 +2720,31 @@
 
 .gate-cam-scanner__flip-btn {
   position: absolute;
-  top: 8px; left: 8px;
+  top: 10px; right: 10px;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px; height: 34px;
+  gap: 5px;
+  padding: 7px 13px 7px 10px;
   border: none;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.4);
-  color: #fff;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111;
   cursor: pointer;
-  transition: background var(--transition);
-  backdrop-filter: blur(4px);
+  font-family: inherit;
+  transition: background 0.15s, transform 0.12s;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+  -webkit-tap-highlight-color: transparent;
 }
 
-.gate-cam-scanner__flip-btn:hover:not(:disabled) { background: rgba(0,0,0,0.6); }
-.gate-cam-scanner__flip-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.gate-cam-scanner__flip-btn:hover:not(:disabled) { background: #fff; transform: scale(1.05); }
+.gate-cam-scanner__flip-btn:active:not(:disabled) { transform: scale(0.96); }
+.gate-cam-scanner__flip-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .gate-cam-scanner__badge {
-  position: absolute; top: 8px; right: 8px;
+  position: absolute; top: 10px; left: 10px;
   padding: 3px 9px;
   border-radius: var(--radius-full);
   font-size: var(--text-10);

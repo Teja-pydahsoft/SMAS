@@ -78,6 +78,12 @@ export const OVERSTAY_RENOTIFY_INTERVAL_MS = 30 * 60 * 1000;
 /** Minimum on-site hours required for a day to count as attendance (else Absent). */
 export const MIN_ATTENDANCE_HOURS = 1;
 
+/** Ratio of working/shift hours required to qualify for Full Day attendance (75% grace cutoff). */
+export const FULL_DAY_RATIO = 0.75;
+
+/** Ratio of working/shift hours required to qualify for Half Day attendance (50%). */
+export const HALF_DAY_RATIO = 0.5;
+
 export const SCAN_TYPES = {
   GATE: 'gate',
   DEPARTMENT: 'department',

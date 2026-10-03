@@ -15,6 +15,8 @@ import {
   DUPLICATE_SCAN_WINDOW_MS,
   DAY_PASS_DURATION_MS,
   SHIFT_OVERSTAY_GRACE_MS,
+  FULL_DAY_RATIO,
+  HALF_DAY_RATIO,
 } from '../constants/index.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
 import { buildQrDataUrl, formatPassResponse } from './passService.js';
@@ -27,7 +29,7 @@ import {
   resolveDayPassValidUntil,
   shiftEndAtIst,
 } from '../utils/istTime.js';
-import { getShiftDurationHours } from '../utils/shiftAttendance.js';
+import { getShiftDurationHours, roundHours } from '../utils/shiftAttendance.js';
 
 export function todayDateString(date = new Date()) {
   return todayDateStringIst(date);
@@ -1095,7 +1097,11 @@ export async function createOrRefreshDayPass({
           fullDayMinHours: shiftSnapshot.fullDayMinHours,
         }
       : resolvedHours
-        ? { totalHours: resolvedHours }
+        ? {
+            totalHours: resolvedHours,
+            halfDayMinHours: roundHours(resolvedHours * HALF_DAY_RATIO),
+            fullDayMinHours: roundHours(resolvedHours * FULL_DAY_RATIO),
+          }
         : {}),
   };
 

@@ -99,7 +99,8 @@ export default function GateCameraScanner({
   const [flipping, setFlipping] = useState(false);
   const [pendingQr, setPendingQr] = useState(null); // {passCode, raw} when QR detected but not confirmed
   const [blinkPrompt, setBlinkPrompt] = useState(false); // To show 'Please blink' UI
-  const [poseWarning, setPoseWarning] = useState(false); // True if shoulders not detected or face wrong size
+  const [poseWarning, setPoseWarning] = useState(false); // True if face is severely off-center
+  const [faceDetected, setFaceDetected] = useState(false); // True when face is present in frame
 
   const capturingRef = useRef(false);
   const faceLandmarkerRef = useRef(null);
@@ -206,6 +207,7 @@ export default function GateCameraScanner({
     setPendingQr(null);
     setBlinkPrompt(false);
     setPoseWarning(false);
+    setFaceDetected(false);
   }, [stopStream]);
 
   useEffect(() => () => stopStream(), [stopStream]);
@@ -259,7 +261,8 @@ export default function GateCameraScanner({
                 results = landmarker.detectForVideo(video, nowMs);
                 lastFaceDetectTimeRef.current = nowMs;
 
-                let hasAlignmentWarning = true; // Assume bad pose / not centered unless proven otherwise
+                let isFaceFound = false;
+                let isBadlyAligned = false;
 
                 if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
                   const faceMarks = results.faceLandmarks[0];
@@ -269,29 +272,32 @@ export default function GateCameraScanner({
                   const bottomPoint = faceMarks[152];
 
                   if (leftPoint && rightPoint && topPoint && bottomPoint) {
+                    isFaceFound = true;
                     const faceCenterX = (leftPoint.x + rightPoint.x) / 2;
                     const faceCenterY = (topPoint.y + bottomPoint.y) / 2;
                     const faceWidth = Math.abs(rightPoint.x - leftPoint.x);
 
-                    // Target frame oval is centered at X = 0.50, Y = 0.39
-                    const isXCentered = faceCenterX >= 0.32 && faceCenterX <= 0.68;
-                    const isYCentered = faceCenterY >= 0.18 && faceCenterY <= 0.60;
-                    const isSizeValid = faceWidth >= 0.12 && faceWidth <= 0.42;
+                    // Generous and realistic tolerances for mobile & desktop cameras:
+                    // Face is valid when reasonably inside the camera view.
+                    const isXCentered = faceCenterX >= 0.15 && faceCenterX <= 0.85;
+                    const isYCentered = faceCenterY >= 0.10 && faceCenterY <= 0.85;
+                    const isSizeValid = faceWidth >= 0.08 && faceWidth <= 0.85;
 
-                    if (isXCentered && isYCentered && isSizeValid) {
-                      hasAlignmentWarning = false; // Face is inside the outline frame!
+                    if (!isXCentered || !isYCentered || !isSizeValid) {
+                      isBadlyAligned = true; // Only warn if face is cut off at the extreme edge
                     }
                   }
                 }
 
-                poseStatusRef.current = hasAlignmentWarning;
-                setPoseWarning(hasAlignmentWarning);
+                setFaceDetected(isFaceFound);
+                poseStatusRef.current = isBadlyAligned;
+                setPoseWarning(isBadlyAligned);
               } finally {
                 console.log = _log; console.info = _info; console.warn = _warn; console.error = _error;
               }
 
               // Use the synchronous ref for anti-spoofing check
-              if (poseStatusRef.current || !eyeBlinkEnabled) {
+              if (!isFaceFound || poseStatusRef.current || !eyeBlinkEnabled) {
                 setBlinkPrompt(false);
                 blinkPhaseRef.current = 'open';
               } else {
@@ -301,7 +307,7 @@ export default function GateCameraScanner({
                   const leftBlink = shapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
                   const rightBlink = shapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
                   
-                  const isClosed = (leftBlink > 0.4 && rightBlink > 0.4);
+                  const isClosed = (leftBlink > 0.35 && rightBlink > 0.35) || ((leftBlink + rightBlink) / 2 > 0.38);
                   
                   if (blinkPhaseRef.current === 'open' && isClosed) {
                     blinkPhaseRef.current = 'closed';
@@ -451,7 +457,6 @@ export default function GateCameraScanner({
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || processing || preview || capturingRef.current) return;
-    if (poseStatusRef.current) return; // Block capture if person is not aligned inside frame
     capturingRef.current = true;
 
     if (video.videoWidth === 0 || video.videoHeight === 0) {
@@ -514,6 +519,8 @@ export default function GateCameraScanner({
     blinkPhaseRef.current = 'open';
     setPreview(null);
     setDetectedType(null);
+    setFaceDetected(false);
+    setPoseWarning(false);
     onFaceCapture?.(null);
     if (active) {
       rafRef.current = requestAnimationFrame(scanLoop);
@@ -565,7 +572,7 @@ export default function GateCameraScanner({
               xmlns="http://www.w3.org/2000/svg"
               style={{ transition: 'all 0.3s ease-in-out', maxHeight: '100%', maxWidth: '100%' }}
             >
-              <g stroke={poseWarning ? "#ef4444" : blinkPrompt ? "#3b82f6" : "#4ade80"}>
+              <g stroke={poseWarning ? "#f59e0b" : blinkPrompt ? "#3b82f6" : faceDetected ? "#4ade80" : "rgba(255,255,255,0.7)"}>
                 {/* Corner Brackets */}
                 <path d="M 20,80 L 20,20 L 80,20" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M 280,80 L 280,20 L 220,20" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
@@ -680,20 +687,20 @@ export default function GateCameraScanner({
       {active && !preview && !processing && !pendingQr && (
         <>
           {poseWarning ? (
-            <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: 'bold', color: 'var(--color-danger, #ef4444)' }}>
-              Please position your face inside the center outline frame.
+            <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: 'bold', color: 'var(--color-warning, #f59e0b)' }}>
+              Please center your face inside the frame.
             </p>
           ) : (
-            <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: blinkPrompt ? 'bold' : 'normal', color: blinkPrompt ? 'var(--primary)' : 'inherit' }}>
+            <p className="gate-cam-scanner__hint field-hint" style={{ fontWeight: blinkPrompt || faceDetected ? 'bold' : 'normal', color: blinkPrompt ? 'var(--primary)' : faceDetected ? 'var(--color-success, #16a34a)' : 'inherit' }}>
               {blinkPrompt
                 ? 'Please blink your eyes to capture...'
-                : qrSupported
+                : faceDetected
                   ? eyeBlinkEnabled
-                    ? 'Show QR code, or align face inside frame to capture'
+                    ? 'Face aligned — please blink to capture'
                     : 'Face aligned — press Capture to scan'
                   : eyeBlinkEnabled
-                    ? 'Align face inside frame to capture'
-                    : 'Face aligned — press Capture to scan'}
+                    ? 'Position face inside frame to scan'
+                    : 'Position face inside frame or press Capture'}
             </p>
           )}
         </>
@@ -701,12 +708,12 @@ export default function GateCameraScanner({
 
       {/* ── Action row ── */}
       <div className="camera-actions">
-        {showCapture && !eyeBlinkEnabled && (
+        {showCapture && (
           <button
             type="button"
             className="btn-primary"
             onClick={captureFrame}
-            disabled={processing || poseWarning}
+            disabled={processing}
           >
             {captureLabel}
           </button>

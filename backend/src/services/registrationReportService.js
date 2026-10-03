@@ -1824,7 +1824,7 @@ export async function getAttendanceHistoryGrid({
 
   // Fetch only the registrations for the current page
   const pageRegs = await Registration.find(regQuery)
-    .select({ _id: 1, formData: 1, registrationCode: 1, roleId: 1, payFrequency: 1, formId: 1, createdAt: 1, photoPath: 1, customPayDays: 1, payAmount: 1, displayName: 1, displayPhone: 1, selections: 1 })
+    .select({ _id: 1, formData: 1, registrationCode: 1, roleId: 1, payFrequency: 1, formId: 1, createdAt: 1, photoPath: 1, customPayDays: 1, payAmount: 1, displayName: 1, displayPhone: 1, selections: 1, workingHours: 1, shiftId: 1 })
     .populate('roleId', 'name slug')
     .populate('formId', 'fields')
     .sort({ createdAt: 1 })

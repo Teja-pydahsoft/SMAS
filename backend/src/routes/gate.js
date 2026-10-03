@@ -43,6 +43,7 @@ import {
   forceCheckoutActiveDepartment,
   findLatestGateEntryAnyDivision,
   getTodayLogsForRegistration,
+  isRegistrationGateOptionalByPayCategory,
 } from '../services/attendanceService.js';
 import { startOfDayIst, endOfDayIst } from '../utils/istTime.js';
 import { getRequiredSteps } from '../constants/accessRules.js';
@@ -916,7 +917,15 @@ router.post(
 
       // Load division to check gateEntryRequired
       const divisionDoc = await Division.findById(divisionId).select('gateEntryRequired name').lean();
-      const gateEntryOptional = divisionDoc ? divisionDoc.gateEntryRequired === false : false;
+      let gateEntryOptional = divisionDoc ? divisionDoc.gateEntryRequired === false : false;
+
+      const isContractorGateOptional = await isRegistrationGateOptionalByPayCategory(
+        matchedRegistration._id,
+        matchedRegistration.roleId
+      );
+      if (isContractorGateOptional) {
+        gateEntryOptional = true;
+      }
 
       const deptCheck = await validateDepartmentScan(
         activePass,
@@ -924,7 +933,10 @@ router.post(
         resolvedDeptEventType,
         matchedRegistration._id,
         divisionId,
-        { gateEntryOptional }
+        {
+          gateEntryOptional,
+          isContractorGateOptional,
+        }
       );
       if (!deptCheck.ok) {
         const denialDayPass = deptCheck.pass
@@ -948,11 +960,11 @@ router.post(
       }
 
       // ── Optional gate entry ─────────────────────────────────────────────
-      // deptCheck.needsAutoGateEntry is set when the division allows optional
-      // gate entry and the person has no gate entry today.
+      // deptCheck.needsAutoGateEntry is set when the division or pay category allows
+      // optional gate entry and the person has no gate entry today.
       let autoGateLog = null;
       if (deptCheck.needsAutoGateEntry) {
-        if (!autoCreateGateEntry) {
+        if (!autoCreateGateEntry && !deptCheck.isDirectAutoGateEntry) {
           // First pass: tell the UI to show the confirmation popup.
           await markGateLogDenied(log, 'no_gate_entry_optional_pending', 'Awaiting operator confirmation for auto gate entry');
           return res.status(202).json({
@@ -964,7 +976,7 @@ router.post(
             qrScan: true,
           });
         }
-        // Second pass: operator confirmed — synthesise the gate-entry log.
+        // Second pass or contractor labour direct entry: synthesise the gate-entry log.
         autoGateLog = await createAutoGateEntryLog({
           registrationId: matchedRegistration._id,
           roleId: matchedRegistration.roleId,
@@ -1460,7 +1472,15 @@ router.post(
 
       // Load division to check gateEntryRequired
       const divisionDoc = await Division.findById(divisionId).select('gateEntryRequired name').lean();
-      const gateEntryOptional = divisionDoc ? divisionDoc.gateEntryRequired === false : false;
+      let gateEntryOptional = divisionDoc ? divisionDoc.gateEntryRequired === false : false;
+
+      const isContractorGateOptional = await isRegistrationGateOptionalByPayCategory(
+        matchedRegistration._id,
+        matchedRegistration.roleId
+      );
+      if (isContractorGateOptional) {
+        gateEntryOptional = true;
+      }
 
       const deptCheck = await validateDepartmentScan(
         activePass,
@@ -1468,7 +1488,10 @@ router.post(
         resolvedDeptEventType,
         matchedRegistration._id,
         divisionId,
-        { gateEntryOptional }
+        {
+          gateEntryOptional,
+          isContractorGateOptional,
+        }
       );
       if (!deptCheck.ok) {
         const denialDayPass = deptCheck.pass
@@ -1493,7 +1516,7 @@ router.post(
 
       // ── Optional gate entry ─────────────────────────────────────────────
       if (deptCheck.needsAutoGateEntry) {
-        if (!autoCreateGateEntry) {
+        if (!autoCreateGateEntry && !deptCheck.isDirectAutoGateEntry) {
           // First pass: tell the UI to show the confirmation popup.
           await markGateLogDenied(log, 'no_gate_entry_optional_pending', 'Awaiting operator confirmation for auto gate entry');
           return res.status(202).json({
@@ -1504,7 +1527,7 @@ router.post(
             matchScore,
           });
         }
-        // Second pass: operator confirmed — synthesise the gate-entry log.
+        // Second pass or contractor labour direct entry: synthesise the gate-entry log.
         autoGateLog = await createAutoGateEntryLog({
           registrationId: matchedRegistration._id,
           roleId: matchedRegistration.roleId,
@@ -1976,7 +1999,9 @@ router.get(
       settings = await SystemSetting.create({ singleton: 'singleton' });
     }
     const eyeBlinkVerificationEnabled = settings.gateSettings?.eyeBlinkVerificationEnabled ?? true;
-    res.json({ eyeBlinkVerificationEnabled });
+    const labourPayCategoryGateEntryOptional = settings.gateSettings?.labourPayCategoryGateEntryOptional ?? false;
+    const optionalGatePayCategories = settings.gateSettings?.optionalGatePayCategories || ['contract', 'contractor', 'contractors', 'contracters', 'contracter'];
+    res.json({ eyeBlinkVerificationEnabled, labourPayCategoryGateEntryOptional, optionalGatePayCategories });
   })
 );
 
@@ -1989,7 +2014,11 @@ router.get(
       settings = await SystemSetting.create({ singleton: 'singleton' });
     }
     if (!settings.gateSettings) {
-      settings.gateSettings = { eyeBlinkVerificationEnabled: true };
+      settings.gateSettings = {
+        eyeBlinkVerificationEnabled: true,
+        labourPayCategoryGateEntryOptional: false,
+        optionalGatePayCategories: ['contract', 'contractor', 'contractors', 'contracters', 'contracter'],
+      };
       await settings.save();
     }
     res.json(settings.gateSettings);
@@ -2000,12 +2029,17 @@ router.get(
 router.put(
   '/settings',
   asyncHandler(async (req, res) => {
-    const { eyeBlinkVerificationEnabled } = req.body;
+    const { eyeBlinkVerificationEnabled, labourPayCategoryGateEntryOptional, optionalGatePayCategories } = req.body;
     let settings = await SystemSetting.findOne({ singleton: 'singleton' });
     if (!settings) settings = new SystemSetting({ singleton: 'singleton' });
 
     settings.gateSettings = {
-      eyeBlinkVerificationEnabled: eyeBlinkVerificationEnabled !== undefined ? Boolean(eyeBlinkVerificationEnabled) : true,
+      ...(settings.gateSettings || {}),
+      eyeBlinkVerificationEnabled: eyeBlinkVerificationEnabled !== undefined ? Boolean(eyeBlinkVerificationEnabled) : (settings.gateSettings?.eyeBlinkVerificationEnabled ?? true),
+      labourPayCategoryGateEntryOptional: labourPayCategoryGateEntryOptional !== undefined ? Boolean(labourPayCategoryGateEntryOptional) : (settings.gateSettings?.labourPayCategoryGateEntryOptional ?? false),
+      optionalGatePayCategories: Array.isArray(optionalGatePayCategories)
+        ? optionalGatePayCategories.map(s => String(s).trim().toLowerCase()).filter(Boolean)
+        : (settings.gateSettings?.optionalGatePayCategories || ['contract', 'contractor', 'contractors', 'contracters', 'contracter']),
     };
     await settings.save();
     res.json(settings.gateSettings);

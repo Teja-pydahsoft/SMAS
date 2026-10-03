@@ -2,6 +2,11 @@ import Pass from '../models/Pass.js';
 import GateLog from '../models/GateLog.js';
 import Division from '../models/Division.js';
 import Department from '../models/Department.js';
+import Shift from '../models/Shift.js';
+import SystemSetting from '../models/SystemSetting.js';
+import Registration from '../models/Registration.js';
+import RegistrationForm from '../models/RegistrationForm.js';
+import Role from '../models/Role.js';
 import {
   PASS_TYPES,
   GATE_EVENT_TYPES,
@@ -23,7 +28,6 @@ import {
   shiftEndAtIst,
 } from '../utils/istTime.js';
 import { getShiftDurationHours } from '../utils/shiftAttendance.js';
-import Shift from '../models/Shift.js';
 
 export function todayDateString(date = new Date()) {
   return todayDateStringIst(date);
@@ -733,6 +737,85 @@ export async function findLatestGateEntryAnyDivision(registrationId) {
 }
 
 /**
+ * Check if a labour registration belongs to an exempt/optional pay category (e.g. Contractors)
+ * when labourPayCategoryGateEntryOptional is enabled in Gate & System Settings.
+ */
+export async function isRegistrationGateOptionalByPayCategory(registrationId, roleId = null) {
+  try {
+    const settings = await SystemSetting.findOne({ singleton: 'singleton' }).lean();
+    if (!settings?.gateSettings?.labourPayCategoryGateEntryOptional) {
+      return false;
+    }
+
+    const reg = await Registration.findById(registrationId)
+      .select('formData selections roleId formId')
+      .lean();
+    if (!reg) return false;
+
+    // Check if role is labour (or if roleId provided)
+    let isLabour = true;
+    const targetRoleId = roleId || reg.roleId;
+    if (targetRoleId) {
+      const roleDoc = await Role.findById(targetRoleId).select('name slug').lean();
+      if (roleDoc) {
+        const slug = String(roleDoc.slug || '').toLowerCase();
+        const name = String(roleDoc.name || '').toLowerCase();
+        isLabour = slug.includes('labour') || name.includes('labour') || slug === 'labor' || name === 'labor';
+      }
+    }
+    if (!isLabour) return false;
+
+    // Find pay category value from selections, formData, or direct fields
+    let payCategoryVal = '';
+
+    // 1. Check selections
+    if (Array.isArray(reg.selections)) {
+      const found = reg.selections.find(
+        (s) => s.label && String(s.label).toLowerCase().trim().includes('pay category')
+      );
+      if (found?.value) payCategoryVal = String(found.value).trim();
+    }
+
+    // 2. Check formData
+    if (!payCategoryVal && reg.formData && typeof reg.formData === 'object') {
+      if (reg.formData.payCategory) {
+        payCategoryVal = String(reg.formData.payCategory).trim();
+      } else if (reg.formData.pay_category) {
+        payCategoryVal = String(reg.formData.pay_category).trim();
+      } else if (reg.formData['Pay Category']) {
+        payCategoryVal = String(reg.formData['Pay Category']).trim();
+      } else if (reg.formId) {
+        const formDoc = await RegistrationForm.findById(reg.formId).select('fields').lean();
+        if (formDoc?.fields) {
+          const payField = formDoc.fields.find(
+            (f) => f.label && String(f.label).toLowerCase().trim().includes('pay category')
+          );
+          if (payField && reg.formData[payField.fieldId] != null) {
+            payCategoryVal = String(reg.formData[payField.fieldId]).trim();
+          }
+        }
+      }
+    }
+
+    if (!payCategoryVal) return false;
+
+    const normalizedVal = payCategoryVal.toLowerCase();
+    const targetCategories = (settings.gateSettings.optionalGatePayCategories || ['contract', 'contractor', 'contractors', 'contracters', 'contracter'])
+      .map((c) => String(c).toLowerCase().trim());
+
+    // Check if matches contractors / contracters or configured category
+    const isExempt = targetCategories.some(
+      (cat) => normalizedVal === cat || normalizedVal.includes(cat) || cat.includes(normalizedVal)
+    );
+
+    return Boolean(isExempt);
+  } catch (err) {
+    console.error('Error checking isRegistrationGateOptionalByPayCategory:', err);
+    return false;
+  }
+}
+
+/**
  * Validate a department check-in / check-out.
  *
  * @param {object}  options
@@ -740,9 +823,11 @@ export async function findLatestGateEntryAnyDivision(registrationId) {
  *   the NO_GATE_ENTRY denial is skipped.  Instead the function returns
  *   { ok: true, needsAutoGateEntry: true, borrowedGateEntry } so the caller
  *   can create a synthetic gate-entry GateLog before proceeding.
+ * @param {boolean} options.isContractorGateOptional When true, gate entry is directly optional
+ *   for contractor labours and does not require operator prompt confirmation.
  */
 export async function validateDepartmentScan(pass, department, eventType, registrationId, divisionId, options = {}) {
-  const { gateEntryOptional = false } = options;
+  const { gateEntryOptional = false, isContractorGateOptional = false } = options;
   const state = getPassSessionState(pass);
   const activeSession = await getActiveDivisionSession(registrationId);
   const targetDivisionId = divisionId.toString();
@@ -770,17 +855,27 @@ export async function validateDepartmentScan(pass, department, eventType, regist
   const activeDepartment = activeDepartmentFromState(state);
 
   if (!hasGateEntry) {
-    // ── Division Gate Entry Optional mode ─────────────────────────────────
-    // When the division is configured as optional we do NOT block the scan.
+    // ── Division Gate Entry Optional mode / Contractor Labour Exemption ──
+    // When gate entry is optional we do NOT block the scan.
     // Instead we tell the caller that it needs to auto-create a gate entry
-    // first, passing along the best available reference entry (from any
-    // division today) so time + photo can be reused.
+    // first, passing along the best available reference entry.
     if (gateEntryOptional) {
+      // If exiting department and already checked in, allow checkout directly
+      if (eventType === GATE_EVENT_TYPES.EXIT && state.currentDepartmentId === department._id.toString()) {
+        return {
+          ok: true,
+          hasGateEntry: false,
+          needsAutoGateEntry: false,
+          activeDepartment,
+        };
+      }
+
       const borrowedGateEntry = await findLatestGateEntryAnyDivision(registrationId);
       return {
         ok: true,
         hasGateEntry: false,
         needsAutoGateEntry: true,
+        isDirectAutoGateEntry: isContractorGateOptional,
         borrowedGateEntry,
         activeDepartment: null,
       };

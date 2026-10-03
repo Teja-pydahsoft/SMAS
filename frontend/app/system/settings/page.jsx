@@ -6,7 +6,11 @@ import { api } from '@/lib/api/client';
 import AdminIcon from '@/components/admin/AdminIcons';
 
 export default function SystemSettingsPage() {
-  const [settings, setSettings] = useState({ eyeBlinkVerificationEnabled: true });
+  const [settings, setSettings] = useState({
+    eyeBlinkVerificationEnabled: true,
+    labourPayCategoryGateEntryOptional: false,
+    optionalGatePayCategories: ['contract', 'contractor', 'contractors', 'contracters', 'contracter'],
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -19,6 +23,8 @@ export default function SystemSettingsPage() {
         if (data) {
           setSettings({
             eyeBlinkVerificationEnabled: data.eyeBlinkVerificationEnabled ?? true,
+            labourPayCategoryGateEntryOptional: data.labourPayCategoryGateEntryOptional ?? false,
+            optionalGatePayCategories: data.optionalGatePayCategories || ['contract', 'contractor', 'contractors', 'contracters', 'contracter'],
           });
         }
         setLoading(false);
@@ -37,6 +43,13 @@ export default function SystemSettingsPage() {
     }));
   };
 
+  const handleToggleLabourPayCategoryOptional = () => {
+    setSettings(prev => ({
+      ...prev,
+      labourPayCategoryGateEntryOptional: !prev.labourPayCategoryGateEntryOptional,
+    }));
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
@@ -45,6 +58,8 @@ export default function SystemSettingsPage() {
       const updated = await api.gate.updateSettings(settings);
       setSettings({
         eyeBlinkVerificationEnabled: updated.eyeBlinkVerificationEnabled ?? true,
+        labourPayCategoryGateEntryOptional: updated.labourPayCategoryGateEntryOptional ?? false,
+        optionalGatePayCategories: updated.optionalGatePayCategories || ['contract', 'contractor', 'contractors', 'contracters', 'contracter'],
       });
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -70,7 +85,7 @@ export default function SystemSettingsPage() {
   return (
     <PageShell 
       title="Gate & System Settings" 
-      description="Configure gate verification behaviors and liveness options."
+      description="Configure gate verification behaviors, liveness options, and access rules."
       toolbar={toolbar}
     >
       <div className="admin-page-content" style={{ marginTop: '1.5rem', maxWidth: '800px' }}>
@@ -94,12 +109,12 @@ export default function SystemSettingsPage() {
         ) : (
           <div className="admin-panel glass-panel admin-fade-in" style={{ padding: '2rem' }}>
             <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.25rem', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-              Entry & Exit Verification
+              Entry & Exit Access Settings
             </h3>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
               
-              {/* TOGGLE: Eye Blink Verification */}
+              {/* TOGGLE 1: Eye Blink Verification */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '2rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
                   <span style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-primary)' }}>
@@ -136,6 +151,62 @@ export default function SystemSettingsPage() {
                     position: 'absolute',
                     top: '3px',
                     left: settings.eyeBlinkVerificationEnabled ? '29px' : '3px',
+                    transition: 'left 0.2s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                  }} />
+                </button>
+              </div>
+
+              {/* TOGGLE 2: Labour Pay Category Gate Entry Optional */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '2rem', paddingTop: '1.75rem', borderTop: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-primary)' }}>
+                      Labour Pay Category Gate Entry Optional
+                    </span>
+                    <span className="badge badge-info" style={{ fontSize: '11px', textTransform: 'uppercase' }}>
+                      Contractors Exemption
+                    </span>
+                  </div>
+                  <span className="text-muted" style={{ fontSize: '0.875rem' }}>
+                    When enabled, labourers whose Pay Category is marked as <strong>Contractors</strong> (or Contract) do not require prior division gate entry. They can directly enter and exit departments with respect to their division without being blocked by division gate entry rules.
+                  </span>
+                  {settings.labourPayCategoryGateEntryOptional && (
+                    <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)' }}>Exempt Categories:</span>
+                      <span className="badge badge-warning" style={{ fontSize: '11px' }}>Contractors / Contracters</span>
+                      <span className="badge badge-secondary" style={{ fontSize: '11px' }}>Contract</span>
+                      <span style={{ fontSize: '0.75rem', color: '#16a34a', marginLeft: '6px', fontWeight: '600' }}>● Direct Department Entry & Exit Active</span>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Switch Toggle */}
+                <button 
+                  type="button"
+                  onClick={handleToggleLabourPayCategoryOptional}
+                  style={{
+                    width: '54px',
+                    height: '28px',
+                    borderRadius: '9999px',
+                    backgroundColor: settings.labourPayCategoryGateEntryOptional ? 'var(--primary)' : 'var(--border-color)',
+                    border: 'none',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s',
+                    flexShrink: 0,
+                    padding: 0
+                  }}
+                  aria-pressed={settings.labourPayCategoryGateEntryOptional}
+                >
+                  <div style={{
+                    width: '22px',
+                    height: '22px',
+                    borderRadius: '50%',
+                    backgroundColor: '#fff',
+                    position: 'absolute',
+                    top: '3px',
+                    left: settings.labourPayCategoryGateEntryOptional ? '29px' : '3px',
                     transition: 'left 0.2s',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
                   }} />

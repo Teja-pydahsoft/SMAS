@@ -334,16 +334,6 @@ export default function GateCameraScanner({
     rafRef.current = requestAnimationFrame(scanLoop);
   }, [pendingQr, processing, preview, qrSupported]); // captureFrame is defined below, so we rely on refs
 
-  // ── Toggle Fullscreen ─────────────────────────────────────────────────────
-  const toggleFullscreen = useCallback(() => {
-    const el = containerRef.current || videoRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.().catch(() => {});
-    } else {
-      document.exitFullscreen?.().catch(() => {});
-    }
-  }, []);
 
   // ── Start camera with a given facingMode or selectedDeviceId ─────────────
   const startCamera = useCallback(
@@ -673,24 +663,13 @@ export default function GateCameraScanner({
           </div>
         )}
 
-        {/* Viewport bottom overlay: Camera name and gate name, plus fullscreen */}
+        {/* Viewport bottom overlay: Camera name and gate name */}
         {active && !preview && (
           <div className="ee-cam-overlay">
             <span className="ee-cam-overlay__label">
               <span className="ee-cam-overlay__dot" />
               {cameraDeviceLabel || 'Camera 1 - Entrance'} | {stationLabel || 'Main Gate'}
             </span>
-            <button
-              type="button"
-              className="ee-cam-overlay__fs-btn"
-              onClick={toggleFullscreen}
-              title="Fullscreen"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
-                <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-            </button>
           </div>
         )}
       </div>

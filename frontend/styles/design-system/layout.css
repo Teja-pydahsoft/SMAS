@@ -59,6 +59,11 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Gate layout override: prevent outer scroll, let detail panel scroll internally */
+.page-body:has(.gate-layout) {
+  overflow-y: hidden;
+}
+
 /* ── Admin content page shell override ── */
 .admin-content .page-shell {
   width: 100%;

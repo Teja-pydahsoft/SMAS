@@ -136,9 +136,30 @@ export default function EntryExitSelector({
       }
 
       if (patch.divisionId !== undefined && patch.divisionId !== prev.divisionId) {
-        next.gateId = '';
-        next.departmentId = '';
-        next.eventType = prev.scanType === 'department' ? 'auto' : 'entry';
+        const div = divisionOptions.find((d) => d._id === patch.divisionId);
+        const gates = div?.gates || [];
+        const depts = div?.departments || [];
+
+        if (next.scanType === 'gate' && gates.length === 1) {
+          const singleGate = gates[0];
+          next.gateId = singleGate._id;
+          const events = singleGate?.allowedEvents || [];
+          if (events.includes('auto')) next.eventType = 'auto';
+          else if (events.includes('entry')) next.eventType = 'entry';
+          else if (events.includes('exit')) next.eventType = 'exit';
+          else next.eventType = singleGate?.gateType === 'both' ? 'auto' : 'entry';
+        } else {
+          next.gateId = '';
+          next.eventType = 'entry';
+        }
+
+        if (next.scanType === 'department' && depts.length === 1) {
+          const singleDept = depts[0];
+          next.departmentId = singleDept._id;
+          next.eventType = 'auto';
+        } else {
+          next.departmentId = '';
+        }
       }
 
       if (patch.gateId !== undefined && patch.gateId !== prev.gateId) {
@@ -162,6 +183,43 @@ export default function EntryExitSelector({
       return next;
     });
   }
+
+  // Auto-select gate if the selected division has exactly one gate
+  useEffect(() => {
+    if (draft.scanType === 'gate' && draft.divisionId && gateOptions.length === 1 && !draft.gateId) {
+      const singleGate = gateOptions[0];
+      const events = singleGate?.allowedEvents || [];
+      let eventType = 'entry';
+      if (events.includes('auto')) eventType = 'auto';
+      else if (events.includes('entry')) eventType = 'entry';
+      else if (events.includes('exit')) eventType = 'exit';
+      else eventType = singleGate?.gateType === 'both' ? 'auto' : 'entry';
+
+      setDraft((prev) => ({
+        ...prev,
+        gateId: singleGate._id,
+        eventType,
+      }));
+    }
+  }, [draft.scanType, draft.divisionId, gateOptions, draft.gateId]);
+
+  // Auto-select department if the selected division has exactly one department
+  useEffect(() => {
+    if (draft.scanType === 'department' && draft.divisionId && departmentOptions.length === 1 && !draft.departmentId) {
+      const singleDept = departmentOptions[0];
+      const events = singleDept?.allowedEvents || [];
+      let eventType = 'auto';
+      if (events.includes('auto')) eventType = 'auto';
+      else if (events.includes('entry')) eventType = 'entry';
+      else if (events.includes('exit')) eventType = 'exit';
+
+      setDraft((prev) => ({
+        ...prev,
+        departmentId: singleDept._id,
+        eventType,
+      }));
+    }
+  }, [draft.scanType, draft.divisionId, departmentOptions, draft.departmentId]);
 
   useEffect(() => {
     if (disabled) return;
@@ -263,17 +321,15 @@ export default function EntryExitSelector({
             >
               <option value="">Select gate</option>
               {gateOptions.map((gate) => {
-                const mode = gate.accessMode || gate.gateType;
-                const suffix =
-                  mode === 'entry'
-                    ? ' (Entry)'
-                    : mode === 'exit'
-                      ? ' (Exit)'
-                      : ' (Entry & exit)';
+                const cleanName = (gate.name || '')
+                  .replace(/\s*\((?:entry|exit|both|entry\s*&\s*exit)\)/gi, '')
+                  .trim() || gate.name;
+                const mode = (gate.accessMode || gate.gateType || '').toLowerCase();
+                const typeLabel =
+                  mode === 'entry' ? 'Entry' : mode === 'exit' ? 'Exit' : 'Entry & exit';
                 return (
                   <option key={gate._id} value={gate._id}>
-                    {gate.name}
-                    {suffix}
+                    {cleanName} ({typeLabel})
                   </option>
                 );
               })}
@@ -313,32 +369,9 @@ export default function EntryExitSelector({
         </div>
       </div>
 
-      {isAutoGateEvent(draft.eventType) && (
-        <p className="entry-exit-selector__auto-hint field-hint">
-          {draft.scanType === 'department'
-            ? 'Check-in or check-out is chosen automatically from each person\'s department status.'
-            : 'Entry or exit is chosen automatically from each person\'s current division status.'}
-        </p>
-      )}
-
       {divisionOptions.length === 0 && (
-        <p className="field-hint">No {draft.scanType === 'gate' ? 'gates' : 'departments'} configured yet.</p>
-      )}
-
-      {selectionReady && (
-        <p className="entry-exit-selector__ready">
-          Ready to scan —{' '}
-          {isAutoGateEvent(draft.eventType)
-            ? draft.scanType === 'department'
-              ? 'auto check-in / check-out'
-              : 'auto entry / exit'
-            : eventActionLabel(draft.scanType, draft.eventType)}{' '}
-          at{' '}
-          <strong>
-            {draft.scanType === 'gate'
-              ? selectedGate?.name
-              : departmentOptions.find((d) => d._id === draft.departmentId)?.name}
-          </strong>
+        <p className="field-hint" style={{ marginTop: '8px' }}>
+          No {draft.scanType === 'gate' ? 'gates' : 'departments'} configured yet.
         </p>
       )}
     </div>

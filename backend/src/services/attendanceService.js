@@ -563,7 +563,8 @@ export async function forceCheckoutActiveDepartment({
 
   const department = await Department.findById(state.currentDepartmentId);
   const activeDepartment = activeDepartmentFromState(state);
-  const now = new Date();
+  // Force checkout occurs immediately prior to gate exit (stamped 1s earlier so it chronologically precedes gate exit)
+  const now = new Date(Date.now() - 1000);
 
   const departmentLog = await GateLog.create({
     registrationId,
@@ -587,6 +588,13 @@ export async function forceCheckoutActiveDepartment({
       departmentName: state.currentDepartmentName || department?.name || '',
     },
   });
+
+  // Explicitly update createdAt (and photoPath if provided) in MongoDB so it strictly sorts before gate exit log
+  const updateFields = { createdAt: now };
+  if (photoPath) updateFields.photoPath = photoPath;
+  await GateLog.updateOne({ _id: departmentLog._id }, { $set: updateFields });
+  departmentLog.createdAt = now;
+  if (photoPath) departmentLog.photoPath = photoPath;
 
   let updatedPass = pass;
   if (department) {
@@ -1127,7 +1135,32 @@ export async function getTodayLogsForRegistration(registrationId, divisionId = n
     .populate('scannedBy', 'displayName username')
     .sort({ createdAt: 1 });
 
-  return logs.map((log) => {
+  const getLogLifecycleRank = (scanType, eventType) => {
+    const isDept = scanType === SCAN_TYPES.DEPARTMENT;
+    const isEntry = (eventType || '').toLowerCase() === GATE_EVENT_TYPES.ENTRY;
+    if (!isDept && isEntry) return 1;  // GATE ENTRY
+    if (isDept && isEntry) return 2;   // DEPT ENTRY
+    if (isDept && !isEntry) return 3;  // DEPT EXIT
+    return 4;                          // GATE EXIT (always latest of the cycle)
+  };
+
+  const sortedLogs = [...logs].sort((a, b) => {
+    const timeA = new Date(a.createdAt).getTime();
+    const timeB = new Date(b.createdAt).getTime();
+    const diff = timeA - timeB;
+    // For logs within 3 seconds of each other (e.g. forced dept checkout on gate exit),
+    // strictly enforce lifecycle precedence so DEPT OUT precedes GATE OUT.
+    if (Math.abs(diff) <= 3000) {
+      const rankA = getLogLifecycleRank(a.scanType, a.eventType);
+      const rankB = getLogLifecycleRank(b.scanType, b.eventType);
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+    }
+    return diff;
+  });
+
+  return sortedLogs.map((log) => {
     const scannedByName =
       (typeof log.scannedByName === 'string' && log.scannedByName.trim()) ||
       log.scannedBy?.displayName ||

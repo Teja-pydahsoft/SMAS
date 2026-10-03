@@ -132,6 +132,15 @@ async function finalizeGateLog(log) {
   if (!log) return log;
   log.accessGranted = true;
   log.matched = true;
+  if (log.metadata?.forceDepartmentCheckout) {
+    const now = new Date();
+    await GateLog.updateOne(
+      { _id: log._id },
+      { $set: { accessGranted: true, matched: true, createdAt: now } }
+    );
+    log.createdAt = now;
+    return log;
+  }
   await log.save();
   return log;
 }
@@ -396,6 +405,7 @@ async function applyForceDepartmentCheckoutIfRequested({
   matchScore,
   operator,
   sourceLogId,
+  photoPath = null,
 }) {
   if (
     !forceDepartmentCheckout ||
@@ -412,6 +422,7 @@ async function applyForceDepartmentCheckoutIfRequested({
     matchScore,
     operator,
     sourceLogId,
+    photoPath,
   });
 
   return {
@@ -420,6 +431,7 @@ async function applyForceDepartmentCheckoutIfRequested({
       ? {
           ...result.activeDepartment,
           departmentLogId: result.departmentLog?._id || null,
+          photoPath: result.departmentLog?.photoPath || photoPath || null,
         }
       : null,
   };
@@ -802,6 +814,7 @@ router.post(
         matchScore,
         operator: operatorFields(req.user),
         sourceLogId: log._id,
+        photoPath: log.photoPath || null,
       }));
       if (forcedDepartmentCheckout) {
         sessionState = getPassSessionState(activePass);
@@ -1210,8 +1223,8 @@ router.post(
       matchScore,
       matched,
       accessGranted: false,
-      // Photo uploads to S3 in the background so face-match latency stays low.
-      photoPath: undefined,
+      // Store local path immediately; S3 upload updates in background if enabled.
+      photoPath: req.file?.path || undefined,
       ...logFields,
       ...operatorFields(req.user),
       metadata: {
@@ -1328,8 +1341,12 @@ router.post(
         matchScore,
         operator: operatorFields(req.user),
         sourceLogId: log._id,
+        photoPath: req.file?.path || log.photoPath || null,
       }));
       if (forcedDepartmentCheckout) {
+        if (uploadPromise && forcedDepartmentCheckout.departmentLogId) {
+          attachGatePhotoWhenReady(forcedDepartmentCheckout.departmentLogId, uploadPromise);
+        }
         sessionState = getPassSessionState(activePass);
         dayPass = activePass ? await formatPassResponse(activePass) : dayPass;
         log.metadata = {
@@ -1560,7 +1577,7 @@ router.post(
       }
     }
 
-    const photoUrl = null;
+    const photoUrl = photoUrlFromPath(req.file?.path || log.photoPath) || null;
 
     const todayLogs = await getTodayLogsForRegistration(
       matchedRegistration._id,

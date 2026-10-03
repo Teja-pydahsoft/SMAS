@@ -195,7 +195,12 @@ function buildTodayLogsSequence({ sessionState, activeDivision, activeDepartment
   const isCurrentScanGranted = !result?.denied && result?.log?.accessGranted !== false && result?.accessGranted !== false;
   if (result?.log?.createdAt && isCurrentScanGranted) {
     const logTime = result.log.createdAt;
-    const existingIndex = logs.findIndex((l) => new Date(l.at).getTime() === new Date(logTime).getTime());
+    const existingIndex = logs.findIndex((l) => (
+      (result.log._id && (String(l.id) === String(result.log._id) || String(l.id) === `current-scan-${result.log._id}`)) ||
+      (l.scanType === result.log.scanType &&
+       l.eventType === result.log.eventType &&
+       Math.abs(new Date(l.at).getTime() - new Date(logTime).getTime()) < 3000)
+    ));
     if (existingIndex === -1) {
       const isDept = result.log.scanType === 'department';
       if (!isDept || !hideDepartment) {
@@ -242,13 +247,63 @@ function buildTodayLogsSequence({ sessionState, activeDivision, activeDepartment
     }
   }
 
-  // Sort chronologically
-  logs.sort((a, b) => new Date(a.at) - new Date(b.at));
+  const getLogLifecycleRank = (scanType, eventType) => {
+    const isDept = scanType === 'department';
+    const isEntry = (eventType || '').toLowerCase() === 'entry';
+    if (!isDept && isEntry) return 1;  // GATE IN
+    if (isDept && isEntry) return 2;   // DEPT IN
+    if (isDept && !isEntry) return 3;  // DEPT OUT
+    return 4;                          // GATE OUT
+  };
+
+  // Sort chronologically with lifecycle tie-breaker (strictly ensures DEPT OUT precedes GATE OUT)
+  logs.sort((a, b) => {
+    const timeA = new Date(a.at).getTime();
+    const timeB = new Date(b.at).getTime();
+    const diff = timeA - timeB;
+    if (Math.abs(diff) <= 3000) {
+      const rankA = getLogLifecycleRank(a.scanType, a.eventType);
+      const rankB = getLogLifecycleRank(b.scanType, b.eventType);
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+    }
+    return diff;
+  });
 
   // Mark latest log
   if (logs.length > 0) {
     logs.forEach((l) => { l.isLatest = false; });
     logs[logs.length - 1].isLatest = true;
+  }
+
+  const scanActionPhoto = resolvePhotoUrl(result?.photoUrl || result?.log?.photoPath) || null;
+
+  // If a forced department checkout occurred as part of this scan action,
+  // ensure the forced checkout department log inherits the scan action photo
+  // rather than showing the registration profile photo.
+  if (scanActionPhoto && result?.forcedDepartmentCheckout) {
+    logs.forEach((l) => {
+      const isForcedDeptLog =
+        l.scanType === 'department' &&
+        (l.eventType || '').toLowerCase() === 'exit' &&
+        (
+          String(l.id) === String(result.forcedDepartmentCheckout.departmentLogId) ||
+          Math.abs(new Date(l.at).getTime() - new Date(result.log?.createdAt || Date.now()).getTime()) < 5000
+        );
+      if (isForcedDeptLog && !l.photoUrl) {
+        l.photoUrl = scanActionPhoto;
+      }
+    });
+  }
+
+  // Also ensure the current scan log itself has the scan action photo if missing
+  if (scanActionPhoto) {
+    logs.forEach((l) => {
+      if ((l.isLatest || String(l.id).startsWith('current-scan')) && !l.photoUrl) {
+        l.photoUrl = scanActionPhoto;
+      }
+    });
   }
 
   // Fallback missing photoUrl to personPhotoUrl if no photo captured
@@ -425,12 +480,27 @@ export default function GateMatchedPerson({
         </div>
         <div>
           <p className="gate-matched-person__name">{registration.displayName || 'Unnamed'}</p>
-          <p className="gate-matched-person__role">{registration.roleId?.name || '—'}</p>
+          <p className="gate-matched-person__role">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
+            {registration.roleId?.name || '—'}
+          </p>
           {registration.registrationCode && (
-            <p className="gate-matched-person__code">Code: {registration.registrationCode}</p>
+            <p className="gate-matched-person__code">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              ID: {registration.registrationCode}
+            </p>
           )}
           {typeof matchScore === 'number' && (
-            <p className="gate-matched-person__score">Match: {(matchScore * 100).toFixed(1)}%</p>
+            <p className="gate-matched-person__score">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+              Match: {(matchScore * 100).toFixed(1)}%
+            </p>
           )}
         </div>
       </div>

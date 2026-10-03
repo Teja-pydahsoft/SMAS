@@ -1832,6 +1832,8 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
+  object-fit: cover;
+  background: #f1f5f9;
 }
 
 .rc-day-track__step-photo {
@@ -1839,6 +1841,8 @@
   height: 40px;
   border-radius: 50%;
   margin-top: 8px;
+  object-fit: cover;
+  background: #f1f5f9;
 }
 
 .rc-day-track__photo-img--entry {

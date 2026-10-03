@@ -71,11 +71,15 @@ function FlipIcon() {
 export default function GateCameraScanner({
   onFaceCapture,
   onQrDetect,
-  captureLabel = 'Capture for face scan',
+  captureLabel = 'Capture New Person',
   processing = false,
   autoStart = false,
   eyeBlinkEnabled = true,
+  cameraDeviceLabel = 'Camera 1 - Entrance',
+  stationLabel = 'Main Gate',
+  selectedDeviceId = '',
 }) {
+  const containerRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -318,7 +322,18 @@ export default function GateCameraScanner({
     rafRef.current = requestAnimationFrame(scanLoop);
   }, [pendingQr, processing, preview, qrSupported]); // captureFrame is defined below, so we rely on refs
 
-  // ── Start camera with a given facingMode ─────────────────────────────────
+  // ── Toggle Fullscreen ─────────────────────────────────────────────────────
+  const toggleFullscreen = useCallback(() => {
+    const el = containerRef.current || videoRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }, []);
+
+  // ── Start camera with a given facingMode or selectedDeviceId ─────────────
   const startCamera = useCallback(
     async (facing = facingMode) => {
       setError('');
@@ -327,12 +342,12 @@ export default function GateCameraScanner({
       setPendingQr(null);
 
       try {
+        const videoConstraints = selectedDeviceId
+          ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } };
+
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: facing,
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
+          video: videoConstraints,
         });
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
@@ -343,8 +358,17 @@ export default function GateCameraScanner({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [facingMode, scanLoop]
+    [facingMode, scanLoop, selectedDeviceId]
   );
+
+  // Restart camera if selectedDeviceId changes while active
+  useEffect(() => {
+    if (active && selectedDeviceId) {
+      stopStream();
+      startCamera();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDeviceId]);
 
   // Restart loop when processing finishes
   useEffect(() => {
@@ -353,7 +377,6 @@ export default function GateCameraScanner({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(scanLoop);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processing, pendingQr, active, scanLoop]);
 
   useEffect(() => {
@@ -472,7 +495,7 @@ export default function GateCameraScanner({
   const videoMirrored = facingMode === 'user';
 
   return (
-    <div className="gate-cam-scanner">
+    <div className="gate-cam-scanner" ref={containerRef}>
       {error && <p className="error-msg">{error}</p>}
 
       {/* ── Viewport ── */}
@@ -605,12 +628,23 @@ export default function GateCameraScanner({
           </div>
         )}
 
-        {/* Placeholder */}
-        {!active && !preview && (
-          <div className="camera-placeholder">
-            <p>Camera not started</p>
-            <button type="button" className="btn-primary" onClick={() => startCamera()}>
-              Start Camera
+        {/* Viewport bottom overlay: Camera name and gate name, plus fullscreen */}
+        {active && !preview && (
+          <div className="ee-cam-overlay">
+            <span className="ee-cam-overlay__label">
+              <span className="ee-cam-overlay__dot" />
+              {cameraDeviceLabel || 'Camera 1 - Entrance'} | {stationLabel || 'Main Gate'}
+            </span>
+            <button
+              type="button"
+              className="ee-cam-overlay__fs-btn"
+              onClick={toggleFullscreen}
+              title="Fullscreen"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
             </button>
           </div>
         )}
